@@ -41,6 +41,8 @@ end
 --- Directives (`-- @…`) and USE lines inside a `/* … */` region are ignored:
 --- the region may have opened lines above, so both phases carry the
 --- block-comment depth down line by line (`lex.block_comment_depth_after`).
+--- A directive that declares no name (whitespace-only value) is ignored too, so
+--- it cannot clear the level above it — `constants.directive_value`.
 --- @param buf number Buffer handle (default: current buffer)
 --- @return table context { connection = string|nil, database = string|nil }
 function M.resolve_context(buf, limit_line)
@@ -55,10 +57,10 @@ function M.resolve_context(buf, limit_line)
   for i, line in ipairs(all_lines) do
     if const.is_section_marker(line) then break end
     if header_depth == 0 then
-      local conn_match = const.match_directive(line, const.DIRECTIVE_CONNECTION)
-      if conn_match then connection = vim.trim(conn_match) end
-      local db_match = const.match_directive(line, const.DIRECTIVE_DATABASE)
-      if db_match then database = vim.trim(db_match) end
+      local conn_match = const.directive_value(line, const.DIRECTIVE_CONNECTION)
+      if conn_match then connection = conn_match end
+      local db_match = const.directive_value(line, const.DIRECTIVE_DATABASE)
+      if db_match then database = db_match end
     end
     header_depth = lex.block_comment_depth_after(line, header_depth)
   end
@@ -70,10 +72,10 @@ function M.resolve_context(buf, limit_line)
   local block_depth = 0
   for i, line in ipairs(block_lines) do
     if block_depth == 0 then
-      local conn_match = const.match_directive(line, const.DIRECTIVE_CONNECTION)
-      if conn_match then connection = vim.trim(conn_match) end
-      local db_match = const.match_directive(line, const.DIRECTIVE_DATABASE)
-      if db_match then database = vim.trim(db_match) end
+      local conn_match = const.directive_value(line, const.DIRECTIVE_CONNECTION)
+      if conn_match then connection = conn_match end
+      local db_match = const.directive_value(line, const.DIRECTIVE_DATABASE)
+      if db_match then database = db_match end
 
       local use_db = lex.find_use_database(line)
       if use_db then database = use_db end

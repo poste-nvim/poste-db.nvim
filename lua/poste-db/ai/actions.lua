@@ -99,11 +99,14 @@ end
 --- `text:match("%-%-%s*@connection")` here counted a directive living inside a
 --- string literal or a prose comment, dropped the header, and let the block
 --- run on the buffer's connection instead of the chat scope's.
+--- directive_value rather than match_directive: the question is whether the line
+--- *names* a connection, and `-- @connection ` (a model-emitted placeholder)
+--- names none — such a line must not swallow the scope header.
 --- @param text string
 --- @return boolean
 local function has_connection_directive(text)
   for line in text:gmatch("[^\r\n]+") do
-    if constants.match_directive(line, "connection") then return true end
+    if constants.directive_value(line, "connection") then return true end
   end
   return false
 end

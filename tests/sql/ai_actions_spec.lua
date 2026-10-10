@@ -251,6 +251,15 @@ describe("poste-db.ai.actions", function()
         { connection = "my-blog" }, "SELECT '-- @connection other' AS note")
       assert.are.same({ "-- @connection my-blog" }, lines)
     end)
+
+    it("appends the scope header to a block whose directive names nothing", function()
+      -- a model-emitted `-- @connection ` placeholder binds the block to
+      -- nothing; counting it as a directive dropped the chat scope's header and
+      -- the block ran on the buffer's connection
+      local lines = actions._test.append_header(
+        { connection = "my-blog" }, "-- @connection   \nSELECT 1")
+      assert.are.same({ "-- @connection my-blog" }, lines)
+    end)
   end)
 
   describe("execute_sql", function()

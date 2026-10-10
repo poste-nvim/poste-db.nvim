@@ -269,6 +269,14 @@ describe("file_exec", function()
     it("needs a value", function()
       assert.is_nil(directive_in({ "-- @connection" }))
       assert.equals("pg-dev", directive_in({ "-- @connection", "-- @connection pg-dev" }))
+      -- A line with only blanks after the word carries no name. The Rust CLI
+      -- trims the capture and skips it when nothing is left
+      -- (exec_file.rs::extract_connection_directive); taking it as a connection
+      -- named "" made the editor fail with `Connection '' not found` while the
+      -- CLI reported "No connection specified" for the very same file.
+      assert.is_nil(directive_in({ "-- @connection   " }))
+      assert.is_nil(directive_in({ "-- @connection\t" }))
+      assert.equals("pg-dev", directive_in({ "-- @connection   ", "-- @connection pg-dev" }))
     end)
   end)
 end)

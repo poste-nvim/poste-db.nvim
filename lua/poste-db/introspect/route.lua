@@ -77,14 +77,14 @@ function M.is_sql_keyword(word)
 end
 
 function M.resolve_table_ddl_entry(line_text)
-  local db_match = const.match_directive(line_text, const.DIRECTIVE_DATABASE)
-  if db_match then
-    return { kind = "database", db_name = vim.trim(db_match) }
+  local db_name = const.directive_value(line_text, const.DIRECTIVE_DATABASE)
+  if db_name then
+    return { kind = "database", db_name = db_name }
   end
 
-  local conn_match = const.match_directive(line_text, const.DIRECTIVE_CONNECTION)
-  if conn_match then
-    return { kind = "connection", conn_name = vim.trim(conn_match) }
+  local conn_name = const.directive_value(line_text, const.DIRECTIVE_CONNECTION)
+  if conn_name then
+    return { kind = "connection", conn_name = conn_name }
   end
 
   return nil

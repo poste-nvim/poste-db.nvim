@@ -288,4 +288,29 @@ function M.match_directive(line, directive_name)
   return M.strip_leading_bom(line):match(pattern)
 end
 
+--- The name a `-- @connection` / `-- @database` line declares, trimmed, or nil
+--- when it declares none. `%s+(.+)` accepts a whitespace-only tail, so a line
+--- authored as a placeholder (`-- @database   `, with the trailing spaces an
+--- editor kept) matched and trimmed to `""` — and callers that treat the match
+--- as "this level names something" let that empty string override the
+--- file-level directive above it and the runtime connection, running the block
+--- against the server's default database instead of the intended one. An empty
+--- value is no value, which is also what the CLI does
+--- (`extract_connection_directive` in poste.nvim's exec_file.rs: trim, then
+--- skip the line when nothing is left), so `:PosteDbRunFile` and the editor now
+--- read the same file the same way.
+--- Use `match_directive` when the question is "is this a directive line?"
+--- (rewriting or removing one — an empty `-- @connection` is still the line to
+--- rewrite, and inserting a second one would leave two to choose between).
+--- @param line string
+--- @param directive_name string
+--- @return string|nil
+function M.directive_value(line, directive_name)
+  local raw = M.match_directive(line, directive_name)
+  if not raw then return nil end
+  local value = vim.trim(raw)
+  if value == "" then return nil end
+  return value
+end
+
 return M

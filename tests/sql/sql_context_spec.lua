@@ -114,6 +114,29 @@ describe("context resolve_context", function()
     local ctx = context.resolve_context(buf, 2)
     assert.equals("analytics", ctx.connection)
   end)
+
+  it("a directive that names nothing declares nothing", function()
+    -- `-- @database   ` (blanks after the word — a placeholder line an editor
+    -- left untrimmed) matched `%s+(.+)` and `vim.trim` emptied the capture, so
+    -- the block ran against the server's default database while the file said
+    -- `blog`. The CLI skips such a line (extract_connection_directive trims and
+    -- tests for empty), and the editor now reads the same file the same way.
+    local buf = make_buf({
+      "-- @connection analytics", "-- @database blog", "###",
+      "-- @database   ", "select 1",
+    })
+    local ctx = context.resolve_context(buf, 5)
+    assert.equals("analytics", ctx.connection)
+    assert.equals("blog", ctx.database)
+  end)
+
+  it("a nameless block-level @connection keeps the file-level one", function()
+    local buf = make_buf({
+      "-- @connection analytics", "###", "-- @connection \t", "select 1",
+    })
+    local ctx = context.resolve_context(buf, 4)
+    assert.equals("analytics", ctx.connection)
+  end)
 end)
 
 describe("context get_status_text", function()
@@ -178,6 +201,32 @@ describe("context get_cursor_status_text", function()
     local buf = make_buf({ "-- @connection analytics", "select 1" })
     local text = context.get_cursor_status_text(buf)
     assert.matches("analytics", text)
+  end)
+end)
+
+describe("context resolve_full_context", function()
+  local function make_buf(lines)
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.api.nvim_set_current_buf(buf)
+    return buf
+  end
+
+  before_each(function()
+    state_stub.context = { connection = nil, database = nil }
+  end)
+  after_each(function()
+    state_stub.context = { connection = nil, database = nil }
+  end)
+
+  it("a nameless block directive does not mask the runtime connection", function()
+    -- :PosteDbConnection chose this connection; the placeholder directive line
+    -- names nothing, so it must not clear the choice — with an empty string
+    -- there the statement ran on whatever the server considered default.
+    state_stub.context.connection = "runtime-conn"
+    local buf = make_buf({ "###", "-- @connection   ", "select 1" })
+    local full = context.resolve_full_context(buf, 3)
+    assert.equals("runtime-conn", full.connection)
   end)
 end)
 

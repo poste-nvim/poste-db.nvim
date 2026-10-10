@@ -13,6 +13,26 @@ describe("constants helpers", function()
     assert.is_nil(const.match_directive("###", const.DIRECTIVE_CONNECTION))
   end)
 
+  it("tells a directive line apart from the name it declares", function()
+    -- `%s+(.+)` accepts a whitespace-only tail, so `-- @connection   ` (the
+    -- placeholder line an editor left with its trailing blanks) matched and
+    -- trimmed to "". Readers that treated the match as "this level names
+    -- something" then ran the block against the server default instead of the
+    -- file-level database. An empty value declares nothing: directive_value
+    -- answers nil, while match_directive still sees the line — which is what
+    -- rewriting one in place needs, so the file does not end up with two
+    -- `-- @connection` lines to choose between.
+    assert.equals("analytics", const.directive_value("-- @connection analytics", const.DIRECTIVE_CONNECTION))
+    assert.equals("analytics", const.directive_value("-- @connection   analytics", const.DIRECTIVE_CONNECTION))
+    assert.is_nil(const.directive_value("-- @connection   ", const.DIRECTIVE_CONNECTION))
+    assert.is_nil(const.directive_value("-- @database\t\t", const.DIRECTIVE_DATABASE))
+    assert.is_nil(const.directive_value("-- @database", const.DIRECTIVE_DATABASE))
+    assert.is_nil(const.directive_value(nil, const.DIRECTIVE_DATABASE))
+    assert.equals(" ", const.match_directive("-- @connection   ", const.DIRECTIVE_CONNECTION))
+    -- the BOM still does not hide the name (strip_leading_bom is shared)
+    assert.equals("blog", const.directive_value("\xef\xbb\xbf-- @database blog", const.DIRECTIVE_DATABASE))
+  end)
+
   it("sees line-1 anchors through a leading UTF-8 BOM", function()
     -- A BOM-writing editor glues U+FEFF to the buffer's first line, where it
     -- is not `%s`: the anchored matchers went blind exactly when the directive
