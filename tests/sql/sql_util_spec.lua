@@ -90,3 +90,30 @@ describe("util.unquote_ident", function()
     assert.equals("users", util.unquote_ident("users"))
   end)
 end)
+
+describe("util.named", function()
+  it("passes a real name through", function()
+    assert.equals("my-blog", util.named("my-blog"))
+    -- a name may be whitespace-shaped SQL text, not padding: only the empty
+    -- string itself counts as absent
+    assert.equals(" ", util.named(" "))
+  end)
+
+  it("reads an empty name as absent", function()
+    -- the response envelope normalises an unknown connection/database to ""
+    -- (exec_run's `or ""`), and readers that only tested nil took it for a
+    -- bound target: the chat scope announced a connection with no name, and a
+    -- session started with `--database ""`, which the CLI applies as a URL
+    -- rewrite — the statement ran with the database stripped off
+    assert.is_nil(util.named(""))
+    assert.is_nil(util.named(nil))
+  end)
+
+  it("reads any non-string as absent", function()
+    assert.is_nil(util.named(42))
+    assert.is_nil(util.named(true))
+    assert.is_nil(util.named({ "db" }))
+    assert.is_nil(util.named(vim.NIL), "JSON null decodes to vim.NIL, a truthy userdata")
+    assert.is_nil(util.named(function() return "db" end))
+  end)
+end)

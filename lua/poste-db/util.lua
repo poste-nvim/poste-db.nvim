@@ -72,6 +72,30 @@ function M.unquote_ident(s)
   return s
 end
 
+--- A name that names something: a non-empty string, or nil. Any value of any
+--- other type counts as absent, so a hostile or hand-built table cannot reach
+--- `..` as a number or a table.
+--- The empty string is the interesting case, and it is not a name: the SQL
+--- response envelope normalises an unknown connection/database to `""`
+--- (`exec_run.lua`'s `conn or ""`, `shown_db or ""`), and a failed execution
+--- carries that into `state.context`, the last error and the AI chat scope.
+--- Readers that tested only for nil took the empty string for a target: the
+--- system prompt told the model the chat was "scoped to connection " with
+--- nothing after it (and hid the buffer's own context behind it), and a session
+--- started with `--database ""` — which the CLI applies as a URL rewrite
+--- (`exec_file.rs` / `session.rs`: `replace_database_in_url`), so the statement
+--- ran with the database stripped off the connection string.
+--- `nav_ui`, `sql_runner`, `explain`, `completion/data` and `introspect/table`
+--- already test `x ~= ""`; this is that rule with the type check attached, so a
+--- site reads once instead of re-deriving which of nil, `""` and `vim.NIL` it
+--- has to care about.
+--- @param v any
+--- @return string|nil
+function M.named(v)
+  if type(v) ~= "string" or v == "" then return nil end
+  return v
+end
+
 --- 0-based index just past the identifier run that starts at or after the
 --- 0-based cursor column `col`. The "extend the cursor column over the
 --- word" scan shared by go-to-definition (nav/handlers) and introspect

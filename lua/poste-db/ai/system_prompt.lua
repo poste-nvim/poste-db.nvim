@@ -4,6 +4,7 @@
 
 local state = require("poste-db.state")
 local log = require("poste-db.log")
+local util = require("poste-db.util")
 
 local M = {}
 
@@ -51,17 +52,17 @@ end
 
 --- Build the db-context system prompt (called per request). `chat_scope` is
 --- the poste-ai chat scope map (from /connections, /databases) and takes
---- precedence over the SQL buffer context.
+--- precedence over the SQL buffer context. Both sides read through util.named:
+--- a scope can hold an empty string where a name belongs, and an empty name is
+--- not a scope — it must not hide the buffer's own context, nor be announced to
+--- the model as a target it should write SQL for.
 --- @param chat_scope table|nil map with optional connection/database keys
 --- @return string
 function M.build(chat_scope)
   local parts = { KNOWLEDGE }
 
-  -- Scope values come from the chat scope map / state.context; a hand-built
-  -- map can carry anything. Only strings concatenate below — everything else
-  -- counts as absent so the prompt builds without that fragment.
-  local conn = type(chat_scope and chat_scope.connection) == "string" and chat_scope.connection or nil
-  local db = type(chat_scope and chat_scope.database) == "string" and chat_scope.database or nil
+  local conn = util.named(chat_scope and chat_scope.connection)
+  local db = util.named(chat_scope and chat_scope.database)
   if conn then
     local dialect = dialect_of(conn)
     parts[#parts + 1] = "## Current chat scope\n"
@@ -72,8 +73,8 @@ function M.build(chat_scope)
       .. "write " .. (dialect or "SQL") .. "-compatible statements; "
       .. "qualify objects only when the query crosses databases."
   else
-    conn = type(state.context and state.context.connection) == "string" and state.context.connection or nil
-    db = type(state.context and state.context.database) == "string" and state.context.database or nil
+    conn = util.named(state.context and state.context.connection)
+    db = util.named(state.context and state.context.database)
     if conn or db then
       local cur = "## Current SQL context\nThe buffer the user is working in is currently bound to: "
         .. "connection " .. (redact(conn) or "(none)") .. ", database " .. (redact(db) or "(none)") .. "."

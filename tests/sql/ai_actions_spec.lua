@@ -209,6 +209,39 @@ describe("poste-db.ai.actions", function()
       local _, _, err = actions._test.resolve_target({})
       assert.truthy(err:find("connection"))
     end)
+
+    it("reads an empty name as unbound at every hop", function()
+      -- "" is how the response envelope writes an unknown connection/database
+      -- (exec_run's `or ""`), so it arrives here from a mention ref, from the
+      -- chat scope after `a` on a failed statement, and from state.context.
+      -- Returning it answered `connection "" not found` instead of the hint,
+      -- and an empty database went on to start a session with `--database ""`,
+      -- which the CLI applies as a URL rewrite — the database came off.
+      local _, _, err = actions._test.resolve_target({
+        { type = "context", context = "db", data = { connection = "", database = "blog" } },
+      })
+      assert.truthy(err:find("no target connection", 1, true))
+
+      state.context.connection = ""
+      state.context.database = "shop"
+      local conn, db, err2 = actions._test.resolve_target({})
+      assert.is_nil(conn)
+      assert.is_nil(db)
+      assert.truthy(err2:find("no target connection", 1, true))
+    end)
+
+    it("keeps a scoped connection but drops an empty database", function()
+      local ok, scope = pcall(require, "poste-ai.chat.scope")
+      if not ok then
+        pending("poste-ai.nvim not on rtp")
+        return
+      end
+      scope.set("connection", "my-blog")
+      scope.set("database", "")
+      local conn, db = actions._test.resolve_target({})
+      assert.are.equal("my-blog", conn)
+      assert.is_nil(db, "an empty database must not be passed on as a target")
+    end)
   end)
 
   describe("append_header", function()
@@ -234,6 +267,18 @@ describe("poste-db.ai.actions", function()
     it("returns nil without a connection binding", function()
       assert.is_nil(actions._test.append_header({}, "SELECT 1"))
       assert.is_nil(actions._test.append_header(nil, "SELECT 1"))
+    end)
+
+    it("returns nil for an empty-string connection binding", function()
+      -- the last error of a run whose target the envelope did not name carries
+      -- `connection = ""`; writing `-- @connection ` into the buffer would have
+      -- declared a target that does not exist
+      assert.is_nil(actions._test.append_header({ connection = "" }, "SELECT 1"))
+    end)
+
+    it("omits a @database line whose value is empty", function()
+      local lines = actions._test.append_header({ connection = "my-blog", database = "" }, "SELECT 1")
+      assert.are.same({ "-- @connection my-blog" }, lines)
     end)
 
     it("returns nil when the block already carries a directive", function()

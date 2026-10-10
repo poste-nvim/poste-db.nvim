@@ -98,6 +98,49 @@ describe("poste-db.ai.system_prompt", function()
     assert.falsy(ctx:find("s3cret", 1, true))
     assert.truthy(ctx:find("mysql://root:***@h:3306/app", 1, true))
   end)
+
+  it("does not read an empty chat scope as a scoped one", function()
+    -- The envelope spells an unknown connection/database as "" and a failed
+    -- execution carries that into the chat scope. Treated as a binding, the
+    -- prompt announced "scoped to connection " with nothing after it, told the
+    -- model blocks run against that target, and — because the chat scope wins —
+    -- hid the buffer's real context behind an empty string.
+    state.context.connection = "pg-ecommerce"
+    state.context.database = "shop"
+    local prompt = system_prompt._test.build({ connection = "" })
+    assert.falsy(prompt:find("Current chat scope"))
+    assert.truthy(prompt:find("Current SQL context"))
+    assert.truthy(prompt:find("pg%-ecommerce"))
+  end)
+
+  it("drops an empty database from a scoped prompt instead of dangling it", function()
+    local prompt = system_prompt._test.build({ connection = "my-blog", database = "" })
+    assert.truthy(prompt:find("Current chat scope"))
+    assert.falsy(prompt:find(", database ", 1, true))
+    local both = system_prompt._test.build({ connection = "", database = "" })
+    assert.falsy(both:find("Current chat scope"))
+  end)
+
+  it("renders the unbound side of a partial SQL context as (none)", function()
+    -- only one half is known: the line must say so rather than print a blank
+    state.context.connection = ""
+    state.context.database = "shop"
+    local prompt = system_prompt._test.build()
+    assert.truthy(prompt:find("connection (none), database shop", 1, true))
+
+    state.context.connection = "pg-ecommerce"
+    state.context.database = ""
+    prompt = system_prompt._test.build()
+    assert.truthy(prompt:find("connection pg-ecommerce, database (none)", 1, true))
+  end)
+
+  it("omits the context section when both halves are empty strings", function()
+    state.context.connection = ""
+    state.context.database = ""
+    local prompt = system_prompt._test.build()
+    assert.falsy(prompt:find("Current SQL context"))
+    assert.falsy(prompt:find("bound to", 1, true))
+  end)
 end)
 
 describe("poste-db.ai integration", function()

@@ -11,14 +11,17 @@ local MAX_TABLES = 120
 local MAX_EXPAND = 5      -- tables introspected per request
 local MAX_CHARS = 6000
 
-local cache = {}  -- "conn/db" → { tables = { { name, comment } }, columns = { [name] = line }, capped = n }
-
-local function cache_key(scope)
-  return (scope.connection or "?") .. "/" .. (scope.database or "(default)")
-end
-
 local introspect = require("poste-db.ai.introspect").run
 local util = require("poste-db.util")
+
+local cache = {}  -- "conn/db" → { tables = { { name, comment } }, columns = { [name] = line }, capped = n }
+
+--- The cache key names the *effective* target: `""` and nil both mean "the
+--- connection's default database", and two spellings of one target would hold
+--- two entries — the second re-introspecting the tables the first already had.
+local function cache_key(scope)
+  return (util.named(scope.connection) or "?") .. "/" .. (util.named(scope.database) or "(default)")
+end
 
 local function pattern_esc(s)
   return (s:lower():gsub("[%W]", "%%%1"))
@@ -43,7 +46,7 @@ end
 --- Render the context block from a cache entry; `expanded` holds the table
 --- names whose full column lines should be included.
 local function render(entry, expanded, scope)
-  local db = scope.database
+  local db = util.named(scope.database)
   local md = "## Database schema (auto)\n"
     .. (db and ("Database `" .. db .. "`") or "Connection `" .. scope.connection .. "` (default database)")
     .. " tables:\n"
@@ -102,7 +105,7 @@ local function expand_and_render(text, scope, entry, cb)
     return
   end
   local conn = scope.connection
-  local db = scope.database
+  local db = util.named(scope.database)
   local idx = 0
   local function next_table()
     idx = idx + 1
@@ -127,7 +130,7 @@ end
 --- @param scope table chat scope snapshot
 --- @param cb function(md_or_nil)
 function M.auto_context(text, scope, cb)
-  local conn = scope and scope.connection
+  local conn = util.named(scope and scope.connection)
   if not conn then cb(nil) return end
   local key = cache_key(scope)
   local entry = cache[key]
@@ -135,7 +138,7 @@ function M.auto_context(text, scope, cb)
     expand_and_render(text, scope, entry, cb)
     return
   end
-  introspect(conn, "tables", nil, scope.database, function(items)
+  introspect(conn, "tables", nil, util.named(scope.database), function(items)
     if not items or #items == 0 then
       cache[key] = { tables = {}, columns = {} }
       cb(nil)

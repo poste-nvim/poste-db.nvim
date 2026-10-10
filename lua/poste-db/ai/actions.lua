@@ -7,6 +7,7 @@ local M = {}
 
 local constants = require("poste-db.constants")
 local dml_guard = require("poste-db.dml_guard")
+local util = require("poste-db.util")
 
 --- Read-only statement keywords (Lua patterns have no alternation, hence the
 --- lookup table).
@@ -119,12 +120,13 @@ end
 --- @param text string block text
 --- @return string[]|nil
 function M.append_header(scope, text)
-  local conn = scope and scope.connection
+  local conn = util.named(scope and scope.connection)
   if not conn then return nil end
   if text and has_connection_directive(text) then return nil end
   local lines = { "-- @connection " .. conn }
-  if scope.database then
-    lines[#lines + 1] = "-- @database " .. scope.database
+  local db = util.named(scope.database)
+  if db then
+    lines[#lines + 1] = "-- @database " .. db
   end
   return lines
 end
@@ -137,25 +139,31 @@ end
 
 --- Resolve the target connection. Priority: mention refs → the poste-ai chat
 --- scope (bound with /connections, /databases) → the current SQL context.
+--- Every hop reads through util.named: an empty string is not a bound target,
+--- and returning one handed `--database ""` to the binary (a URL rewrite that
+--- strips the database) and turned "nothing is bound" into the unhelpful
+--- `connection "" not found` instead of the hint below.
 --- @param refs table|nil
 --- @return string|nil conn, string|nil database, string|nil err
 function M.resolve_target(refs)
   for _, ref in ipairs(refs or {}) do
-    if ref.type == "context" and ref.context == "db" and type(ref.data) == "table"
-      and ref.data.connection then
-      return ref.data.connection, ref.data.database, nil
+    if ref.type == "context" and ref.context == "db" and type(ref.data) == "table" then
+      local conn = util.named(ref.data.connection)
+      if conn then return conn, util.named(ref.data.database), nil end
     end
   end
   local ok, poste_ai = pcall(require, "poste-ai")
   if ok then
     local scope = poste_ai.scope and poste_ai.scope() or nil
-    if scope and scope.connection then
-      return scope.connection, scope.database, nil
+    local conn = util.named(scope and scope.connection)
+    if conn then
+      return conn, util.named(scope and scope.database), nil
     end
   end
   local state = require("poste-db.state")
-  if state.context and state.context.connection then
-    return state.context.connection, state.context.database, nil
+  local conn = util.named(state.context and state.context.connection)
+  if conn then
+    return conn, util.named(state.context and state.context.database), nil
   end
   return nil, nil, "no target connection — scope with /connections, mention one with @connection/database, or set -- @connection in the SQL buffer"
 end

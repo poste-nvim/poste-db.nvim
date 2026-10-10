@@ -86,14 +86,22 @@ function M.ask_selection()
 end
 
 --- Scope the chat to a connection/database pair (icons follow the browser's).
+--- A failed execution carries its target in `state.last_error`, and the response
+--- envelope spells an unknown connection or database as `""` — binding that would
+--- scope the chat to a target with no name, which the prompt then announced and
+--- every later read of the scope inherited. Only a real name is worth binding.
 local function scope_chat_target(connection, database)
   local ok_s, scope = pcall(require, "poste-ai.chat.scope")
-  if not ok_s or not connection then return end
+  if not ok_s then return end
+  local util = require("poste-db.util")
+  local conn = util.named(connection)
+  if not conn then return end
   local ok_i, icons = pcall(require, "poste-db.db_browser.icons")
   local conn_icon = ok_i and icons.ICONS.connection or nil
   local db_icon = ok_i and icons.ICONS.database or nil
-  scope.set("connection", connection, conn_icon)
-  if database then scope.set("database", database, db_icon) end
+  scope.set("connection", conn, conn_icon)
+  local db = util.named(database)
+  if db then scope.set("database", db, db_icon) end
 end
 
 --- `a` on an error view: prefill the chat with the failed SQL + error

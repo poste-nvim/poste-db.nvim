@@ -37,6 +37,26 @@ describe("poste-db.ai.schema", function()
     assert.are.equal(0, #calls)
   end)
 
+  it("treats an empty name in the scope as no binding", function()
+    -- the last error of a run whose target the envelope did not name carries
+    -- `connection = ""` / `database = ""` (exec_run's `or ""`). Introspecting a
+    -- connection called "" made the browser fail to resolve it and notify on
+    -- every request, and an empty database was forwarded as the override the
+    -- CLI applies as a URL rewrite — taking the database off the connection.
+    local got = "unset"
+    schema._test.auto_context("hello", { connection = "", database = "" }, function(md) got = md end)
+    assert.is_nil(got)
+    assert.are.equal(0, #calls)
+
+    got = "unset"
+    schema._test.auto_context("show users", { connection = "my-blog", database = "" },
+      function(md) got = md end)
+    assert.are.equal(2, #calls, "one tables listing + one columns expansion")
+    assert.is_nil(calls[1].db)
+    assert.is_nil(calls[2].db)
+    assert.truthy(got:find("Connection `my-blog` (default database)", 1, true))
+  end)
+
   it("lists tables and expands those named in the text", function()
     local got
     schema._test.auto_context("show recent users", { connection = "my-blog", database = "blog" },
