@@ -69,4 +69,74 @@ describe("buffer_render", function()
     end
     assert.equals(4, sep_count, "indicator insertion must not eat a column separator")
   end)
+
+  -- A column whose name is the widest thing in it gets exactly one space before
+  -- the next `│` (the cell is `" " .. padded_name .. " "`). Overwriting a fixed
+  -- two bytes there consumed the separator's first byte, so the header float
+  -- showed an orphan UTF-8 continuation where a `│` used to be and every column
+  -- to the right shifted out of alignment with the data rows.
+  it("stamps a full-width column with the one-cell arrow", function()
+    local tab = { sort = { col = 0, ascending = true } }
+    local _ = render.normalize_rendered_page(tab, {
+      "┌────────────┐",
+      "│ id │ name │",
+      "├────────────┤",
+      "│ 1  │ ab   │",
+      "└────────────┘",
+    }, {
+      type = "resultset",
+      header_line = 2,
+      data_start_line = 4,
+      data_end_line = 4,
+      row_count = 1,
+    })
+    assert.equals("│ id↑│ name │", tab.header_text)
+    assert.equals(13, vim.fn.strdisplaywidth(tab.header_text))
+    local sep_count = 0
+    for _, c in ipairs(tab.header_index) do
+      if c.sep then sep_count = sep_count + 1 end
+    end
+    assert.equals(3, sep_count)
+  end)
+
+  it("keeps the same width for a descending full-width multibyte column", function()
+    local tab = { sort = { col = 0, ascending = false } }
+    local _ = render.normalize_rendered_page(tab, {
+      "┌────────────┐",
+      "│ 名称 │ ab │",
+      "├────────────┤",
+      "│ 1  │ 2  │",
+      "└────────────┘",
+    }, {
+      type = "resultset",
+      header_line = 2,
+      data_start_line = 4,
+      data_end_line = 4,
+      row_count = 1,
+    })
+    assert.equals("│ 名称↓│ ab │", tab.header_text)
+    assert.equals(13, vim.fn.strdisplaywidth(tab.header_text))
+    assert.is_true(pcall(vim.str_utf_pos, tab.header_text))
+  end)
+
+  it("leaves the header untouched when the cell has no padding to spend", function()
+    -- ext_end lands on a non-space (a hand-built or context-reflowed header):
+    -- there is no cell to overwrite, so no arrow is stamped rather than
+    -- shifting every separator to the right.
+    local tab = { sort = { col = 0, ascending = true } }
+    local _ = render.normalize_rendered_page(tab, {
+      "┌──────┐",
+      "│ id│ x │",
+      "├──────┤",
+      "│ 1 │ 2 │",
+      "└──────┘",
+    }, {
+      type = "resultset",
+      header_line = 2,
+      data_start_line = 4,
+      data_end_line = 4,
+      row_count = 1,
+    })
+    assert.equals("│ id│ x │", tab.header_text)
+  end)
 end)

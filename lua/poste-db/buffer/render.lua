@@ -42,10 +42,24 @@ function M.normalize_rendered_page(tab, lines, meta)
           text_end = text_end - 1
         end
         if text_end > range.ext_start then
-          local indicator = (tab.sort.ascending and " ↑" or " ↓")
-          local before = tab.header_text:sub(1, text_end)
-          local after = tab.header_text:sub(text_end + 3)
-          tab.header_text = before .. indicator .. after
+          -- `text_end` is the last byte of the column name; the run up to
+          -- `ext_end` is the cell's padding. The arrow replaces that padding,
+          -- so the cell keeps its width and the separators to its right stay
+          -- aligned. The wide form needs two cells of it: a column whose name
+          -- fills the width (the widest value in the column being shorter)
+          -- keeps only the one space before `│`, and cutting a fixed two bytes
+          -- there would drop the separator's first byte instead.
+          local pad_cells = range.ext_end - text_end
+          local indicator, consumed
+          if pad_cells >= 2 then
+            indicator, consumed = (tab.sort.ascending and " ↑" or " ↓"), 2
+          elseif pad_cells == 1 then
+            indicator, consumed = (tab.sort.ascending and "↑" or "↓"), 1
+          end
+          if indicator then
+            tab.header_text = tab.header_text:sub(1, text_end) .. indicator
+              .. tab.header_text:sub(text_end + consumed + 1)
+          end
         end
       end
     end
