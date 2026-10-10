@@ -11,6 +11,7 @@
 local state = require("poste-db.state")
 local const = require("poste-db.constants")
 local verdict = require("poste-db.verdict")
+local util = require("poste-db.util")
 
 local M = {}
 
@@ -67,6 +68,30 @@ local function database_from_url(url)
     end
   end
   return nil
+end
+
+--- The database a session talks to, and whether the caller named it.
+---
+--- `database` is whatever the caller had: an `-- @database` directive, a
+--- browser node's `meta.database`, or the SQL envelope's `""` for "unknown"
+--- (exec_run normalises it that way). Only a real name counts as explicit —
+--- `""` also used to reach `--database`, which the CLI applies as
+--- `replace_database_in_url`, i.e. the database was stripped off the URL the
+--- session connected with; and a JSON null (`vim.NIL`, lightuserdata) is
+--- truthy, so it concatenated into a raise instead of starting a session.
+---
+--- Both the pool key and the argv are derived here so the two can never
+--- disagree: `M.get` looked the pool up with the caller's raw value while
+--- `start` stored the session under the URL-inferred name, so for a URL that
+--- carries its own database and a buffer with no directive every request
+--- missed the pool and forked a second session (losing the SET/USE state the
+--- feature exists to keep).
+--- @param conn_url string
+--- @param database any
+--- @return string|nil db, boolean explicit
+local function session_target(conn_url, database)
+  local named = util.named(database)
+  return named or database_from_url(conn_url), named ~= nil
 end
 
 local function norm_affected(v)
@@ -331,7 +356,7 @@ local function start(conn_url, database)
   local binary = state.find_poste_binary()
   if not binary then return nil end
 
-  local db = database or database_from_url(conn_url)
+  local db, explicit = session_target(conn_url, database)
   local now = os.time()
   local session = {
     key = pool_key(conn_url, db),
@@ -365,8 +390,9 @@ local function start(conn_url, database)
   -- for a sqlite file that swap is lossy — `sqlite:///d/test.sqlite`
   -- inferred "test" and re-opened as `sqlite:///d/test`, a fresh EMPTY
   -- database, silently (the same file name is already in the URL anyway).
-  if database then
-    table.insert(cmd, "--database"); table.insert(cmd, database)
+  -- `session_target` decides what counts as named, so "" cannot get here.
+  if explicit then
+    table.insert(cmd, "--database"); table.insert(cmd, db)
   end
   local ok_job, job = pcall(vim.fn.jobstart, cmd, {
     stdin = "pipe",
@@ -403,12 +429,14 @@ local function start(conn_url, database)
 end
 
 --- Get the session for a connection_url + database, starting one if needed.
+--- The pool is keyed by the *effective* database (session_target), so a caller
+--- with no directive finds the session a URL-database start already made.
 --- @param conn_url string
 --- @param bufnr number|nil buffer that will use this session
---- @param database string|nil database context to connect to (default: from URL)
+--- @param database any database context to connect to (default: from URL)
 --- @return table|nil session
 function M.get(conn_url, bufnr, database)
-  local session = pool[pool_key(conn_url, database)]
+  local session = pool[pool_key(conn_url, session_target(conn_url, database))]
   if not session or not session.alive then
     session = start(conn_url, database)
     if not session then return nil end

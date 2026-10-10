@@ -53,8 +53,16 @@ local function introspect_ddl(conn_name, db_name, table_name, on_result, on_erro
     "--connection-url", url,
     "--type", "ddl",
     "--table", table_name,
-    "--database", db_name,
   }
+  -- A browser layout's `db` is a listing-row name, so it can be `""` or a
+  -- JSON null; either would become `--database`, which the CLI applies as
+  -- replace_database_in_url — the DDL (and then the paste) would read a
+  -- different database than the node the user copied. Inside the table
+  -- constructor a nil `db_name` also truncated `args` at the hole.
+  local db = util.named(db_name)
+  if db then
+    table.insert(args, "--database"); table.insert(args, db)
+  end
 
   local stderr_buf = {}
   -- jobstart raises E475 when the binary vanished between cli.binary() and
@@ -718,6 +726,7 @@ M._test = {
   pick_clone_default = pick_clone_default,
   show_paste_progress = show_paste_progress,
   check_response = check_response,
+  introspect_ddl = introspect_ddl,
   MAX_NAME_BUMPS = MAX_NAME_BUMPS,
 }
 

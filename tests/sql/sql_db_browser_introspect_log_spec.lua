@@ -6,9 +6,11 @@ local saved_state = package.loaded["poste-db.state"]
 local saved_tree = package.loaded["poste-db.db_browser.tree"]
 
 local async_opts = nil
+local async_cmd = nil
 
 package.loaded["poste-db.async"] = {
   run = function(cmd, opts)
+    async_cmd = cmd
     async_opts = opts
     return { cancel = function() end }
   end,
@@ -47,12 +49,20 @@ local function read_entries()
   return out
 end
 
+local function arg_value(cmd, flag)
+  for i, v in ipairs(cmd or {}) do
+    if v == flag then return cmd[i + 1] end
+  end
+  return nil
+end
+
 describe("db_browser run_introspect journaling", function()
   local saved_notify
   before_each(function()
     path = vim.fn.tempname() .. ".jsonl"
     sql_log.set_log_path(path)
     async_opts = nil
+    async_cmd = nil
     -- ERROR-level notifies from run_introspect's scheduled callbacks print
     -- via the error channel in headless runs and crash plenary's harness
     -- when they land outside a live test.
@@ -121,6 +131,49 @@ describe("db_browser run_introspect journaling", function()
     assert.equals(1, #entries)
     assert.equals("error", entries[1].status)
     assert.equals("not found", entries[1].error)
+    flush()
+  end)
+
+  -- The names handed to run_introspect come straight off a tree node, i.e. out
+  -- of the binary's listing rows: `""` is "this connection's own database" and
+  -- a JSON null decodes to vim.NIL. Both are truthy. An empty `--database` is
+  -- applied as replace_database_in_url, so the listing/DDL/columns came back
+  -- for a different database than the node the user clicked; a null raised in
+  -- the journal line's concatenation before any job started.
+  it("keeps an unnamed database out of the introspect argv and the journal", function()
+    browser_async.run_introspect("pg-dev", "tables", "", "", "", function() end)
+
+    assert.is_nil(arg_value(async_cmd, "--database"))
+    assert.is_nil(arg_value(async_cmd, "--schema"))
+    assert.is_nil(arg_value(async_cmd, "--table"))
+    async_opts.on_exit(1)
+    flush()
+    local entries = read_entries()
+    assert.equals(1, #entries)
+    assert.is_nil(entries[1].database)
+    assert.equals("introspect tables", entries[1].sql)
+  end)
+
+  it("survives a JSON null name instead of starting nothing", function()
+    local called = false
+    browser_async.run_introspect("pg-dev", "columns", nil, vim.NIL, vim.NIL, function() called = true end)
+
+    assert.is_nil(arg_value(async_cmd, "--database"))
+    assert.is_nil(arg_value(async_cmd, "--table"))
+    async_opts.on_data({ vim.json.encode({ items = {} }) })
+    async_opts.on_exit(0)
+    vim.wait(500, function() return called end)
+    assert.is_true(called)
+    flush()
+  end)
+
+  it("still passes a name that names something", function()
+    browser_async.run_introspect("pg-dev", "columns", "app", "users", "blog", function() end)
+
+    assert.equals("app", arg_value(async_cmd, "--schema"))
+    assert.equals("users", arg_value(async_cmd, "--table"))
+    assert.equals("blog", arg_value(async_cmd, "--database"))
+    async_opts.on_exit(1)
     flush()
   end)
   after_each(function()

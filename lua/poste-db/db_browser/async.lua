@@ -5,6 +5,7 @@ local async = require("poste-db.async")
 local log = require("poste-db.log")
 local sql_log = require("poste-db.sql_log")
 local const = require("poste-db.constants")
+local util = require("poste-db.util")
 
 local M = {}
 
@@ -37,6 +38,18 @@ local function schedule_render()
 end
 
 function M.run_introspect(conn_name, introspect_type, schema, table_name, database, callback, search_dir)
+  -- These three arrive straight from a tree node, i.e. from a listing row:
+  -- `""` is what a server reports for "the connection's own database" and a
+  -- JSON null decodes to vim.NIL — both truthy, so `if schema then` took them
+  -- for names. A null then concatenated into a raise in the journal line or
+  -- the log below, and an empty `--database` is applied by the CLI as
+  -- replace_database_in_url, so the fetch read a DIFFERENT database than the
+  -- node the user clicked (its tables, DDL and columns all came back for
+  -- whatever the stripped URL pointed at).
+  schema = util.named(schema)
+  table_name = util.named(table_name)
+  database = util.named(database)
+
   local connections = require("poste-db.connections")
   local url, err = connections.resolve_connection_url(conn_name)
   if not url then
@@ -451,7 +464,6 @@ end
 function M.load_connections(callback, search_dir)
   state.log("INFO", "DB Browser load_connections: search_dir=" .. search_dir)
 
-  local util = require("poste-db.util")
   local config_path = util.find_file_upwards("connections.toml", search_dir)
 
   vim.schedule(function()

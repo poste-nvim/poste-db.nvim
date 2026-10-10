@@ -105,6 +105,39 @@ describe("poste-db.session_conn", function()
     assert.equals("test", a.database)
   end)
 
+  it("does not let an unnamed database become --database", function()
+    -- The SQL envelope writes "" for a database it could not name, and a JSON
+    -- null decodes to vim.NIL; both are truthy, so both used to reach the
+    -- binary as `--database` — the CLI applies it as replace_database_in_url,
+    -- so the session connected with the database stripped off the URL — and
+    -- vim.NIL raised inside the pool key instead of starting anything.
+    local a = session_conn.get("postgres://h/blank", nil, "")
+    assert.is_nil(arg_value(jobs[a.job_id].cmd, "--database"))
+    assert.equals("blank", a.database, "the URL's own database names the session")
+
+    local b = session_conn.get("postgres://h/nullish", nil, vim.NIL)
+    assert.is_nil(arg_value(jobs[b.job_id].cmd, "--database"))
+    assert.equals("nullish", b.database)
+  end)
+
+  it("reuses one session for a directive-less run and the URL's own database", function()
+    -- get() keyed the pool with the caller's raw value while start() stored
+    -- the session under the URL-inferred name. With a URL that carries its
+    -- own database and a buffer that has no `-- @database`, every statement
+    -- missed the pool and forked a SECOND session — losing the SET/USE and
+    -- temp-table state the persistent session exists to keep, and leaving the
+    -- first one to be reaped.
+    local url = "postgres://h/reuse"
+    local a = session_conn.get(url, nil, nil)
+    local b = session_conn.get(url, nil, nil)
+    assert.are.equal(a, b, "a second directive-less run reuses the session")
+    assert.are.equal(1, vim.tbl_count(jobs))
+    -- the envelope's "" names that same target, not a third one
+    local c = session_conn.get(url, nil, "")
+    assert.are.equal(a, c)
+    assert.are.equal(1, vim.tbl_count(jobs))
+  end)
+
   it("answers start_failed when jobstart raises E475 on a vanished binary", function()
     -- find_poste_binary answered a moment before; the path is gone now.
     -- jobstart raises Vim:E475 instead of returning an error code, and the

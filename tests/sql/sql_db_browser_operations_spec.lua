@@ -362,12 +362,20 @@ describe("db_browser operations select_star", function()
   end)
 end)
 
---- The DDL float's failure path: what the user reads, and what the journal
---- keeps, has to be the reason the process gave — not just its exit code.
+--- The DDL float's failure path and the names its command carries: what the
+--- user reads, and what the journal keeps, has to be the reason the process
+--- gave — not just its exit code.
 describe("db_browser operations show_ddl failure reporting", function()
   local sql_log = require("poste-db.sql_log")
   local cli = require("poste-db.cli")
-  local path, opts, saved_run, saved_connections, saved_notify
+  local path, opts, cmd, saved_run, saved_connections, saved_notify
+
+  local function arg_value(flag)
+    for i, v in ipairs(cmd or {}) do
+      if v == flag then return cmd[i + 1] end
+    end
+    return nil
+  end
 
   local function read_entries()
     local out = {}
@@ -381,8 +389,10 @@ describe("db_browser operations show_ddl failure reporting", function()
     path = vim.fn.tempname() .. ".jsonl"
     sql_log.set_log_path(path)
     opts = nil
+    cmd = nil
     saved_run = cli.run_async
-    cli.run_async = function(_, cb)
+    cli.run_async = function(c, cb)
+      cmd = c
       opts = cb
       return 1
     end
@@ -433,5 +443,32 @@ describe("db_browser operations show_ddl failure reporting", function()
     local entries = read_entries()
     assert.equals(1, #entries)
     assert.equals("exit 3", entries[1].error)
+  end)
+
+  -- The names come straight off a listing row: `""` is a server's way of
+  -- saying "this connection's own database" and a JSON null decodes to
+  -- vim.NIL. Both are truthy, and the CLI applies `--database` as
+  -- replace_database_in_url — the DDL then described a table in whichever
+  -- database the stripped URL pointed at, not the one the user clicked.
+  it("carries only the names a node actually has", function()
+    operations.show_ddl(table_node({
+      meta = { schema = "", database = "", connection = "pg-dev" },
+    }), {})
+    assert.equals("users", arg_value("--table"))
+    assert.is_nil(arg_value("--schema"))
+    assert.is_nil(arg_value("--database"))
+
+    operations.show_ddl(ddl_node(), {})
+    assert.equals("public", arg_value("--schema"))
+    assert.equals("blog", arg_value("--database"))
+  end)
+
+  it("keeps a JSON null name out of the command instead of raising", function()
+    operations.show_ddl(table_node({
+      meta = { schema = vim.NIL, database = vim.NIL, connection = "pg-dev" },
+    }), {})
+    assert.equals("users", arg_value("--table"))
+    assert.is_nil(arg_value("--schema"))
+    assert.is_nil(arg_value("--database"))
   end)
 end)

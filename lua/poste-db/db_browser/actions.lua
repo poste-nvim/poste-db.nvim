@@ -3,6 +3,7 @@ local tree = require("poste-db.db_browser.tree")
 local async = require("poste-db.db_browser.async")
 local cli = require("poste-db.cli")
 local util = require("poste-db.db_browser.util")
+local core_util = require("poste-db.util")
 local notify = require("poste-db.db_browser.notify")
 local ops_sql = require("poste-db.db_browser.ops_sql")
 
@@ -473,8 +474,11 @@ function M.show_table_info(buf_line, context)
   end
 
   local conn = get_connection(table_node, context.root_nodes)
-  local schema = table_node.meta and table_node.meta.schema
-  local database = table_node.meta and table_node.meta.database
+  -- Listing-row names: `""` (the connection's own database) and a JSON null
+  -- are both truthy, and an empty `--database` is applied by the CLI as
+  -- replace_database_in_url — the table info came back for the wrong target.
+  local schema = core_util.named(table_node.meta and table_node.meta.schema)
+  local database = core_util.named(table_node.meta and table_node.meta.database)
   local dialect = get_dialect(table_node, context.root_nodes)
 
   local connections = require("poste-db.connections")

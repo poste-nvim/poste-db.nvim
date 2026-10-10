@@ -5,6 +5,7 @@ local icons = require("poste-db.db_browser.icons")
 local forms = require("poste-db.db_browser.forms")
 local ident = require("poste-db.ident")
 local util = require("poste-db.db_browser.util")
+local core_util = require("poste-db.util")
 local compat = require("poste-db.compat")
 local notify = require("poste-db.db_browser.notify")
 
@@ -72,8 +73,13 @@ function M.show_ddl(node, context)
   end
 
   local conn = get_connection_name(table_node, context)
-  local schema = table_node.meta and table_node.meta.schema
-  local database = table_node.meta and table_node.meta.database
+  -- Node meta arrives straight from a listing row: `""` is "the connection's
+  -- own database" and a JSON null decodes to vim.NIL. Both are truthy, so
+  -- `if schema then` handed them to the binary — an empty `--database` is
+  -- applied as replace_database_in_url and the DDL came back for whatever the
+  -- stripped URL pointed at, not for this table (see util.named).
+  local schema = core_util.named(table_node.meta and table_node.meta.schema)
+  local database = core_util.named(table_node.meta and table_node.meta.database)
 
   local connections = require("poste-db.connections")
   local url, url_err = connections.resolve_connection_url(conn)

@@ -12,6 +12,7 @@ local fake_toml = {}
 
 package.loaded["poste-db.util"] = {
   find_file_upwards = function() return "/fake/connections.toml" end,
+  named = (saved_util or require("poste-db.util")).named,
 }
 package.loaded["poste-db.toml"] = {
   parse_file = function() return fake_toml, nil end,
