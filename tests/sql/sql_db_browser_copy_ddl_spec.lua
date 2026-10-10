@@ -257,25 +257,27 @@ describe("db_browser copy_ddl rename_routine_in_def", function()
     assert.equals("CREATE PROCEDURE `proc_copy`() BEGIN SELECT * FROM `proc_a`; END", out)
   end)
 
-  it("leaves a mysql name that carries a backtick unrenamed", function()
-    -- SHOW CREATE doubles an inner backtick (a``b), so the raw name never
-    -- appears verbatim; the paste keeps the source name and the summary
-    -- reports the failure instead of silently mangling the definition.
+  it("renames a mysql name whose backtick the catalog doubled", function()
+    -- SHOW CREATE escapes an inner backtick by doubling it, which is exactly
+    -- what ident.quote builds — so the name is found and renamed instead of
+    -- being silently kept (the paste used to report a copy under the new name
+    -- while creating the routine under the old one).
     local def = "CREATE PROCEDURE `a``b`() BEGIN END"
-    assert.equals(def, ddl_mod.rename_routine_in_def("mysql", def, "a`b", "copy"))
+    local out = ddl_mod.rename_routine_in_def("mysql", def, "a`b", "copy")
+    assert.equals("CREATE PROCEDURE `copy`() BEGIN END", out)
   end)
 
   it("renames a schema-qualified postgres function", function()
     local out = ddl_mod.rename_routine_in_def(
       "postgres", "CREATE OR REPLACE FUNCTION public.func_a(int) RETURNS void AS $$ BEGIN END $$ LANGUAGE plpgsql;",
       "func_a", "func_copy")
-    assert.equals("CREATE OR REPLACE FUNCTION public.func_copy(int) RETURNS void AS $$ BEGIN END $$ LANGUAGE plpgsql;", out)
+    assert.equals("CREATE OR REPLACE FUNCTION public.\"func_copy\"(int) RETURNS void AS $$ BEGIN END $$ LANGUAGE plpgsql;", out)
   end)
 
   it("renames a postgres function name before the parameter list", function()
     local out = ddl_mod.rename_routine_in_def(
       "postgres", "CREATE FUNCTION func_a() RETURNS void AS $$ BEGIN END $$;", "func_a", "func_copy")
-    assert.equals("CREATE FUNCTION func_copy() RETURNS void AS $$ BEGIN END $$;", out)
+    assert.equals("CREATE FUNCTION \"func_copy\"() RETURNS void AS $$ BEGIN END $$;", out)
   end)
 
   it("anchors on the first routine keyword, not a later mention in the body", function()
@@ -283,7 +285,65 @@ describe("db_browser copy_ddl rename_routine_in_def", function()
     -- the word "procedure" must not move the anchor past the real name.
     local def = "CREATE FUNCTION func_a() RETURNS void AS $$ BEGIN RAISE 'not a procedure'; END $$;"
     local out = ddl_mod.rename_routine_in_def("postgres", def, "func_a", "func_copy")
-    assert.equals("CREATE FUNCTION func_copy() RETURNS void AS $$ BEGIN RAISE 'not a procedure'; END $$;", out)
+    assert.equals("CREATE FUNCTION \"func_copy\"() RETURNS void AS $$ BEGIN RAISE 'not a procedure'; END $$;", out)
+  end)
+
+  -- The catalog quotes a name that needs it, and the paste dialog's target name
+  -- is whatever the user typed. Matching only the bare spelling used to leave a
+  -- quoted source name unrenamed — the paste then created (with CREATE OR
+  -- REPLACE, replaced) the source routine while the summary reported the copy
+  -- under the requested name — and a target with a space or upper case went out
+  -- bare, which Postgres folds to lower case or rejects outright.
+  it("renames a postgres function whose name is quoted", function()
+    local out = ddl_mod.rename_routine_in_def("postgres",
+      'CREATE OR REPLACE FUNCTION public."Add Two"(integer) RETURNS int AS $$ SELECT 1 $$ LANGUAGE sql;',
+      "Add Two", "sum_two")
+    assert.equals('CREATE OR REPLACE FUNCTION public."sum_two"(integer) RETURNS int AS $$ SELECT 1 $$ LANGUAGE sql;', out)
+  end)
+
+  it("renames a quoted procedure name too", function()
+    local out = ddl_mod.rename_routine_in_def("postgres",
+      'CREATE OR REPLACE PROCEDURE public."mixed CASE"(int) AS $$ BEGIN END $$ LANGUAGE sql;',
+      "mixed CASE", "other name")
+    assert.equals('CREATE OR REPLACE PROCEDURE public."other name"(int) AS $$ BEGIN END $$ LANGUAGE sql;', out)
+  end)
+
+  it("keeps a target name that needs quoting as one identifier", function()
+    local out = ddl_mod.rename_routine_in_def("postgres",
+      "CREATE FUNCTION report() RETURNS void AS $$ SELECT 1 $$;", "report", "My Report")
+    assert.equals('CREATE FUNCTION "My Report"() RETURNS void AS $$ SELECT 1 $$;', out)
+  end)
+
+  it("matches a source name carrying the quote character itself", function()
+    -- pg_get_functiondef doubles an inner double quote, and that is the
+    -- spelling ident.quote produces, so the quoted form still matches.
+    local out = ddl_mod.rename_routine_in_def("postgres",
+      'CREATE FUNCTION "a""b"() RETURNS void AS $$ SELECT 1 $$;', 'a"b', "c")
+    assert.equals('CREATE FUNCTION "c"() RETURNS void AS $$ SELECT 1 $$;', out)
+  end)
+
+  it("renames when whitespace sits between the name and the parameter list", function()
+    local out = ddl_mod.rename_routine_in_def("postgres",
+      "CREATE FUNCTION func_a () RETURNS void AS $$ SELECT 1 $$;", "func_a", "func_b")
+    assert.equals('CREATE FUNCTION "func_b"() RETURNS void AS $$ SELECT 1 $$;', out)
+  end)
+
+  it("quotes an mssql routine name in brackets, not double quotes", function()
+    local out = ddl_mod.rename_routine_in_def("mssql",
+      "CREATE FUNCTION [dbo].[f_a](@p int) RETURNS int AS BEGIN RETURN 1 END", "f_a", "F b")
+    assert.equals("CREATE FUNCTION [dbo].[F b](@p int) RETURNS int AS BEGIN RETURN 1 END", out)
+  end)
+
+  it("escapes a target name that carries a backtick for mysql", function()
+    local out = ddl_mod.rename_routine_in_def("mysql",
+      "CREATE PROCEDURE `proc_a`() BEGIN END", "proc_a", "a`b")
+    assert.equals("CREATE PROCEDURE `a``b`() BEGIN END", out)
+  end)
+
+  it("leaves the definition alone when the target name is empty", function()
+    local def = "CREATE FUNCTION func_a(int) RETURNS void;"
+    assert.equals(def, ddl_mod.rename_routine_in_def("postgres", def, "func_a", ""))
+    assert.equals(def, ddl_mod.rename_routine_in_def("postgres", def, "func_a", nil))
   end)
 
   it("does the same for a mysql function whose body mentions procedure", function()

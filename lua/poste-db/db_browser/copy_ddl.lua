@@ -198,32 +198,58 @@ end
 --- MySQL: the routine's own name is the first `` `src` `` after the keyword —
 --- SHOW CREATE renders it (schema-qualified or not) before the parameter list,
 --- and every other backtick pair (DEFINER, body literals) either sits before
---- the keyword or after the name. A name containing a backtick is escaped as a
---- doubled backtick in SHOW CREATE, so it matches neither here nor anywhere —
---- the paste keeps the source name and the failure surfaces in the summary.
+--- the keyword or after the name.
+---
+--- Postgres: the name immediately precedes the parameter list, spelled bare
+--- when it needs no quoting and `"…"` when it does — both spellings have to be
+--- recognized, and the target goes back through `ident.quote`. Matching only
+--- the bare form dropped the rename for a quoted source name (and for a MySQL
+--- name carrying a backtick, which the catalog doubles), and the paste then
+--- created — with `CREATE OR REPLACE`, *replaced* — the source routine while the
+--- summary reported the copy under the requested name. Emitting the target bare
+--- let a mixed-case or spaced name reach the server as invalid SQL, or, worse
+--- for Postgres, as the lower-cased version of itself.
 function M.rename_routine_in_def(dialect, def, src, tgt)
+  -- An empty name on either side would make the substitution rewrite the
+  -- header into something the server cannot parse; leave the definition as it
+  -- came and let the summary report the copy under its original name.
+  if not src or src == "" or not tgt or tgt == "" then return def end
   local upper = def:upper()
   local kw_pos = routine_kw_pos(upper)
   if not kw_pos then return def end
 
   if dialect == "mysql" or dialect == "mariadb" then
-    local plain_idx = def:find("`" .. src .. "`", kw_pos, true)
-    if plain_idx then
-      return def:sub(1, plain_idx - 1) .. "`" .. tgt .. "`" .. def:sub(plain_idx + #src + 2)
-    end
-    return def
+    -- `quote` spells an inner backtick the doubled way SHOW CREATE does, so a
+    -- name carrying one is found rather than silently kept.
+    local quoted_src = quote(src, dialect)
+    local plain_idx = def:find(quoted_src, kw_pos, true)
+    if not plain_idx then return def end
+    return def:sub(1, plain_idx - 1) .. quote(tgt, dialect) .. def:sub(plain_idx + #quoted_src)
   end
 
-  -- Postgres: name immediately precedes the parameter list.
+  -- Postgres and the other non-MySQL dialects: the name immediately precedes
+  -- the parameter list, in that dialect's own quoting (`ident.quote` gives the
+  -- spelling the server itself prints, brackets for mssql included). The tail
+  -- is compared against `before` itself — never against a whitespace-stripped
+  -- copy of it, because a quoted routine name may contain spaces and stripping
+  -- would fold `"Add Two"` into something no server ever printed.
   local paren = def:find("%(", kw_pos)
   if not paren then return def end
   local before = def:sub(kw_pos + 1, paren - 1)
-  local trimmed = before:gsub('%s+', '')
-  if trimmed:sub(-#src) == src then
-    local start_pos = kw_pos + 1 + (#before - #trimmed) + (#trimmed - #src)
-    return def:sub(1, start_pos - 1) .. tgt .. def:sub(paren)
+  local no_trailing_ws = before:gsub("%s+$", "")
+  local quoted_src = quote(src, dialect)
+  local matched, match_at
+  for _, cand in ipairs({ quoted_src, src }) do
+    if before:sub(-#cand) == cand then
+      matched, match_at = cand, #before - #cand + 1
+      break
+    elseif no_trailing_ws:sub(-#cand) == cand then
+      matched, match_at = cand, #no_trailing_ws - #cand + 1
+      break
+    end
   end
-  return def
+  if not matched then return def end
+  return def:sub(1, kw_pos + match_at - 1) .. quote(tgt, dialect) .. def:sub(paren)
 end
 
 return M
