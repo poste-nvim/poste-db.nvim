@@ -5,7 +5,6 @@
 local async = require("poste-db.db_browser.async")
 local icons = require("poste-db.db_browser.icons")
 local notify = require("poste-db.db_browser.notify")
-local ident = require("poste-db.ident")
 local util = require("poste-db.db_browser.util")
 
 local ops_sql = require("poste-db.db_browser.ops_sql")
@@ -24,7 +23,7 @@ local M = {}
 local execute_drop  -- forward declaration
 
 --- Show a confirmation dialog for dropping a table (red warning text).
-local function show_drop_confirm(table_node, qualified, conn, schema_prefix, context)
+local function show_drop_confirm(table_node, qualified, conn, context)
   local dialog = require("poste-db.dialog")
   local layout = require("poste-db.layout")
 
@@ -73,7 +72,7 @@ local function show_drop_confirm(table_node, qualified, conn, schema_prefix, con
   vim.keymap.set("n", "y", function()
     dlg:close()
     vim.schedule(function()
-      execute_drop(table_node, qualified, conn, schema_prefix, context)
+      execute_drop(table_node, qualified, conn, context)
     end)
   end, { buffer = dlg.buf, noremap = true, silent = true, nowait = true })
   vim.keymap.set("n", "n", function() dlg:close() end, { buffer = dlg.buf, noremap = true, silent = true, nowait = true })
@@ -152,24 +151,15 @@ function M.drop_table(node, context)
 
   local dialect = get_dialect(table_node, context)
   local conn = get_connection_name(table_node, context)
-  local schema_prefix = ""
-  if table_node.meta and table_node.meta.schema and dialect == "postgres" then
-    schema_prefix = ident.quote(table_node.meta.schema, dialect) .. "."
-  end
-
-  local qualified = schema_prefix .. ident.quote(table_node.name, dialect)
-  show_drop_confirm(table_node, qualified, conn, schema_prefix, context)
+  local qualified = ops_sql.qualified_table_ref(table_node, dialect)
+  show_drop_confirm(table_node, qualified, conn, context)
 end
 
 --- Build qualified name and lookup for a single table node.
 local function prepare_drop_item(table_node, context)
   local dialect = get_dialect(table_node, context)
   local conn = get_connection_name(table_node, context)
-  local schema_prefix = ""
-  if table_node.meta and table_node.meta.schema and dialect == "postgres" then
-    schema_prefix = ident.quote(table_node.meta.schema, dialect) .. "."
-  end
-  local qualified = schema_prefix .. ident.quote(table_node.name, dialect)
+  local qualified = ops_sql.qualified_table_ref(table_node, dialect)
 
   local parent = table_node.parent
   while parent and parent.node_type ~= "database" and parent.node_type ~= "schema" do

@@ -226,3 +226,79 @@ describe("db_browser drop failures quote the server", function()
     assert.is_true(seen, "the dialog promises 'Press [q] to see errors'")
   end)
 end)
+
+describe("db_browser drop target naming", function()
+  -- Both drop paths spelled the schema-prefix rule inline off `meta.schema`,
+  -- and an introspection row with no schema says `""` — truthy, so the empty
+  -- name still joined its separator: the statement dispatched as
+  -- `DROP TABLE ."t1";`, which the server refuses for a table the user can
+  -- see, while a JSON null (vim.NIL) raised before the dialog opened. They now
+  -- share ops_sql.qualified_table_ref, which reads the name as absent.
+  local exec_run_real = require("poste-db.exec_run")
+  local node, context, runs, notify_saved, browser_buf
+
+  before_each(function()
+    runs = {}
+    notify_saved = vim.notify
+    vim.notify = function() end
+    node = {
+      node_type = "table", name = "t1",
+      meta = { connection = "test-conn", database = "blog", schema = "" },
+    }
+    browser_buf = vim.api.nvim_create_buf(false, true)
+    context = {
+      root_nodes = {}, source_buf = nil, browser_buf = browser_buf, line_to_node = {},
+    }
+    package.loaded["poste-db.connections"] = {
+      resolve_connection_url = function() return "postgres://u@h:5432/blog", nil end,
+      name_for_url = function() return nil end,
+    }
+    package.loaded["poste-db.exec_run"] = setmetatable({
+      run_async = function(sql, opts, callbacks)
+        runs[#runs + 1] = { sql = sql, opts = opts, cbs = callbacks }
+        return 1
+      end,
+    }, { __index = exec_run_real })
+  end)
+
+  after_each(function()
+    vim.notify = notify_saved
+    close_floats()
+    if browser_buf and vim.api.nvim_buf_is_valid(browser_buf) then
+      vim.api.nvim_buf_delete(browser_buf, { force = true })
+    end
+    package.loaded["poste-db.connections"] = saved.connections
+    package.loaded["poste-db.exec_run"] = saved.exec_run
+  end)
+
+  it("drops the bare table when the node names no schema", function()
+    ops_drop.drop_table(node, context)
+    assert.is_true(fire_buffer_map(vim.api.nvim_get_current_buf(), "y"))
+    assert.is_true(vim.wait(2000, function() return #runs > 0 end, 10))
+    assert.equals('DROP TABLE "t1";', runs[1].sql)
+  end)
+
+  it("drops a batch whose node names no schema, null included", function()
+    local ok = pcall(ops_drop.batch_drop_tables, { [node] = true }, context)
+    assert.is_true(ok, "a blank schema must not raise on the way to the dialog")
+    assert.is_true(fire_buffer_map(vim.api.nvim_get_current_buf(), "y"))
+    assert.is_true(vim.wait(2000, function() return #runs > 0 end, 10))
+    assert.equals('DROP TABLE "t1";', runs[1].sql)
+
+    runs = {}
+    node.meta.schema = vim.NIL
+    ok = pcall(ops_drop.batch_drop_tables, { [node] = true }, context)
+    assert.is_true(ok, "a JSON null schema must not raise either")
+    assert.is_true(fire_buffer_map(vim.api.nvim_get_current_buf(), "y"))
+    assert.is_true(vim.wait(2000, function() return #runs > 0 end, 10))
+    assert.equals('DROP TABLE "t1";', runs[1].sql)
+  end)
+
+  it("keeps a real schema on the statement", function()
+    node.meta.schema = "app"
+    ops_drop.drop_table(node, context)
+    assert.is_true(fire_buffer_map(vim.api.nvim_get_current_buf(), "y"))
+    assert.is_true(vim.wait(2000, function() return #runs > 0 end, 10))
+    assert.equals('DROP TABLE "app"."t1";', runs[1].sql)
+  end)
+end)

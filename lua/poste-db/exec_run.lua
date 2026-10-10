@@ -13,6 +13,7 @@ local cli = require("poste-db.cli")
 local state = require("poste-db.state")
 local log = require("poste-db.log")
 local sql_log = require("poste-db.sql_log")
+local util = require("poste-db.util")
 local verdict = require("poste-db.verdict")
 local lex = require("poste-db.lex")
 
@@ -146,13 +147,30 @@ local function build_cmd(tmpfile, opts)
   local max_rows = opts.max_rows
   if max_rows == nil then max_rows = 0 end
   table.insert(cmd, "--max-rows"); table.insert(cmd, tostring(max_rows))
-  if opts.conn_url and opts.conn_url ~= "" then
-    table.insert(cmd, "--connection"); table.insert(cmd, opts.conn_url)
+  -- Only a name that names something goes on the command line. A blank
+  -- `--database` is applied by the CLI as `replace_database_in_url`, i.e. the
+  -- statement runs against the connection string with its database stripped
+  -- off; `vim.NIL` (a decoded JSON null) is truthy and would be handed to
+  -- jobstart as a userdata. See util.named.
+  local conn_url = util.named(opts.conn_url)
+  local database = util.named(opts.database)
+  if conn_url then
+    table.insert(cmd, "--connection"); table.insert(cmd, conn_url)
   end
-  if opts.database and opts.database ~= "" then
-    table.insert(cmd, "--database"); table.insert(cmd, opts.database)
+  if database then
+    table.insert(cmd, "--database"); table.insert(cmd, database)
   end
   return cmd
+end
+
+--- Whether the caller pinned a concrete target for the run.
+--- `""` is not a pin: it is what `build_response` writes when the server
+--- reported no database, and the round-trip `state.context` → caller → here
+--- used to count as one. With `opts.database = ""` the lone-`USE` shortcut was
+--- skipped and the statement went to `exec-file`, which filters USE out of a
+--- run — so the context never switched and nothing executed.
+local function has_target(opts)
+  return util.named(opts.conn_url) ~= nil or util.named(opts.database) ~= nil
 end
 
 -- Normalize an `affected_rows` value from the event stream (number → number,
@@ -388,7 +406,7 @@ local function run_sql(sql, opts)
   local t0 = vim.uv.now()
   local base = journal_base(sql, opts)
   local use_db = detect_use(sql)
-  if use_db and not opts.conn_url and not opts.database then
+  if use_db and not has_target(opts) then
     local resp = make_use_response(use_db)
     sql_log.result(base, resp, vim.uv.now() - t0)
     return resp
@@ -475,7 +493,7 @@ local function run_async(sql, opts, callbacks)
 
   -- Lone USE statement: handled locally (exec-file skips USE).
   local use_db = detect_use(sql)
-  if use_db and not opts.conn_url and not opts.database then
+  if use_db and not has_target(opts) then
     local resp = {
       status = "ok",
       latency_ms = 0,

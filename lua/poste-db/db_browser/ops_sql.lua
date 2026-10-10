@@ -2,6 +2,7 @@
 --- Extracted from db_browser/operations.lua so the operation modules
 --- (operations, ops_drop) reuse the same implementations.
 local ident = require("poste-db.ident")
+local core_util = require("poste-db.util")
 local notify = require("poste-db.db_browser.notify")
 local util = require("poste-db.db_browser.util")
 
@@ -47,10 +48,21 @@ end
 
 --- Qualified, quoted table reference for generated SQL.
 --- PG applies the schema prefix; other dialects quote the bare name.
+---
+--- `meta.schema` is a name inherited from an introspection row or a connection
+--- entry, so "unusable" arrives in two shapes and both used to emit wrong SQL.
+--- `""`: `ident.quote` returns an empty name unchanged, so the prefix was still
+--- joined and the ref became `."users"` — the leading dot is a syntax error on
+--- Postgres, which is what every generated ALTER/UPDATE/INSERT/DROP for that
+--- table then reported. A JSON null decodes to `vim.NIL`, which is truthy and
+--- reached `name:gsub` as a userdata (`ident.lua:11`), raising inside the menu
+--- action. The hand-written `schema ~= ""` in `mssql_object_ref` was this rule,
+--- half-covered.
 function M.qualified_table_ref(table_node, dialect)
+  local schema = core_util.named(table_node.meta and table_node.meta.schema)
   local schema_prefix = ""
-  if table_node.meta and table_node.meta.schema and dialect == "postgres" then
-    schema_prefix = ident.quote(table_node.meta.schema, dialect) .. "."
+  if schema and dialect == "postgres" then
+    schema_prefix = ident.quote(schema, dialect) .. "."
   end
   return schema_prefix .. ident.quote(table_node.name, dialect)
 end
@@ -102,8 +114,8 @@ end
 
 --- `schema.table` (or a bare table) as sp_rename wants it: plain names.
 local function mssql_object_ref(node)
-  local schema = node.meta and node.meta.schema
-  if schema and schema ~= "" then return schema .. "." .. node.name end
+  local schema = core_util.named(node.meta and node.meta.schema)
+  if schema then return schema .. "." .. node.name end
   return node.name
 end
 
@@ -141,15 +153,24 @@ end
 
 --- Directive header (`-- @connection` / `-- @database`) for generated SQL.
 --- Returns the lines and the cursor offset relative to the first inserted line.
+---
+--- A directive with no value declares nothing — `constants.directive_value`
+--- answers nil for the blank after `-- @database ` — so the line is noise in the
+--- buffer the user has to delete by hand, and the file reads as if it had a
+--- target when it has none. Emit the line only when it carries a name; the
+--- offset counts the lines actually inserted, which is what keeps the cursor on
+--- the statement. A JSON null name used to reach the concat and raise.
 function M.build_directive_lines(table_node, conn)
   local lines = { "" }
   local cursor_offset = 2
-  if conn then
-    table.insert(lines, "-- @connection " .. conn)
+  local connection = core_util.named(conn)
+  if connection then
+    table.insert(lines, "-- @connection " .. connection)
     cursor_offset = cursor_offset + 1
   end
-  if table_node.meta and table_node.meta.database then
-    table.insert(lines, "-- @database " .. table_node.meta.database)
+  local database = core_util.named(table_node.meta and table_node.meta.database)
+  if database then
+    table.insert(lines, "-- @database " .. database)
     cursor_offset = cursor_offset + 1
   end
   return lines, cursor_offset

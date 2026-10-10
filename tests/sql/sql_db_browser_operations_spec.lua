@@ -76,6 +76,19 @@ describe("db_browser operations qualified_table_ref", function()
   it("ignores the schema for non-postgres dialects", function()
     assert.equals("`users`", t.qualified_table_ref(table_node(), "mysql"))
   end)
+
+  -- A schema node's name comes from an introspection row, so "there is no
+  -- schema here" arrives as `""`, and a JSON null as `vim.NIL` — both truthy.
+  -- The generator trusted any truthy name and joined the prefix anyway: `""`
+  -- passes through ident.quote as the empty name, so the ref became `."users"`,
+  -- a syntax error on Postgres for every statement built from it; and the null
+  -- reached `name:gsub` as a userdata, raising inside the menu action.
+  it("drops a schema name that names nothing", function()
+    for _, blank in ipairs({ "", vim.NIL, 42 }) do
+      assert.equals('"users"',
+        t.qualified_table_ref(table_node({ meta = { schema = blank, database = "blog" } }), "postgres"))
+    end
+  end)
 end)
 
 describe("db_browser operations build_directive_lines", function()
@@ -89,6 +102,21 @@ describe("db_browser operations build_directive_lines", function()
     local lines, offset = t.build_directive_lines(table_node(), "prod")
     assert.same({ "", "-- @connection prod", "-- @database blog" }, lines)
     assert.equals(4, offset)
+  end)
+
+  -- `-- @database ` with a blank value selects nothing (constants.directive_value
+  -- answers nil for it): a line of noise in the generated file that reads as a
+  -- target. A null name made the concat raise instead.
+  it("emits no header for a name that names nothing", function()
+    local lines, offset = t.build_directive_lines(
+      table_node({ meta = { schema = "public", database = "" } }), "")
+    assert.same({ "" }, lines)
+    assert.equals(2, offset, "the cursor stays on the first statement line")
+
+    local with_conn, with_offset = t.build_directive_lines(
+      table_node({ meta = { schema = "public", database = vim.NIL } }), "prod")
+    assert.same({ "", "-- @connection prod" }, with_conn)
+    assert.equals(3, with_offset)
   end)
 end)
 
@@ -358,6 +386,63 @@ describe("db_browser operations select_star", function()
       operations.select_star(view, { source_buf = src, line_to_node = {} })
     end)
     assert.equals('SELECT * FROM "app"."active_users" LIMIT 100;', first_sql_line(src, "SELECT"))
+    vim.api.nvim_buf_delete(src, { force = true })
+  end)
+end)
+
+describe("db_browser operations rename header", function()
+  -- rename assembled the `-- @connection` / `-- @database` header inline while
+  -- every other generator went through ops_sql.build_directive_lines, so it kept
+  -- emitting both lines for a node whose connection/database were blank — a
+  -- directive that selects nothing, inserted ahead of the statement the user
+  -- asked for. It now shares the one header builder.
+  local saved_notify
+
+  before_each(function()
+    saved_notify = vim.notify
+    vim.notify = function() end
+  end)
+
+  after_each(function()
+    vim.notify = saved_notify
+  end)
+
+  --- Answer vim.ui.input with `new_name`, then hand back the source buffer.
+  local function rename(node, context, new_name)
+    local saved_input = vim.ui.input
+    vim.ui.input = function(_, cb) cb(new_name) end
+    local ok, err = pcall(operations.rename, node, context)
+    vim.ui.input = saved_input
+    assert.is_true(ok, tostring(err))
+    return context.source_buf
+  end
+
+  --- The lines appended after the seed line, blank separator included.
+  local function tail(src)
+    return vim.api.nvim_buf_get_lines(src, 1, -1, false)
+  end
+
+  it("writes no directive lines for names the node does not have", function()
+    local src = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(src, 0, -1, false, { "-- seed" })
+    local node = table_node({ meta = { schema = "public", database = "", connection = "" } })
+    rename(node, { source_buf = src, line_to_node = {}, root_nodes = {} }, "members")
+    assert.same({ "", 'ALTER TABLE "public"."users" RENAME TO "members";', "" }, tail(src))
+    vim.api.nvim_buf_delete(src, { force = true })
+  end)
+
+  it("still names the target when the node does have one", function()
+    local src = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(src, 0, -1, false, { "-- seed" })
+    local node = table_node({ meta = { schema = "public", database = "blog", connection = "prod" } })
+    rename(node, { source_buf = src, line_to_node = {}, root_nodes = {} }, "members")
+    assert.same({
+      "",
+      "-- @connection prod",
+      "-- @database blog",
+      'ALTER TABLE "public"."users" RENAME TO "members";',
+      "",
+    }, tail(src))
     vim.api.nvim_buf_delete(src, { force = true })
   end)
 end)

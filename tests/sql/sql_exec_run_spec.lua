@@ -532,6 +532,84 @@ describe("exec_run", function()
       assert.equals(0, vim.fn.filereadable(tmpfile), "temp file cleaned up after delivery")
     end)
   end)
+
+  describe("unnamed targets", function()
+    -- opts.conn_url / opts.database reach the command line as `--connection` /
+    -- `--database`. A blank is not a target: the CLI applies `--database ""` as
+    -- replace_database_in_url, so the run loses the database off its own
+    -- connection string. A JSON null (`vim.NIL`) is worse — truthy, and jobstart
+    -- gets a userdata. Both arrive from callers that read the response envelope
+    -- (`conn or ""`) or a tree node's meta.
+    local saved_cli = package.loaded["poste-db.cli"]
+    local saved_state = package.loaded["poste-db.state"]
+
+    after_each(function()
+      package.loaded["poste-db.cli"] = saved_cli
+      package.loaded["poste-db.state"] = saved_state
+      package.loaded["poste-db.exec_run"] = nil
+    end)
+
+    --- exec_run wired to a cli that records the argv instead of spawning.
+    local function load_capturing(captured)
+      package.loaded["poste-db.state"] = { find_poste_binary = function() return "/fake/poste" end }
+      package.loaded["poste-db.cli"] = {
+        run_async = function(cmd, _cbs)
+          captured.cmd = cmd
+          return 5
+        end,
+      }
+      package.loaded["poste-db.exec_run"] = nil
+      return require("poste-db.exec_run")
+    end
+
+    local function arg_value(cmd, flag)
+      for i, v in ipairs(cmd or {}) do
+        if v == flag then return cmd[i + 1] end
+      end
+      return nil
+    end
+
+    it("passes a named database through", function()
+      local captured = {}
+      local er = load_capturing(captured)
+      er.run_async("SELECT 1;", { conn_url = "pg://h/app", database = "reporting", log = false }, {})
+      assert.equals("reporting", arg_value(captured.cmd, "--database"))
+      assert.equals("pg://h/app", arg_value(captured.cmd, "--connection"))
+    end)
+
+    it("keeps a JSON null name out of the argv", function()
+      local captured = {}
+      local er = load_capturing(captured)
+      local ok = pcall(er.run_async, "SELECT 1;",
+        { conn_url = "pg://h/app", database = vim.NIL, log = false }, {})
+      assert.is_true(ok, "a userdata argument must never reach cli.run_async")
+      assert.is_nil(arg_value(captured.cmd, "--database"))
+    end)
+
+    it("keeps a blank name out of the argv", function()
+      local captured = {}
+      local er = load_capturing(captured)
+      er.run_async("SELECT 1;", { conn_url = "", database = "", log = false }, {})
+      assert.is_nil(arg_value(captured.cmd, "--database"))
+      assert.is_nil(arg_value(captured.cmd, "--connection"))
+    end)
+
+    it("still runs a lone USE locally when the caller named a blank database", function()
+      -- The USE shortcut is guarded by "did the caller pin a target?". A `""`
+      -- used to count as a pin, so the statement went to exec-file — which
+      -- filters USE out of a run — and the context never switched.
+      local captured = {}
+      local er = load_capturing(captured)
+      local responses = {}
+      local ret = er.run_async("USE other_db;", { conn_url = nil, database = "", log = false }, {
+        on_response = function(resp) responses[#responses + 1] = resp end,
+      })
+      assert.is_nil(captured.cmd, "nothing is dispatched to the binary")
+      assert.equals(1, #responses)
+      assert.equals("other_db", responses[1].database)
+      assert.equals(1, ret)
+    end)
+  end)
 end)
 
 describe("exec_run.first_error", function()

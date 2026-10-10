@@ -84,7 +84,11 @@ end
 --- nothing after it (and hid the buffer's own context behind it), and a session
 --- started with `--database ""` — which the CLI applies as a URL rewrite
 --- (`exec_file.rs` / `session.rs`: `replace_database_in_url`), so the statement
---- ran with the database stripped off the connection string.
+--- ran with the database stripped off the connection string. Generated SQL took
+--- the same bait: `ops_sql.qualified_table_ref` still joined the empty schema to
+--- its separator and emitted `."users"` (a syntax error), and a JSON null name
+--- decodes to `vim.NIL`, which is truthy, so it raised in `ident.quote` or at
+--- the `..` instead of yielding a statement.
 --- `nav_ui`, `sql_runner`, `explain`, `completion/data` and `introspect/table`
 --- already test `x ~= ""`; this is that rule with the type check attached, so a
 --- site reads once instead of re-deriving which of nil, `""` and `vim.NIL` it

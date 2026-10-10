@@ -207,34 +207,23 @@ function M.rename(node, context)
     if not input or input == "" or input == node.name then return end
 
     local conn = get_connection_name(node, context)
-    local lines = { "" }
-    local cursor_offset = 2  -- after empty line → ALTER line
-
+    -- The header is build_directive_lines' job — rename spelled it inline twice
+    -- and drifted from every other generator: it emitted `-- @connection` /
+    -- `-- @database` for a blank name too, leaving a valueless directive (which
+    -- selects nothing) in front of the statement the user asked for.
+    local lines, cursor_offset
     if node.node_type == "table" then
-      if conn then
-        table.insert(lines, "-- @connection " .. conn)
-        cursor_offset = cursor_offset + 1
-      end
-      if node.meta and node.meta.database then
-        table.insert(lines, "-- @database " .. node.meta.database)
-        cursor_offset = cursor_offset + 1
-      end
-
+      lines, cursor_offset = build_directive_lines(node, conn)
       table.insert(lines, ops_sql.rename_table_sql(node, input, dialect))
-    elseif node.node_type == "column" then
+    else
       local table_node = find_table_node(context, vim.fn.line(".") - HEADER_LINES)
       if not table_node then
         notify.warn("Could not find parent table")
         return
       end
-      if conn then
-        table.insert(lines, "-- @connection " .. conn)
-        cursor_offset = cursor_offset + 1
-      end
-      if table_node.meta and table_node.meta.database then
-        table.insert(lines, "-- @database " .. table_node.meta.database)
-        cursor_offset = cursor_offset + 1
-      end
+      -- A column is renamed through its table's target: the column node has no
+      -- database of its own.
+      lines, cursor_offset = build_directive_lines(table_node, conn)
       table.insert(lines, ops_sql.rename_column_sql(table_node, node, input, dialect))
     end
 

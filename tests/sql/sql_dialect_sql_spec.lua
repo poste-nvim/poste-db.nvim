@@ -59,6 +59,24 @@ describe("db_browser rename SQL", function()
       ops_sql.rename_table_sql(table_node({ meta = {} }), "purchases", "mssql"))
   end)
 
+  -- The name of a schema node is an introspection row's name, so "no schema"
+  -- reads as `""` (and a JSON null as vim.NIL). Both are truthy, and both used
+  -- to reach the prefix join: Postgres got `ALTER TABLE ."orders"`, which is a
+  -- syntax error rather than a rename, and the null raised on the concat the
+  -- sp_rename path needs.
+  it("renames from the bare table when the node has no schema name", function()
+    local col = { node_type = "column", name = "total", meta = { col_type = "INT" } }
+    for _, blank in ipairs({ "", vim.NIL, 0 }) do
+      local node = table_node({ meta = { schema = blank, database = "blog" } })
+      assert.equals('ALTER TABLE "orders" RENAME TO "purchases";',
+        ops_sql.rename_table_sql(node, "purchases", "postgres"))
+      assert.equals("EXEC sp_rename 'orders', 'purchases';",
+        ops_sql.rename_table_sql(node, "purchases", "mssql"))
+      assert.equals('ALTER TABLE "orders" RENAME COLUMN "total" TO "amount";',
+        ops_sql.rename_column_sql(node, col, "amount", "postgres"))
+    end
+  end)
+
   it("renames a column through sp_rename for mssql", function()
     local col = { node_type = "column", name = "total", meta = { col_type = "INT" } }
     assert.equals("EXEC sp_rename 'dbo.orders.total', 'amount', 'COLUMN';",
