@@ -136,6 +136,14 @@ describe("format wrap_text (error box)", function()
     assert.equals(cjk, recombined)
   end)
 
+  it("terminates on a budget narrower than one character", function()
+    -- a 2-column glyph cannot fit in 1 cell: the cut must still take it whole
+    -- rather than loop forever on an empty prefix
+    local wrapped = sql_format._test.wrap_text(string.rep("数", 4), 1)
+    assert.equals(4, #wrapped)
+    assert.equals(string.rep("数", 4), table.concat(wrapped))
+  end)
+
   it("wraps a mixed ASCII/CJK error message without corrupting it", function()
     local err = "relation 「ユーザーマスタ」 does not exist 数" .. string.rep("x", 100)
     local wrapped = sql_format._test.wrap_text(err, 78)

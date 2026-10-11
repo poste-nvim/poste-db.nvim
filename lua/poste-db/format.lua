@@ -903,20 +903,23 @@ local function wrap_text(text, width)
     -- `line:sub(1, width)` split multibyte characters in half and put
     -- invalid UTF-8 into the buffer (error messages routinely contain
     -- non-ASCII table/column names).
-    while vim.fn.strdisplaywidth(line) > width do
-      local fit, w = 0, 0
-      local nchars = vim.fn.strchars(line)
-      for i = 0, nchars - 1 do
-        local cw = vim.fn.strdisplaywidth(vim.fn.strcharpart(line, i, 1))
-        if w + cw > width then break end
-        w = w + cw
-        fit = i + 1
+    -- wutil.truncate walks the line once per cut; the scan it replaced
+    -- measured every character with its own strdisplaywidth() call, so a
+    -- long driver error paid O(n^2) nvim round-trips to wrap.
+    local chunks = 0
+    while wutil.display_width(line) > width do
+      local head = wutil.truncate(line, width)
+      if head == "" then
+        -- one character wider than the line: take it whole or loop forever
+        head = vim.fn.strcharpart(line, 0, 1)
       end
-      if fit == 0 then fit = 1 end -- single char wider than the line
-      table.insert(lines, vim.fn.strcharpart(line, 0, fit))
-      line = vim.fn.strcharpart(line, fit)
+      table.insert(lines, head)
+      line = line:sub(#head + 1)
+      chunks = chunks + 1
     end
-    table.insert(lines, line)
+    -- A cut that lands exactly on the end of the line leaves "": emitting it
+    -- added a blank row the message never had.
+    if chunks == 0 or line ~= "" then table.insert(lines, line) end
   end
   return lines
 end
