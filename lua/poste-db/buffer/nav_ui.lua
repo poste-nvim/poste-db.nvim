@@ -30,19 +30,9 @@ local function shorten_select_fields(sql)
   return select_prefix .. first_col .. ", ..." .. from_clause
 end
 
---- Truncate a string to `max_width` display cells, appending `…`. Uses
---- `strdisplaywidth` so CJK/emoji never split mid-character.
-local function truncate_display(s, max_width)
-  if vim.fn.strdisplaywidth(s) <= max_width then return s end
-  local out, w = {}, 0
-  for _, ch in ipairs(vim.fn.split(s, "\\zs")) do
-    local cw = vim.fn.strdisplaywidth(ch)
-    if w + cw > max_width - 1 then break end
-    w = w + cw
-    out[#out + 1] = ch
-  end
-  return table.concat(out) .. "…"
-end
+--- Truncate a string to `max_width` display cells, appending `…`
+--- (width.truncate_ellipsis — see lua/poste-db/width.lua).
+local truncate_display = require("poste-db.width").truncate_ellipsis
 
 function M.format_conn_short(conn)
   if not conn or conn == "" then return nil end

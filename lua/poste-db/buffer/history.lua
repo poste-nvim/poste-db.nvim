@@ -23,24 +23,16 @@ local hl_ns = vim.api.nvim_create_namespace("poste_db_history")
 
 local update_sql_statusline  -- forward declaration (refresh ⇢ update_sql_statusline)
 
+local width = require("poste-db.width")
+
 --- Display width (CJK/emoji-aware) — `vim.fn.strdisplaywidth`.
 local function display_width(s)
-  return vim.fn.strdisplaywidth(s or "")
+  return width.display_width(s or "")
 end
 
 --- Truncate a string to `max_width` display cells, reserving one cell for
---- the trailing ellipsis. Never splits a UTF-8 character.
-local function truncate_display(s, max_width)
-  if display_width(s) <= max_width then return s end
-  local out, w = {}, 0
-  for _, ch in ipairs(vim.fn.split(s, "\\zs")) do
-    local cw = display_width(ch)
-    if w + cw > max_width - 1 then break end
-    w = w + cw
-    out[#out + 1] = ch
-  end
-  return table.concat(out) .. "…"
-end
+--- the trailing ellipsis (width.truncate_ellipsis — see lua/poste-db/width.lua).
+local truncate_display = width.truncate_ellipsis
 
 --- Build the sidebar lines: `[i] label  time`, active marked with ▸,
 --- errors prefixed with ✗. The time column shows the wall-clock moment the

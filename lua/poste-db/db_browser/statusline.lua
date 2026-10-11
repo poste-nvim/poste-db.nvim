@@ -22,20 +22,9 @@ local function statusline_escape(s)
   return (s:gsub("%%", "%%%%"))
 end
 
---- Truncate a string to `max` display cells, appending "…". Uses
---- strdisplaywidth so CJK/emoji never split mid-character.
-local function truncate_display(s, max)
-  if max < 1 then return "" end
-  if vim.fn.strdisplaywidth(s) <= max then return s end
-  local out, w = {}, 0
-  for _, ch in ipairs(vim.fn.split(s, "\\zs")) do
-    local cw = vim.fn.strdisplaywidth(ch)
-    if w + cw > max - 1 then break end
-    w = w + cw
-    out[#out + 1] = ch
-  end
-  return table.concat(out) .. "…"
-end
+--- Truncate a string to `max` display cells, appending "…"
+--- (width.truncate_ellipsis — see lua/poste-db/width.lua).
+local truncate_display = require("poste-db.width").truncate_ellipsis
 
 local function conn_part(conn_name)
   return "%#PosteDbBrowserIconConn#" .. ICON_CONN .. " %*" .. statusline_escape(conn_name)

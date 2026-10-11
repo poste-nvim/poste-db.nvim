@@ -160,3 +160,37 @@ describe("format_dataset with a Devanagari cell (terminal mode)", function()
     assert.equals(width.display_width(header), width.display_width(row))
   end)
 end)
+
+describe("width.truncate_ellipsis", function()
+  it("leaves a string that fits alone", function()
+    assert.equals("hello", width.truncate_ellipsis("hello", 10))
+    assert.equals("hello", width.truncate_ellipsis("hello", 5))
+  end)
+
+  it("reserves a cell for the ellipsis so the result never exceeds the budget", function()
+    local out = width.truncate_ellipsis(string.rep("x", 20), 6)
+    assert.equals(6, width.display_width(out))
+    assert.equals("xxxxx…", out)
+  end)
+
+  it("never splits a multibyte character", function()
+    -- 10 CJK glyphs = 20 cells; a budget of 7 cells keeps 3 glyphs + "…"
+    local out = width.truncate_ellipsis(string.rep("字", 10), 7)
+    assert.equals(7, width.display_width(out))
+    assert.equals("字字字…", out)
+    -- strcharpart round-trips only a well-formed string
+    assert.equals(out, vim.fn.strcharpart(out, 0, vim.fn.strchars(out)))
+  end)
+
+  it("degrades to the ellipsis alone, then to empty, on a sub-cell budget", function()
+    -- the three copies of this loop disagreed here: one returned "" for
+    -- max < 1, the others fell through to the loop
+    assert.equals("…", width.truncate_ellipsis("hello", 1))
+    assert.equals("", width.truncate_ellipsis("hello", 0))
+    assert.equals("", width.truncate_ellipsis("hello", -3))
+  end)
+
+  it("handles nil", function()
+    assert.equals("", width.truncate_ellipsis(nil, 8))
+  end)
+end)

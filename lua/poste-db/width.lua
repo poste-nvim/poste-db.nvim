@@ -190,4 +190,19 @@ function M.truncate(s, max_dw)
   return s:sub(1, i - 1)
 end
 
+--- Truncate to `max_dw` display cells and mark the cut with a single-cell
+--- ellipsis, so the result never measures more than `max_dw` (M.truncate
+--- returns the surviving prefix and leaves the caller to add the marker,
+--- which is how three copies of this loop drifted apart: one reserved a cell
+--- for the ellipsis, one did not, and one returned "" for `max < 1`).
+--- @param s string|nil
+--- @param max_dw number  total budget, ellipsis included
+--- @return string  "" when the budget cannot hold even the ellipsis
+function M.truncate_ellipsis(s, max_dw)
+  if not s then return "" end
+  if max_dw <= 1 then return max_dw <= 0 and "" or "…" end
+  if M.display_width(s) <= max_dw then return s end
+  return M.truncate(s, max_dw - 1) .. "…"
+end
+
 return M
