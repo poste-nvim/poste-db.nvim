@@ -34,7 +34,12 @@ local MAX_ERROR_LEN = 500
 --- still has to say why it is red, or a reader of `<leader>l` has to guess.
 local UNEXPLAINED_FAILURE = "reported as a failed statement without an error message"
 
-local function get_log_path()
+--- Where the journal lives. The one place that knows: the writer
+--- (`M.append`), `M.clear` and the `<leader>l` viewer all read the journal
+--- through here, so the viewer honors `set_log_path` too (it used to build
+--- the same `stdpath("data").."/poste/sql_log.jsonl"` string itself and read
+--- the real journal even when a spec had redirected the writer).
+function M.path()
   if SQL_LOG_PATH then return SQL_LOG_PATH end
   SQL_LOG_PATH = vim.fn.stdpath("data") .. "/poste/sql_log.jsonl"
   local dir = vim.fn.fnamemodify(SQL_LOG_PATH, ":h")
@@ -91,7 +96,7 @@ function M.record(entry)
   local ok, line = pcall(M.format_entry, entry)
   if not ok then return nil end
 
-  local path = get_log_path()
+  local path = M.path()
   local ok_w = pcall(function()
     local f = io.open(path, "a")
     if f then

@@ -12,8 +12,11 @@ local entries = {}
 local expanded = {}
 local filter_text = ""
 
+--- The journal's location, from the module that writes it — the viewer must
+--- read the same file the writer was pointed at (a spec's `set_log_path`
+--- included), not a second copy of the path string.
 local function get_log_path()
-  return vim.fn.stdpath("data") .. "/poste/sql_log.jsonl"
+  return require("poste-db.sql_log").path()
 end
 
 --- Fields the viewer reads as strings, coerced at the load seam. The journal

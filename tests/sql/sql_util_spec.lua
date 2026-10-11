@@ -117,3 +117,26 @@ describe("util.named", function()
     assert.is_nil(util.named(function() return "db" end))
   end)
 end)
+
+describe("util.affected_rows", function()
+  it("passes a real count through", function()
+    assert.equals(0, util.affected_rows(0))
+    assert.equals(7, util.affected_rows(7))
+  end)
+
+  it("reads a count that arrived as text as a count", function()
+    assert.equals(7, util.affected_rows("7"))
+  end)
+
+  it("reads no count at all as nil, including a decoded JSON null", function()
+    -- vim.NIL is truthy: left alone it reaches the response envelope as
+    -- "something was affected" and a SELECT renders as "0 rows affected"
+    assert.is_nil(util.affected_rows(nil))
+    assert.is_nil(util.affected_rows(vim.NIL))
+  end)
+
+  it("reads unparseable text as nil rather than as a number", function()
+    assert.is_nil(util.affected_rows(""))
+    assert.is_nil(util.affected_rows("nope"))
+  end)
+end)

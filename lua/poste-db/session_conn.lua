@@ -94,11 +94,6 @@ local function session_target(conn_url, database)
   return named or database_from_url(conn_url), named ~= nil
 end
 
-local function norm_affected(v)
-  if v == nil or v == vim.NIL then return nil end
-  return tonumber(v)
-end
-
 -- One wire response aggregating a sequence's per-statement results, shaped
 -- like `build_response` so the consumers (sql_runner's SET-prelude filter,
 -- dataset rendering, journaling) see the same body either way. `sql` on each
@@ -214,7 +209,7 @@ end
 
 local function build_response(event, session)
   local has_err = event.status ~= "ok"
-  local aff = norm_affected(event.affected_rows)
+  local aff = util.affected_rows(event.affected_rows)
   -- A rejected statement is never a resultset, even when it carries neither an
   -- affected count nor columns: typed as a query it reached the dataset panel as
   -- "(no results)", which is how a session-routed failure used to look like an

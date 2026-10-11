@@ -173,13 +173,6 @@ local function has_target(opts)
   return util.named(opts.conn_url) ~= nil or util.named(opts.database) ~= nil
 end
 
--- Normalize an `affected_rows` value from the event stream (number → number,
--- JSON null → nil).
-local function norm_affected(v)
-  if v == nil or v == vim.NIL then return nil end
-  return tonumber(v)
-end
-
 -- The `exec-file` result event carries the SQL text; use its leading keyword to
 -- tell a query apart from a DML even when the binary/driver reports
 -- `affected_rows` as a number (not null) and omits columns/rows for a SELECT.
@@ -247,7 +240,7 @@ local function build_response(events, conn, shown_db)
         columns = ev.columns or {},
         rows = ev.rows or {},
         row_count = tonumber(ev.row_count) or 0,
-        affected_rows = norm_affected(ev.affected_rows),
+        affected_rows = util.affected_rows(ev.affected_rows),
         execution_time_ms = tonumber(ev.execution_time_ms) or 0,
       }
       -- Text is optional and, over JSON, may arrive as null (`vim.NIL`, which is

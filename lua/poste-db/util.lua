@@ -165,6 +165,20 @@ function M.find_file_upwards(filename, start_dir)
   end
 end
 
+--- A statement's affected-row count as the response envelope carries it: a
+--- number, or nil for "the statement returned no rows and changed nothing"
+--- (a SELECT has no count at all). JSON null decodes to the truthy `vim.NIL`,
+--- which every consumer would otherwise read as "something was affected", and
+--- a count that arrives as a string (`"3"`) is a count.
+--- Shared by exec_run's and session_conn's response builders so the two
+--- transports cannot disagree about what "no count" looks like.
+--- @param v any
+--- @return number|nil
+function M.affected_rows(v)
+  if v == nil or v == vim.NIL then return nil end
+  return tonumber(v)
+end
+
 --- Given an array of lines from a job's stdout/stderr callback, remove
 --- trailing empty strings. Neovim's jobstart callbacks often include
 --- one or more trailing empty strings; this is a safe normalizer.
