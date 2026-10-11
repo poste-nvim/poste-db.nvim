@@ -59,6 +59,30 @@ describe("statement extract_label", function()
     local buf = { "    -- get users", "SELECT * FROM users;" }
     assert.equals("get users", statement.extract_label(buf, 2))
   end)
+
+  it("caps a ### block header at the same budget as a comment label", function()
+    local long = string.rep("y", 60)
+    local buf = { "### " .. long, "SELECT 1;" }
+    local label = statement.extract_label(buf, 2)
+    assert.equals(40, #label)
+    assert.equals("...", label:sub(-3))
+  end)
+
+  it("caps a ### header without splitting a multibyte character", function()
+    -- 30 CJK glyphs = 90 bytes: the byte-cut this replaced stopped inside a
+    -- 3-byte character and put invalid UTF-8 into the sidebar.
+    local buf = { "### " .. string.rep("字", 30), "SELECT 1;" }
+    local label = statement.extract_label(buf, 2)
+    assert.is_not_nil(label)
+    assert.is_true(vim.fn.strdisplaywidth(label) <= 40)
+    -- no U+FFFD: a byte-level cut left a half character behind and the
+    -- sidebar rendered the replacement glyph
+    assert.is_nil(label:find("\239\191\189", 1, true))
+    -- whole characters only: strcharpart round-trips a well-formed string
+    assert.equals(label, vim.fn.strcharpart(label, 0, vim.fn.strchars(label)))
+    assert.equals("...", label:sub(-3))
+    assert.is_true(vim.fn.strchars(label) > 1)
+  end)
 end)
 
 describe("dataset history", function()
@@ -163,6 +187,47 @@ describe("dataset history", function()
     assert.equals(0, D.history_count())
     assert.equals(0, D.active_history)
     assert.same({}, D.tabs)
+  end)
+
+  it("delete_entry keeps the active request when an older one is removed", function()
+    D.new_entry({ label = "1" })
+    D.new_entry({ label = "2" })
+    local e3 = D.new_entry({ label = "3" })
+    assert.equals(3, D.active_history)
+    D.delete_entry(1)
+    -- e3 slid from slot 3 to slot 2 and must still be the one on screen
+    assert.equals(2, D.history_count())
+    assert.equals(2, D.active_history)
+    assert.same(e3, D.active_entry())
+    assert.same(e3.tabs, D.tabs)
+  end)
+
+  it("delete_entry keeps the active request when a middle one is removed", function()
+    D.new_entry({ label = "1" })
+    D.new_entry({ label = "2" })
+    local e3 = D.new_entry({ label = "3" })
+    D.delete_entry(2)
+    assert.equals(2, D.active_history)
+    assert.same(e3, D.active_entry())
+  end)
+
+  it("delete_entry leaves the active request alone when a newer one is removed", function()
+    local e1 = D.new_entry({ label = "1" })
+    D.new_entry({ label = "2" })
+    D.new_entry({ label = "3" })
+    D.switch_entry(1)
+    D.delete_entry(3)
+    assert.equals(1, D.active_history)
+    assert.same(e1, D.active_entry())
+  end)
+
+  it("delete_entry clamps to the new last entry when the tail was active", function()
+    D.new_entry({ label = "1" })
+    local e2 = D.new_entry({ label = "2" })
+    D.new_entry({ label = "3" })
+    D.delete_entry(3)
+    assert.equals(2, D.active_history)
+    assert.same(e2, D.active_entry())
   end)
 
   it("next_label_number counts per buffer", function()

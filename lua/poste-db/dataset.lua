@@ -85,6 +85,14 @@ function M.switch_entry(idx)
 end
 
 --- Delete a history entry, fixing up the active pointer afterwards.
+---
+--- The pointer follows the ENTRY the user was looking at, not the slot:
+--- removing an entry in front of the active one shifts it down by one, and
+--- only removing the active entry itself may move the pointer. The old
+--- "clamp then decrement" pair ran both rules on the same index, so deleting
+--- any request older than the active one while the active one was last
+--- ([A,B,C] active=C, delete A) landed on B — the dataset panel switched to a
+--- request the user never asked for.
 --- @param idx number 1-based history index
 --- @return table|nil removed entry
 function M.delete_entry(idx)
@@ -95,9 +103,15 @@ function M.delete_entry(idx)
     M.tabs = {}
     M.active_tab_idx = 0
   else
-    if M.active_history > #M.history then M.active_history = #M.history end
-    if M.active_history >= idx then M.active_history = M.active_history - 1 end
-    if M.active_history < 1 then M.active_history = 1 end
+    if M.active_history > idx then
+      -- the active entry sat behind the hole: it moved up one slot
+      M.active_history = M.active_history - 1
+    elseif M.active_history == idx then
+      -- the active entry is gone: keep the slot (the entry that slid into it,
+      -- or the new last one when the tail was removed)
+      M.active_history = math.min(idx, #M.history)
+    end
+    M.active_history = math.max(1, math.min(M.active_history, #M.history))
     local entry = M.active_entry()
     M.tabs = entry.tabs
     if M.active_tab_idx > #entry.tabs then M.active_tab_idx = 0 end
