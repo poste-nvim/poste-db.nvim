@@ -741,6 +741,67 @@ function M.close()
   win = nil
 end
 
+--- `C` used to wipe the whole journal on one keypress. The journal is the
+--- only copy of what ran — the notify that reported a failure scrolled off
+--- seconds later — and `C` sits one key away from `y`/`r`/`f` in normal mode.
+--- Ask first, in the same `[y] / [n]` shape the paste confirm already uses.
+--- `M.clear_logs` stays the unconditional entry point for callers that have
+--- already decided (and for specs).
+--- @param opts table|nil { on_confirm = fun(), on_cancel = fun() } for tests
+function M.request_clear(opts)
+  opts = opts or {}
+  if #entries == 0 then
+    -- nothing to lose: skip the question
+    M.clear_logs()
+    if opts.on_confirm then opts.on_confirm() end
+    return true
+  end
+
+  local dialog = require("poste-db.dialog")
+  local path = get_log_path()
+  local lines = {
+    "  Entries:  " .. #entries,
+    "  File:     " .. path,
+    "",
+    "  The journal is the only record of what ran — this cannot be undone.",
+    "",
+    "  [y] Clear  [n] Cancel",
+  }
+
+  -- One settle path, like show_paste_confirm: y clears, and n / q / <Esc> /
+  -- WinLeave all count as cancel, so a bare close cannot be read as consent.
+  local answered = false
+  local dlg
+  local function answer(is_cancel)
+    if answered then return end
+    answered = true
+    dlg:close() -- re-enters via on_close; the answered flag absorbs it
+    if is_cancel then
+      vim.notify("SQL log left untouched", vim.log.levels.INFO, { title = "PosteDb" })
+      if opts.on_cancel then opts.on_cancel() end
+      return
+    end
+    M.clear_logs()
+    if opts.on_confirm then opts.on_confirm() end
+  end
+
+  dlg = dialog.open({
+    title = "Clear SQL log",
+    width = math.max(60, 8 + vim.fn.strdisplaywidth(path)),
+    height = #lines + 2,
+    border = "rounded",
+    backdrop = true,
+    on_close = function() answer(true) end,
+  })
+
+  local km = { buffer = dlg.buf, noremap = true, silent = true, nowait = true }
+  vim.keymap.set("n", "y", function() answer(false) end, km)
+  vim.keymap.set("n", "n", function() answer(true) end, km)
+
+  dlg:update(lines)
+  return true
+end
+
 function M.clear_logs()
   local path = get_log_path()
   local dir = vim.fn.fnamemodify(path, ":h")
@@ -797,7 +858,7 @@ function M.toggle()
   vim.keymap.set("n", "F", M.clear_filter, opts)
   vim.keymap.set("n", "r", M.re_run, opts)
   vim.keymap.set("n", "y", M.yank_sql, opts)
-  vim.keymap.set("n", "C", M.clear_logs, opts)
+  vim.keymap.set("n", "C", M.request_clear, opts)
 end
 
 --- Test hooks for the display-width helpers. Kept at the bottom of the file:

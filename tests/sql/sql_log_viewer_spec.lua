@@ -482,3 +482,76 @@ describe("log viewer clear_logs", function()
     assert.truthy(notified[1].msg:find("could not be written", 1, true))
   end)
 end)
+
+describe("log viewer request_clear", function()
+  -- `C` wiped the whole journal on one keypress. The journal is the only
+  -- record of what ran (the notify that reported a failure is long gone),
+  -- so the keymap now asks first.
+  local real_open, real_notify
+  local notified
+
+  before_each(function()
+    real_open = io.open
+    real_notify = vim.notify
+    notified = {}
+    -- luacheck: ignore 122
+    io.open = function(_, mode)
+      if mode == "w" then written = (written or 0) + 1; return { write = function() end, close = function() end } end
+      return nil
+    end
+    vim.notify = function(msg, level) notified[#notified + 1] = { msg = msg, level = level } end
+  end)
+
+  after_each(function()
+    -- luacheck: ignore 122
+    io.open = real_open
+    vim.notify = real_notify
+    written = nil
+  end)
+
+  local function load_two_entries()
+    -- two parsed entries, so the confirm path is the one under test
+    log._set_entries({
+      { ts = "2026-06-13T10:30:00", source = "exec", sql = "SELECT 1", status = "success" },
+      { ts = "2026-06-13T10:31:00", source = "exec", sql = "SELECT 2", status = "error", error = "boom" },
+    })
+  end
+
+  it("clears without asking when there is nothing to lose", function()
+    log._set_entries({})
+    log.request_clear()
+    assert.equals("SQL log cleared", notified[1].msg)
+  end)
+
+  it("does not wipe the journal until the confirm answers yes", function()
+    load_two_entries()
+    local confirmed, cancelled = false, false
+    log.request_clear({
+      on_confirm = function() confirmed = true end,
+      on_cancel = function() cancelled = true end,
+    })
+    -- the dialog is open and unanswered: neither callback fired, nothing written
+    assert.is_false(confirmed)
+    assert.is_false(cancelled)
+    assert.is_nil(written)
+  end)
+
+  it("clears when the dialog is answered y", function()
+    load_two_entries()
+    local confirmed = false
+    log.request_clear({ on_confirm = function() confirmed = true end })
+    vim.api.nvim_feedkeys("y", "x", false)
+    assert.is_true(confirmed)
+    assert.equals(1, written)
+  end)
+
+  it("leaves the journal alone when the dialog is answered n", function()
+    load_two_entries()
+    local cancelled = false
+    log.request_clear({ on_cancel = function() cancelled = true end })
+    vim.api.nvim_feedkeys("n", "x", false)
+    assert.is_true(cancelled)
+    assert.is_nil(written)
+    assert.equals("SQL log left untouched", notified[1].msg)
+  end)
+end)
