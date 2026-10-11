@@ -650,7 +650,9 @@ function M.render_page(layout, page, page_size)
   local numeric_cols = layout.numeric_cols
   local rows = layout.rows
   local total_rows = layout.total_rows or #rows
-  local total_pages = math.ceil(#rows / page_size)
+  -- `or 1`: a zero page size is not "infinitely many pages" — it is a call
+  -- that has no rows to page through, and the ceil would answer nan/inf.
+  local total_pages = page_size > 0 and math.ceil(#rows / page_size) or 1
   page = math.min(page, total_pages)
   if page < 1 then page = 1 end
   local start_idx = (page - 1) * page_size + 1
@@ -746,7 +748,9 @@ function M.render_view(layout, view_indices, page, page_size, opts)
   local numeric_cols = layout.numeric_cols
   local rows = layout.rows
   local total_view_rows = #view_indices
-  local total_pages = math.ceil(total_view_rows / page_size)
+  -- `or 1`: see render_page — a filter that matched nothing renders with a
+  -- zero page size, and ceil(0/0) is nan.
+  local total_pages = page_size > 0 and math.ceil(total_view_rows / page_size) or 1
   page = math.min(page, total_pages)
   if page < 1 then page = 1 end
   local start_pos = (page - 1) * page_size + 1
@@ -789,6 +793,19 @@ function M.render_view(layout, view_indices, page, page_size, opts)
     local line, starts = data_row(cells, col_widths, numeric_cols)
     lines[line_num] = line
     row_col_starts[#row_col_starts + 1] = starts
+  end
+  if page_rows == 0 then
+    -- A filter or search that matched nothing used to render a bare table with
+    -- two borders and no rows — the same view render_page already labelled.
+    line_num = line_num + 1
+    local empty_cells = { "" }
+    for i = 1, #columns do
+      empty_cells[i + 1] = ""
+    end
+    lines[line_num] = data_row(empty_cells, col_widths, {})
+    row_col_starts[#row_col_starts + 1] = {}
+    line_num = line_num + 1
+    lines[line_num] = "  (empty)"
   end
   local data_end = line_num
   line_num = line_num + 1

@@ -189,6 +189,55 @@ describe("format dataset default page size", function()
   end)
 end)
 
+describe("format render_view empty view", function()
+  local function layout()
+    return sql_format.plan_resultset_layout({
+      type = "resultset",
+      total_rows = 3,
+      results = { {
+        columns = { { name = "id", type = "INT" }, { name = "name", type = "TEXT" } },
+        rows = { { 1, "a" }, { 2, "b" }, { 3, "c" } },
+        row_count = 3,
+      } },
+      connection = "", database = "", dialect = "postgres",
+    })
+  end
+
+  it("says (empty) when the view has no rows at all", function()
+    -- A filter or search that matched nothing rendered a bare table with two
+    -- borders and no rows — indistinguishable from a rendering failure.
+    local lines, meta = sql_format.render_view(layout(), {}, 1, 0)
+    assert.equals(0, meta.row_count)
+    local rendered = table.concat(lines, "\n")
+    assert.truthy(rendered:find("(empty)", 1, true))
+  end)
+
+  it("keeps the borders and the header around the (empty) row", function()
+    local lines = sql_format.render_view(layout(), {}, 1, 0)
+    assert.equals(6, #lines)
+    assert.truthy(lines[1]:find("┌", 1, true))
+    assert.truthy(lines[2]:find("id", 1, true))
+    assert.truthy(lines[3]:find("├", 1, true))
+    assert.truthy(lines[4]:find("│", 1, true))   -- the blank cell row
+    assert.equals("  (empty)", lines[5])
+    assert.truthy(lines[6]:find("└", 1, true))
+  end)
+
+  it("does not divide by a zero page size (nan page arithmetic)", function()
+    -- ceil(0/0) is nan: math.min(page, nan) hid it, but the page bounds were
+    -- one refactor away from leaking it into start_pos.
+    local _, meta = sql_format.render_view(layout(), {}, 1, 0)
+    assert.equals(0, meta.row_count)
+    assert.equals(0, meta.total_rows)
+  end)
+
+  it("still renders a view that has rows", function()
+    local lines, meta = sql_format.render_view(layout(), { 3, 1 }, 1, 50)
+    assert.equals(2, meta.row_count)
+    assert.is_nil(table.concat(lines, "\n"):find("(empty)", 1, true))
+  end)
+end)
+
 describe("format bordered table width stability", function()
   local config = require("poste-db.config")
   before_each(function()
