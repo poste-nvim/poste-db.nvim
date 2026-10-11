@@ -32,6 +32,9 @@ startup.
 
 Full documentation lives in `doc/poste-db.txt` (`:h poste-db`), with a
 [quick reference](docs/user/sql/quick-reference.md) for the everyday keys.
+Having trouble? See [SUPPORT.md](SUPPORT.md) — it covers the diagnosis path
+for binary, dialect, connection, and completion problems before you open an
+issue.
 
 ## Features
 
@@ -331,12 +334,66 @@ require("poste-db").setup({
 })
 ```
 
-## Requirements
+## Supported scope
 
-- Neovim >= 0.10.0
-- `poste` binary (found via `vim.g.poste_binary`, `$POSTE_BINARY`, a local build or `PATH`; otherwise auto-installed from poste.nvim releases on first setup)
-- blink.cmp (recommended) or nvim-cmp for completion
-- `ssh` on PATH for `tunnel` connections
+### Versions
+
+| Component | Requirement | Notes |
+|-----------|-------------|-------|
+| Neovim | ≥ 0.10.0 | Uses `vim.system`, `vim.treesitter.language` |
+| `poste` binary | Any release from [poste.nvim releases](https://github.com/beyondlex/poste.nvim/releases) | Auto-installed on first setup if none found; see [SUPPORT.md](SUPPORT.md) § "Binary / dialect mismatch" when Lua and binary disagree on a dialect |
+| blink.cmp | recommended | Auto-registers the `poste_db` source. nvim-cmp also supported. |
+| tree-sitter `sql` parser | required | `:TSInstall sql`. Statement splitting, completion, and diagnostics depend on it. |
+| `ssh` | only for `tunnel` connections | Must be on `$PATH`. |
+
+CI runs luacheck + the plenary suite on **nvim stable + nightly**. Older
+Neovim (0.9.x and below) is not tested and will not work — `vim.system` and
+the treesitter API used here are 0.10+ surfaces.
+
+### Platforms (prebuilt binaries)
+
+The auto-installer downloads from poste.nvim releases. Prebuilt assets exist
+for:
+
+| OS | Arch | Asset suffix |
+|----|------|--------------|
+| macOS | Apple Silicon | `aarch64-macos` |
+| macOS | Intel | `x86_64-macos` |
+| Linux | x86_64 | `x86_64-linux` |
+| Linux | aarch64 | `aarch64-linux` |
+| Windows | x86_64 | `x86_64-windows` |
+
+Other platforms (e.g. Linux armv7, FreeBSD) have no prebuilt binary — build
+the `poste` binary from
+[poste.nvim](https://github.com/beyondlex/poste.nvim) source and point
+`vim.g.poste_binary` (or `$POSTE_BINARY`) at it.
+
+### SQL dialects
+
+| Dialect | Status | Accepted aliases |
+|---------|--------|------------------|
+| PostgreSQL | full | `postgresql`, `cockroachdb`, `yugabyte`, `aurora-postgres`, `neon`, `supabase`, `timescaledb` |
+| MySQL | full | `tidb`, `singlestore`, `aurora-mysql`, `vitess`, `planetscale` |
+| MariaDB | full | normalizes to `mysql` |
+| SQLite | full | — |
+| SQL Server (T-SQL) | full | `mssql` |
+| ClickHouse | full | no transactional edits (engine has no `BEGIN/COMMIT`) |
+
+Aliases normalize to a base dialect before any handling — the binary, URL
+builder, completion, and icons only ever see base names. Adding an alias is
+one entry in `lua/poste-db/constants.lua`; adding a real dialect is a larger
+touch — see [`docs/dev/sql/dialect-support.md`](docs/dev/sql/dialect-support.md).
+
+### What is explicitly NOT supported
+
+- Neovim < 0.10.0
+- Vim (not Neovim) — the plugin uses `vim.system`, `vim.uv`, `vim.treesitter`
+- The AI chat without [poste-ai.nvim](https://github.com/beyondlex/poste-ai.nvim) installed (silently skipped — by design)
+- Non-prebuilt platforms without a manually-built `poste` binary
+
+If your environment is outside the supported scope, please don't open an
+issue asking when it will be supported unless you're also offering to
+maintain that port.
 
 ## Testing
 

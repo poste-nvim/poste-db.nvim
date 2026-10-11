@@ -1,0 +1,16 @@
+# Issue template config — routes reporters to self-diagnosis first.
+# Blank issues are disabled: every report goes through a template so the
+# triage-critical info (checkhealth + PosteDbInfo) arrives with the issue,
+# not after a round-trip asking for it.
+
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting guide
+    url: https://github.com/beyondlex/poste-db.nvim/blob/main/SUPPORT.md
+    about: "Binary not found? Wrong dialect behaviour? Completion not triggering? Read this before opening an issue — it covers the diagnosis path."
+  - name: SQL dialect support
+    url: https://github.com/beyondlex/poste-db.nvim/blob/main/docs/dev/sql/dialect-support.md
+    about: "Adding a dialect or alias? Start here — it has the touchpoint checklist and test expectations."
+  - name: Discussions
+    url: https://github.com/beyondlex/poste-db.nvim/discussions
+    about: "Questions, usage tips, and config sharing go in Discussions, not Issues."

@@ -1,0 +1,137 @@
+name: Bug report
+description: Something is not working as expected
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a report. Before submitting:
+
+        1. Run `:checkhealth poste-db` in Neovim — it catches the most common
+           breakages (missing binary, missing tree-sitter parser, wrong platform).
+        2. Run `:PosteDbInfo` — it names the binary that won, where it came from,
+           and its version. **If the issue is "my build is not being used" or
+           "wrong dialect behaviour", the answer is almost always in this
+           output.**
+        3. Skim [SUPPORT.md](../SUPPORT.md) — it covers the diagnosis path for
+           binary mismatch, connection, and completion problems.
+
+        Paste the full output of both commands below. Reports without them will
+        be asked to provide them before triage.
+
+  - type: textarea
+    id: checkhealth
+    attributes:
+      label: ":checkhealth poste-db output"
+      description: "Run `:checkhealth poste-db` and paste the full output. Run `:redir @+ | checkhealth poste-db | redir END` to copy it to the clipboard."
+      render: plain
+    validations:
+      required: true
+
+  - type: textarea
+    id: posteinfo
+    attributes:
+      label: ":PosteDbInfo output"
+      description: "Run `:PosteDbInfo` and paste the full output. This names the binary, its source, version, and connections.toml path."
+      render: plain
+    validations:
+      required: true
+
+  - type: input
+    id: nvim-version
+    attributes:
+      label: "Neovim version"
+      description: "Output of `nvim --version | head -1`"
+      placeholder: "NVIM v0.10.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: "Operating system"
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux (x86_64)
+        - Linux (aarch64)
+        - Windows (x86_64)
+        - Other / WSL
+    validations:
+      required: true
+
+  - type: dropdown
+    id: dialect
+    attributes:
+      label: "SQL dialect"
+      description: "The dialect of the connection involved (from `connections.toml`)."
+      options:
+        - postgres (incl. cockroachdb / supabase / neon / timescaledb / yugabyte / aurora-postgres)
+        - mysql (incl. mariadb / tidb / planetscale / vitess / singlestore / aurora-mysql)
+        - sqlite
+        - mssql (SQL Server / T-SQL)
+        - clickhouse
+        - N/A (not dialect-specific)
+    validations:
+      required: true
+
+  - type: input
+    id: poste-binary-source
+    attributes:
+      label: "How is the `poste` binary provided?"
+      description: "vim.g.poste_binary / $POSTE_BINARY / auto-installed / local build / PATH — whatever `:PosteDbInfo` reports under `from:`."
+      placeholder: "auto-installed (from installed release)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: "What happened?"
+      description: "A clear description of the unexpected behaviour. Include the exact key sequence or `:` command that triggered it."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "What did you expect?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: "Minimal reproduction"
+      description: |
+        The smallest `.sql` file + `connections.toml` snippet (redact credentials)
+        that reproduces the issue. If the bug involves a specific schema,
+        include the `CREATE TABLE` statements needed to reproduce.
+        A reproduction that runs against the `playground/` docker containers
+        is ideal — it lets us verify without guessing your environment.
+      render: sql
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Relevant log output"
+      description: "From `:PosteDbLog` or `$XDG_CACHE_HOME/poste-db.log`. Redact credentials."
+      render: plain
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "Pre-flight checks"
+      options:
+        - label: "I have run `:checkhealth poste-db` and pasted the output above"
+          required: true
+        - label: "I have run `:PosteDbInfo` and pasted the output above"
+          required: true
+        - label: "I have checked existing issues for duplicates"
+          required: true
+        - label: "I am on the latest `main` (or have noted my commit below)"
+          required: true
