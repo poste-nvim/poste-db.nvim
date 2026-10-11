@@ -45,7 +45,12 @@ end
 --- `sub` cut emitted invalid UTF-8 whenever the budget landed inside a CJK
 --- character — schema summaries and AI context blocks are routinely CJK.
 function M.utf8_safe_cut(s, max_bytes)
-  if not s or #s <= max_bytes then return s or "" end
+  -- Coerced like width's helpers: a value that arrives as a number or a
+  -- decoded JSON null measured fine everywhere else and then raised on `#s`
+  -- at the cut.
+  if s == nil or s == vim.NIL then return "" end
+  if type(s) ~= "string" then s = tostring(s) end
+  if #s <= max_bytes then return s end
   local cut = max_bytes
   while cut > 0 do
     local b = s:byte(cut + 1)

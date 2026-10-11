@@ -115,6 +115,17 @@ describe("dataset history", function()
       D.format_wallclock(sec, 0))
   end)
 
+  it("format_wallclock survives a timestamp os.date cannot render", function()
+    -- os.date answers nil (it does not raise) for a number outside its range:
+    -- 1e999, ±inf, a nanosecond field read as seconds. Indexing that nil took
+    -- the whole sidebar down for one malformed journal line.
+    for _, bad in ipairs({ "1e999", math.huge, -math.huge }) do
+      local ok = pcall(D.format_wallclock, bad, 0)
+      assert.is_true(ok, "renders for " .. tostring(bad))
+      assert.matches("^%d%d:%d%d:%d%d%.%d%d%d$", D.format_wallclock(bad, 0))
+    end
+  end)
+
   it("now_wall returns a wall-clock timestamp with sec and nsec", function()
     local ts = D.now_wall()
     assert.is_number(ts.sec)

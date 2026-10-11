@@ -190,6 +190,13 @@ describe("width.truncate_ellipsis", function()
     assert.equals("", width.truncate_ellipsis("hello", -3))
   end)
 
+  it("reads a non-string the way display_width measures it", function()
+    -- the two oracles are used together (measure then cut): display_width
+    -- already coerced, so a number measured fine and then raised on `#s`
+    assert.equals("42", width.truncate_ellipsis(42, 10))
+    assert.equals("42", width.truncate(42, 10))
+  end)
+
   it("handles nil", function()
     assert.equals("", width.truncate_ellipsis(nil, 8))
   end)

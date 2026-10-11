@@ -946,26 +946,30 @@ end
 --- @param connection string Connection info
 --- @return string[] lines
 function M.format_error(err, connection)
-  -- Errors arrive from several seams: the binary's `error` field passes
-  -- through verdict.error_text (structured → vim.inspect), but
-  -- response.handle_error forwards its raw message here too. Normalize before
-  -- wrap_text — `#text` raises on a number and `text .. "\n"` on a table, so a
-  -- non-string error used to crash the panel instead of rendering (the same
-  -- non-string-error family the db_browser summaries fixed).
-  if err == nil or err == vim.NIL then
-    err = ""
-  elseif type(err) ~= "string" then
-    err = vim.inspect(err)
+  -- BOTH arguments arrive from several seams and neither is guaranteed to be
+  -- text: the binary's `error` field passes through verdict.error_text
+  -- (structured → vim.inspect), response.handle_error forwards its raw message,
+  -- and `connection` is whatever the response envelope carried — a decoded JSON
+  -- null is the truthy `vim.NIL`, which `or "unknown"` does not catch and
+  -- concatenating raises on. Normalize each before use: `#text` raises on a
+  -- number, `text .. "\n"` on a table, and a crash here kills the panel
+  -- instead of rendering the error it was about to show.
+  local function as_text(v)
+    if v == nil or v == vim.NIL then return "" end
+    if type(v) == "string" then return v end
+    return vim.inspect(v)
   end
   -- A driver error can echo the DSN it failed on, so the message is redacted
   -- too — the panel is user-visible and the journal already is.
-  local wrapped = wrap_text(log.redact_url(err), 78)
+  local wrapped = wrap_text(log.redact_url(as_text(err)), 78)
   local lines = { "", "  ✗ SQL Error", "" }
   for _, l in ipairs(wrapped) do
     table.insert(lines, "  " .. l)
   end
   table.insert(lines, "")
-  table.insert(lines, "  Connection: " .. log.redact_url(connection or "unknown"))
+  local conn = as_text(connection)
+  if conn == "" then conn = "unknown" end
+  table.insert(lines, "  Connection: " .. log.redact_url(conn))
   table.insert(lines, "")
   return lines
 end

@@ -363,6 +363,25 @@ describe("format_error non-string error shapes", function()
     end
   end)
 
+  it("survives a non-string CONNECTION too", function()
+    -- `connection or "unknown"` does not catch a decoded JSON null (vim.NIL is
+    -- truthy) and concatenating it raised — the panel crashed instead of
+    -- rendering the error it was about to show.
+    for _, shape in ipairs({ vim.NIL, 42, true, { "conn" }, function() end }) do
+      local lines = sql_format._test.format_error("boom", shape)
+      local text = table.concat(lines, "\n")
+      assert.truthy(text:find("SQL Error", 1, true), "renders for " .. vim.inspect(shape))
+      assert.truthy(text:find("Connection: ", 1, true))
+    end
+  end)
+
+  it("calls an empty connection unknown", function()
+    -- the response envelope normalises an unknown connection to ""
+    local text = table.concat(sql_format._test.format_error("boom", ""), "\n")
+    assert.truthy(text:find("Connection: unknown", 1, true))
+    assert.is_nil(text:find("Connection: \n", 1, true))
+  end)
+
   it("still redacts the DSN inside a structured error's inspect text", function()
     local lines = sql_format._test.format_error(
       { detail = "postgres://u:pw@h:5432/db" }, "conn")

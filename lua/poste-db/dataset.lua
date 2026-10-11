@@ -181,6 +181,10 @@ function M.format_wallclock(sec, nsec)
   -- tonumber gate: os.date raises on a non-number sec, and the history
   -- render must not be killable by one malformed timestamp
   local t = os.date("*t", tonumber(sec) or os.time())
+  -- os.date answers nil (not an error) for a number outside its range —
+  -- 1e999, ±inf, a nanosecond field read as seconds — and indexing that nil
+  -- took the whole sidebar down for one bad journal line. Fall back to now.
+  if type(t) ~= "table" then t = os.date("*t", os.time()) end
   local ms = math.floor((tonumber(nsec) or 0) / 1000000)
   return string.format("%02d:%02d:%02d.%03d", t.hour, t.min, t.sec, ms)
 end

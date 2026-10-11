@@ -1,5 +1,20 @@
 local M = {}
 
+--- Read `name` as an identifier's text. Absent (nil, or a decoded JSON null —
+--- the truthy `vim.NIL`) yields nil; anything else that is not already a
+--- string is spelled out, so a name that arrived as a number still quotes.
+---
+--- The primitive used to raise on a non-string (`name:gsub` on a userdata) and
+--- every caller had to remember `util.named` first — see the note on
+--- `ops_sql.qualified_table_ref`, which lists the raise as the bug it fixed at
+--- the CALLER. Quoting is not the place to invent a name, but it is also not
+--- the place to take the menu action down.
+local function as_name(name)
+  if type(name) == "string" then return name end
+  if name == nil or name == vim.NIL then return nil end
+  return tostring(name)
+end
+
 --- One identifier, in the dialect's own quoting, with nothing left to split.
 local function quote_one(name, dialect)
   if dialect == "mysql" or dialect == "mariadb" or dialect == "clickhouse" then
@@ -41,6 +56,7 @@ end
 --- at a different object (`"staging"."v1"`), so an UPDATE or DROP aimed at the
 --- table in front of the user would either error out or hit `v1` in `staging`.
 function M.quote(name, dialect)
+  name = as_name(name)
   if not name or name == "" or name == "*" then return name or "" end
   return quote_one(name, dialect)
 end
@@ -53,6 +69,7 @@ end
 --- schema `staging`) are indistinguishable. Here the caller's context says a
 --- qualifier was intended, which is not true of an introspected name.
 function M.quote_ref(name, dialect)
+  name = as_name(name)
   if not name or name == "" or name == "*" then return name or "" end
   local parts = split_name(name)
   if not parts then return quote_one(name, dialect) end
@@ -70,13 +87,18 @@ end
 --- gives — testing for a dot with `find` disagrees for `my..table`, where the
 --- split does not happen but the dot check says it did, dropping the prefix.
 function M.is_qualified(name)
+  name = as_name(name)
   if not name or name == "" then return false end
   return split_name(name) ~= nil
 end
 
 function M.quote_qualified(schema, table_name, dialect)
-  if schema and schema ~= "" then
-    return M.quote(schema, dialect) .. "." .. M.quote(table_name, dialect)
+  -- as_name-shaped gate, not `schema ~= ""`: a JSON null schema decodes to
+  -- the truthy vim.NIL and would be joined in as the literal name "vim.NIL".
+  -- An empty string is not a schema either (it is truthy).
+  local s = as_name(schema)
+  if s and s ~= "" then
+    return M.quote(s, dialect) .. "." .. M.quote(table_name, dialect)
   end
   return M.quote(table_name, dialect)
 end

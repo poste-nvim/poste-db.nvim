@@ -167,7 +167,13 @@ local function char_cost(cp, ch)
 end
 
 function M.truncate(s, max_dw)
-  if not s or s == "" then return s or "" end
+  if not s then return "" end
+  -- Same coercion display_width applies: the two oracles are used together
+  -- (measure then cut), so anything one accepts the other must accept too —
+  -- a cell that arrives as a number or a decoded JSON null measured fine and
+  -- then raised on `#s`.
+  if type(s) ~= "string" then s = tostring(s) end
+  if s == "" then return s end
   -- once per call, not once per character: this runs per rendered cell, and
   -- width_mode() is a pcall'd require + config lookups
   local mode = width_mode()
@@ -200,6 +206,10 @@ end
 --- @return string  "" when the budget cannot hold even the ellipsis
 function M.truncate_ellipsis(s, max_dw)
   if not s then return "" end
+  -- tostring here, not in display_width only: an uncut non-string would
+  -- otherwise come back as the value itself (a userdata, a number) for the
+  -- caller to concatenate.
+  if type(s) ~= "string" then s = tostring(s) end
   if max_dw <= 1 then return max_dw <= 0 and "" or "…" end
   if M.display_width(s) <= max_dw then return s end
   return M.truncate(s, max_dw - 1) .. "…"

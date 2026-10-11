@@ -207,3 +207,36 @@ describe("ident.is_qualified", function()
     assert.is_false(ident.is_qualified(nil))
   end)
 end)
+describe("ident quoting of a name that is not a string", function()
+  -- A decoded JSON null is the truthy vim.NIL, and `name:gsub` raised on it
+  -- inside the browser menu action (see the note on ops_sql.qualified_table_ref,
+  -- which fixed it at the CALLER). The primitive now reads any value.
+  it("quotes JSON null and nil as no name at all", function()
+    assert.equals("", ident.quote(vim.NIL, "postgres"))
+    assert.equals("", ident.quote(nil, "postgres"))
+    assert.equals("", ident.quote_ref(vim.NIL, "mysql"))
+    assert.equals("", ident.quote_ref(nil, "mysql"))
+  end)
+
+  it("spells a non-string scalar out instead of raising", function()
+    assert.equals('"0"', ident.quote(0, "postgres"))
+    assert.equals("`0`", ident.quote(0, "mysql"))
+    assert.equals("[0]", ident.quote(0, "mssql"))
+    assert.equals('"true"', ident.quote(true, "postgres"))
+    assert.equals('"true"', ident.quote_ref(true, "postgres"))
+  end)
+
+  it("reads a JSON null schema as unqualified, not as the name \"vim.NIL\"", function()
+    -- quote_qualified tested `schema ~= ""`; vim.NIL is neither nil nor ""
+    assert.equals('"users"', ident.quote_qualified(vim.NIL, "users", "postgres"))
+    assert.equals('"public"."users"', ident.quote_qualified("public", "users", "postgres"))
+    assert.equals('"users"', ident.quote_qualified("", "users", "postgres"))
+  end)
+
+  it("answers is_qualified without indexing a non-string", function()
+    assert.is_false(ident.is_qualified(vim.NIL))
+    assert.is_false(ident.is_qualified(0))
+    assert.is_false(ident.is_qualified(true))
+    assert.is_false(ident.is_qualified({ "x" }))
+  end)
+end)
