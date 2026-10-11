@@ -110,8 +110,9 @@ The `poste` Rust binary is **not** vendored — it is built and released by
 5. `$PATH`
 
 If the Lua side advertises a dialect the binary does not know yet, the binary
-is authoritative. Unreleased Rust dialect work lives in the
-`../poste-for-db` worktree (branch `poste-for-db`), kept separate so other
-poste.nvim dependents are unaffected; merge into poste.nvim `main` when a
-dialect ships. See `SUPPORT.md` § "Binary / dialect mismatch" for the user-
-facing diagnosis path.
+is authoritative. Rust dialect work goes straight into poste.nvim `main`
+(the old `../poste-for-db` worktree workflow is retired), so a dialect this
+plugin advertises may simply postdate the binary you are running — build
+`../poste.nvim` (`cargo build -p poste-cli`) or wait for its next release.
+See `SUPPORT.md` § "Binary / dialect mismatch" for the user-facing diagnosis
+path.

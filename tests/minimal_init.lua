@@ -12,7 +12,7 @@ if vim.g.poste_binary == nil then
   -- A caller-supplied $POSTE_BINARY wins over the sibling-build guess:
   -- find_poste_binary itself prefers g:poste_binary over the env, so without
   -- this hand-off an explicit `POSTE_BINARY=... tests/run.sh` (e.g. pointing
-  -- at the poste-for-db worktree build) would be silently shadowed below.
+  -- at a ../poste.nvim build) would be silently shadowed below.
   local env_binary = vim.env.POSTE_BINARY
   if env_binary and vim.fn.filereadable(env_binary) == 1 then
     vim.g.poste_binary = vim.fn.fnamemodify(env_binary, ":p")

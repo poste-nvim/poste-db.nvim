@@ -58,27 +58,28 @@ PATH but the plugin keeps using the auto-downloaded one, that's why — set
 ## 3. Binary / dialect mismatch
 
 **Symptom**: a SQL dialect or alias works in the Lua config but the binary
-rejects it, or vice versa. The Lua side may advertise a dialect the stock
-`poste` binary does not know yet (unreleased Rust dialect work lives in the
-`poste-for-db` worktree, not in the published binary).
+rejects it, or vice versa. The Lua side may advertise a dialect the `poste`
+binary you are running does not know yet: dialect work lands in
+[poste.nvim](https://github.com/poste-nvim/poste.nvim) `main` first and only
+reaches a binary when that repo is built or released.
 
 **Diagnosis**:
 
-1. `:PosteDbInfo` → note the `version:` line.
+1. `:PosteDbInfo` → note the `version:` line and the `from:` line.
 2. Check [poste.nvim releases](https://github.com/poste-nvim/poste.nvim/releases)
-   — does that version advertise the dialect you need?
-3. If you need unreleased dialect work, build the `poste-for-db` worktree and
-   point at it:
+   — does the version you are running advertise the dialect you need?
+3. If you need dialect work that is in `main` but not in a release, build
+   poste.nvim yourself and point at it:
 
    ```bash
-   cd ../poste-for-db && cargo build          # or: cargo build --release
+   cd ../poste.nvim && cargo build -p poste-cli   # or: --release
    ```
 
    ```lua
    -- then in your config, before setup():
-   vim.g.poste_binary = "../poste-for-db/target/debug/poste"
+   vim.g.poste_binary = "../poste.nvim/target/debug/poste"
    -- or for headless/CI:
-   -- export POSTE_BINARY=/path/to/poste-for-db/target/debug/poste
+   -- export POSTE_BINARY=/path/to/poste.nvim/target/debug/poste
    ```
 
 4. Restart Neovim and re-run `:PosteDbInfo` to confirm `from:` now names your

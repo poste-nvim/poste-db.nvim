@@ -91,9 +91,9 @@ end
 
 -- Schema-qualified `INSERT INTO public.t (` only reaches the insert_column
 -- handler when the resolved binary's context detector handles the Dot token
--- (fixed in the poste-for-db worktree; not yet in stock main builds). Probe
--- instead of assuming, so the specs stay green against older binaries and
--- light up automatically once the fix lands in ../poste.nvim.
+-- (it landed in poste.nvim main; a released binary may still predate it).
+-- Probe instead of assuming, so the specs stay green against older binaries
+-- and light up automatically once the running binary carries it.
 local function rust_supports_schema_insert()
   local binary = require("poste-db.completion.data").find_binary()
   if not binary then return false end
@@ -112,7 +112,7 @@ local function it_needs_schema_insert_rust(name, fn)
     return
   end
   it(name, function()
-    print(("SKIP: %s — binary lacks schema-qualified insert_column detection (rebuild poste-for-db worktree)"):format(name))
+    print(("SKIP: %s — binary lacks schema-qualified insert_column detection (rebuild ../poste.nvim)"):format(name))
     assert.is_true(true)
   end)
 end

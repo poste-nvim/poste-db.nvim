@@ -82,7 +82,8 @@ is runnable. "Runnable" means readable **and** executable, so a
 copied-but-not-chmod'ed file cannot mask a working `PATH` entry; on Windows a
 candidate also matches `<name>.exe`, which is the file the installer writes and
 cargo builds (both spellings work). To use
-your own build — e.g. a worktree with unreleased dialect work — set
+your own build — e.g. `../poste.nvim/target/debug/poste` with dialect work
+that has not shipped yet — set
 `vim.g.poste_binary = "/path/to/poste"` (or `export POSTE_BINARY=…` for
 headless/CI processes, which never see a `vim.g`) before setup.
 
