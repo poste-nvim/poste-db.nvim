@@ -1,10 +1,10 @@
 # Vendored infrastructure
 
 This repo vendors shared modules from
-[poste.nvim](https://github.com/beyondlex/poste.nvim) so that `poste-db.nvim`
+[poste.nvim](https://github.com/poste-nvim/poste.nvim) so that `poste-db.nvim`
 has **zero runtime dependency** on any sibling plugin. The only cross-repo
 contract is the `poste` Rust binary (schema:
-[`../poste.nvim/docs/schema.md`](https://github.com/beyondlex/poste.nvim/blob/main/docs/schema.md)).
+[`../poste.nvim/docs/schema.md`](https://github.com/poste-nvim/poste.nvim/blob/main/docs/schema.md)).
 
 This file is the **re-vendor baseline**: it records what was vendored, from
 which commit, and how to re-vendor when the upstream changes.
@@ -13,7 +13,7 @@ which commit, and how to re-vendor when the upstream changes.
 
 | Field | Value |
 |-------|-------|
-| Source repo | `beyondlex/poste.nvim` |
+| Source repo | `poste-nvim/poste.nvim` |
 | Source commit | `5b3759e` |
 | Vendored on | 2026-09 (family dissolution) |
 | Source paths | `lua/poste/{state,cli,util,select,layout,dialog,indicators,install,constants}.lua` |
@@ -34,7 +34,7 @@ family context:
   `installed_version`, and `update` were dropped. The git-tag version sync
   matched the binary against the *plugin checkout's* tag, which is
   meaningless in a sibling repo (sibling tags are not poste.nvim release
-  tags). `REPO` stays `beyondlex/poste.nvim` — one binary for the whole
+  tags). `REPO` stays `poste-nvim/poste.nvim` — one binary for the whole
   family.
 - `state.lua` — HTTP/Redis context fields removed; SQL-only surface kept.
 - `constants.lua` — only the entries consumed by this plugin's vendored

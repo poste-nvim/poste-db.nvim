@@ -65,7 +65,7 @@ rejects it, or vice versa. The Lua side may advertise a dialect the stock
 **Diagnosis**:
 
 1. `:PosteDbInfo` → note the `version:` line.
-2. Check [poste.nvim releases](https://github.com/beyondlex/poste.nvim/releases)
+2. Check [poste.nvim releases](https://github.com/poste-nvim/poste.nvim/releases)
    — does that version advertise the dialect you need?
 3. If you need unreleased dialect work, build the `poste-for-db` worktree and
    point at it:
@@ -86,7 +86,7 @@ rejects it, or vice versa. The Lua side may advertise a dialect the stock
 
 **The binary is the family contract.** If Lua and the binary disagree on a
 dialect, the binary is authoritative — the Lua side is a client. See
-[`../poste.nvim/docs/schema.md`](https://github.com/beyondlex/poste.nvim/blob/main/docs/schema.md)
+[`../poste.nvim/docs/schema.md`](https://github.com/poste-nvim/poste.nvim/blob/main/docs/schema.md)
 for the NDJSON schema shared across the family.
 
 ## 4. Connection problems
@@ -122,13 +122,13 @@ is reported missing.
 ## 6. AI chat does not appear
 
 The AI chat is **optional** and requires
-[poste-ai.nvim](https://github.com/beyondlex/poste-ai.nvim) on `runtimepath`.
+[poste-ai.nvim](https://github.com/poste-nvim/poste-ai.nvim) on `runtimepath`.
 Without it, `:PosteDbChat` and `<leader>aa` are no-ops (by design — the
 plugin silently skips AI features when the dependency is absent).
 
 ```lua
 -- lazy.nvim
-{ "beyondlex/poste-ai.nvim" }
+{ "poste-nvim/poste-ai.nvim" }
 ```
 
 ---

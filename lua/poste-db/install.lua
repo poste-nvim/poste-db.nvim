@@ -5,10 +5,10 @@
 --- installed_version / update are dropped — the git-tag version sync
 --- matched the binary against the *plugin checkout's* tag, which is
 --- meaningless in a sibling repo (sibling tags are not poste.nvim release
---- tags). REPO stays beyondlex/poste.nvim: one binary for the whole family.
+--- tags). REPO stays poste-nvim/poste.nvim: one binary for the whole family.
 local M = {}
 
-local REPO = "beyondlex/poste.nvim"
+local REPO = "poste-nvim/poste.nvim"
 local BASE = vim.fn.stdpath("data") .. "/poste"
 local BIN_DIR = BASE .. "/bin"
 local VERSION_FILE = BASE .. "/.version"

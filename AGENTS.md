@@ -11,7 +11,7 @@ by poste.nvim) is the only cross-repo contract (schema:
 
 - All SQL Lua code lives under `lua/poste-db/` — no runtime dependency on
   poste.nvim or any sibling
-- Optional: [poste-ai.nvim](https://github.com/beyondlex/poste-ai.nvim) on rtp enables the AI chat (`:PosteDbChat`, `<leader>aa`). `lua/poste-db/ai/` must only `pcall(require, "poste-ai")` and silently skip when absent
+- Optional: [poste-ai.nvim](https://github.com/poste-nvim/poste-ai.nvim) on rtp enables the AI chat (`:PosteDbChat`, `<leader>aa`). `lua/poste-db/ai/` must only `pcall(require, "poste-ai")` and silently skip when absent
 - `plugin/poste-db.lua` calls `require("poste-db.init").setup()`
 - `ftdetect/poste_sql.vim` sets filetypes for `.sql` and `.sqlite`
 - Uses the family `poste` Rust binary (from poste.nvim). Which binary you get is resolved by `poste-db.state.find_poste_binary()`: `vim.g.poste_binary` → poste config → `target/{debug,release}/poste` next to cwd or this repo's lua dir → PATH. Point `vim.g.poste_binary` at a worktree build (e.g. `../poste-for-db/target/debug/poste`) to test unreleased Rust dialect work

@@ -1,6 +1,6 @@
 # poste-db.nvim
 
-[![CI](https://github.com/beyondlex/poste-db.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/beyondlex/poste-db.nvim/actions/workflows/ci.yml)
+[![CI](https://github.com/poste-nvim/poste-db.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/poste-nvim/poste-db.nvim/actions/workflows/ci.yml)
 
 **Execute SQL from plain-text files. A spreadsheet for your results.**
 
@@ -17,11 +17,11 @@ Drop the image at .github/assets/dataset.png and uncomment.
 ![poste-db.nvim — SQL buffer + dataset panel](.github/assets/dataset.png)
 -->
 
-Part of the [Poste](https://github.com/beyondlex/poste.nvim) family. The
+Part of the [Poste](https://github.com/poste-nvim/poste.nvim) family. The
 plugin is fully self-contained (shared infra is vendored); the one shared
 piece is the `poste` binary — a usable one is picked up from
 `vim.g.poste_binary`, `$POSTE_BINARY`, a local dev build or `PATH`, and only
-downloaded from [poste.nvim](https://github.com/beyondlex/poste.nvim) releases
+downloaded from [poste.nvim](https://github.com/poste-nvim/poste.nvim) releases
 when none of those exist. "Usable" means readable **and** executable: a file
 without the exec bit is skipped rather than picked over a working `PATH` entry.
 On Windows each candidate is tried both as spelled and with `.exe` appended,
@@ -56,14 +56,14 @@ Suggested path: .github/assets/dataset-panel.png
 - **Export/import** — CSV, TSV, JSON, Markdown, SQL INSERT; paste CSV/JSON into a table
 - **Multi-result tabs** — Each statement gets its own tab
 - **History** — Session request sidebar + persistent execution log viewer
-- **AI chat** — Schema-aware chat with guarded SQL execution ([poste-ai.nvim](https://github.com/beyondlex/poste-ai.nvim))
+- **AI chat** — Schema-aware chat with guarded SQL execution ([poste-ai.nvim](https://github.com/poste-nvim/poste-ai.nvim))
 
 ## Installation
 
 ```lua
 -- lazy.nvim
 {
-  "beyondlex/poste-db.nvim",
+  "poste-nvim/poste-db.nvim",
   dependencies = {
     "saghen/blink.cmp",
   },
@@ -250,7 +250,7 @@ Suggested path: .github/assets/explain.png
 
 ### AI chat
 
-With [poste-ai.nvim](https://github.com/beyondlex/poste-ai.nvim) installed,
+With [poste-ai.nvim](https://github.com/poste-nvim/poste-ai.nvim) installed,
 `:PosteDbChat` opens a schema-aware chat:
 
 <!--
@@ -341,7 +341,7 @@ require("poste-db").setup({
 | Component | Requirement | Notes |
 |-----------|-------------|-------|
 | Neovim | ≥ 0.10.0 | Uses `vim.system`, `vim.treesitter.language` |
-| `poste` binary | Any release from [poste.nvim releases](https://github.com/beyondlex/poste.nvim/releases) | Auto-installed on first setup if none found; see [SUPPORT.md](SUPPORT.md) § "Binary / dialect mismatch" when Lua and binary disagree on a dialect |
+| `poste` binary | Any release from [poste.nvim releases](https://github.com/poste-nvim/poste.nvim/releases) | Auto-installed on first setup if none found; see [SUPPORT.md](SUPPORT.md) § "Binary / dialect mismatch" when Lua and binary disagree on a dialect |
 | blink.cmp | recommended | Auto-registers the `poste_db` source. nvim-cmp also supported. |
 | tree-sitter `sql` parser | required | `:TSInstall sql`. Statement splitting, completion, and diagnostics depend on it. |
 | `ssh` | only for `tunnel` connections | Must be on `$PATH`. |
@@ -365,7 +365,7 @@ for:
 
 Other platforms (e.g. Linux armv7, FreeBSD) have no prebuilt binary — build
 the `poste` binary from
-[poste.nvim](https://github.com/beyondlex/poste.nvim) source and point
+[poste.nvim](https://github.com/poste-nvim/poste.nvim) source and point
 `vim.g.poste_binary` (or `$POSTE_BINARY`) at it.
 
 ### SQL dialects
@@ -388,7 +388,7 @@ touch — see [`docs/dev/sql/dialect-support.md`](docs/dev/sql/dialect-support.m
 
 - Neovim < 0.10.0
 - Vim (not Neovim) — the plugin uses `vim.system`, `vim.uv`, `vim.treesitter`
-- The AI chat without [poste-ai.nvim](https://github.com/beyondlex/poste-ai.nvim) installed (silently skipped — by design)
+- The AI chat without [poste-ai.nvim](https://github.com/poste-nvim/poste-ai.nvim) installed (silently skipped — by design)
 - Non-prebuilt platforms without a manually-built `poste` binary
 
 If your environment is outside the supported scope, please don't open an

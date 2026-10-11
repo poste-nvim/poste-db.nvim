@@ -6,7 +6,7 @@ change lands with a regression test and a zero-warning lint.
 ## Setup
 
 ```bash
-git clone https://github.com/beyondlex/poste-db.nvim
+git clone https://github.com/poste-nvim/poste-db.nvim
 cd poste-db.nvim
 
 # Test databases (PG 16, MySQL 8, MariaDB, MSSQL, ClickHouse) — optional,

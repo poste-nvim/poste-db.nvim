@@ -50,7 +50,7 @@ jobs:
       - name: Checkout poste-ai.nvim (optional AI chat dependency)
         uses: actions/checkout@v4
         with:
-          repository: beyondlex/poste-ai.nvim
+          repository: poste-nvim/poste-ai.nvim
           path: poste-ai.nvim
 
       - name: Install Neovim ${{ matrix.nvim_version }}

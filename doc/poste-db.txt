@@ -1,6 +1,6 @@
 *poste-db.txt*   SQL execution, dataset browser, and schema introspection for Neovim
 
-Author:  Lex <https://github.com/beyondlex/poste-db.nvim>
+Author:  Lex <https://github.com/poste-nvim/poste-db.nvim>
 License: MIT
 
 ==============================================================================
@@ -73,7 +73,7 @@ line with the binary's build time and version.
 >lua
     -- lazy.nvim
     {
-      "beyondlex/poste-db.nvim",
+      "poste-nvim/poste-db.nvim",
       dependencies = { "saghen/blink.cmp" },
       config = function()
         require("poste-db.init").setup()

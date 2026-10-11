@@ -6,7 +6,7 @@
 ## Architecture
 
 Generic chat infrastructure lives in the sibling repo
-[poste-ai.nvim](https://github.com/beyondlex/poste-ai.nvim) (zero dependencies:
+[poste-ai.nvim](https://github.com/poste-nvim/poste-ai.nvim) (zero dependencies:
 curl + Neovim ≥ 0.10, no poste.nvim requirement). It owns the chat window,
 markdown rendering, streaming SSE client, session persistence and the
 `@` mention engine. Domain knowledge is plugged in via
