@@ -389,6 +389,62 @@ describe("format_error non-string error shapes", function()
   end)
 end)
 
+describe("format_dataset on a response that is not shaped like one", function()
+  -- format_dataset is called unpcall'd from four seams (sql_runner, edit
+  -- commit, browser, AI), so a raise here drops the whole response: the user
+  -- sees nothing at all for a query the server answered.
+  local function rs(overrides)
+    return vim.json.encode(vim.tbl_extend("force", {
+      type = "resultset",
+      results = { { columns = { { name = "a" } }, rows = { { 1 } }, row_count = 1 } },
+      connection = "", database = "", dialect = "postgres",
+    }, overrides or {}))
+  end
+
+  it("renders a column whose name is absent", function()
+    -- a decoded JSON null is the truthy vim.NIL: it measures fine and then
+    -- raises on `..` inside the row builder
+    local lines = sql_format.format_dataset({ body = rs({ results = { {
+      columns = { { name = vim.NIL }, { name = "b" } }, rows = { { 1, 2 } },
+    } } }) })
+    assert.truthy(#lines >= 4)
+    assert.truthy(table.concat(lines, "\n"):find("b", 1, true))
+  end)
+
+  it("renders a column whose name is not a string", function()
+    local lines = sql_format.format_dataset({ body = rs({ results = { {
+      columns = { { name = 7 } }, rows = { { 1 } },
+    } } }) })
+    assert.truthy(table.concat(lines, "\n"):find("7", 1, true))
+  end)
+
+  it("skips a row that is not a sequence of cells instead of raising", function()
+    local lines = sql_format.format_dataset({ body = rs({ results = { {
+      columns = { { name = "a" } }, rows = { "nope", { 1 } },
+    } } }) })
+    assert.truthy(table.concat(lines, "\n"):find("│", 1, true))
+  end)
+
+  it("renders a short row as empty cells, not a crash", function()
+    -- ragged rows: fewer cells than columns
+    local lines, meta = sql_format.format_dataset({ body = rs({ results = { {
+      columns = { { name = "a" }, { name = "b" } }, rows = { { 1 } },
+    } } }) })
+    assert.equals("resultset", meta.type)
+    assert.truthy(table.concat(lines, "\n"):find("│", 1, true))
+  end)
+
+  it("names nothing as unknown in a USE panel whose fields are JSON null", function()
+    -- `x or ""` does not catch vim.NIL; concatenating it raised
+    local lines = sql_format.format_dataset({ body = vim.json.encode({
+      type = "use", database_name = vim.NIL, connection = vim.NIL, dialect = vim.NIL,
+    }) })
+    local text = table.concat(lines, "\n")
+    assert.truthy(text:find("Context switched to: ???", 1, true))
+    assert.truthy(text:find("Connection: unknown", 1, true))
+  end)
+end)
+
 describe("format wrap_line (translated-SQL footnote rows)", function()
   it("keeps the leading indent so the ⚡ row aligns with its continuations", function()
     -- gmatch("%S+") dropped the indent, so the marker row lost the two

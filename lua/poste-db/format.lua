@@ -5,6 +5,7 @@ local dataset = require("poste-db.dataset")
 -- `wutil`, not `width`: pad/wrap helpers below take a `width` parameter and
 -- would shadow the module binding (luacheck W431).
 local wutil = require("poste-db.width")
+local util = require("poste-db.util")
 local log = require("poste-db.log")
 local types = require("poste-db.types")
 local verdict = require("poste-db.verdict")
@@ -274,6 +275,8 @@ local function is_numeric_column(rows, col_idx, col_meta)
     is_numeric_type = ctype ~= "" and types.is_numeric(ctype)
   end
   for _, row in ipairs(rows) do
+    -- a row that is not a sequence of cells cannot be a numeric column
+    if type(row) ~= "table" then return false end
     local val = row[col_idx]
     if val ~= nil and val ~= vim.NIL then
       local is_number = type(val) == "number"
@@ -308,12 +311,18 @@ local function calc_column_widths(columns, rows, max_width, max_col_width)
   end
 
   for _, row in ipairs(rows) do
-    for i, val in ipairs(row) do
-      if i <= #widths then
-        local s = cell_to_string(val, columns[i])
-        local dw = displaywidth(s)
-        widths[i] = math.max(widths[i], dw)
-        min_data_widths[i] = math.max(min_data_widths[i], dw)
+    -- A row that is not a sequence of cells (a malformed or hand-built
+    -- response) is skipped rather than fatal: format_dataset is called
+    -- unpcall'd from four seams, so a raise here drops the whole response —
+    -- the user sees nothing at all for a query the server answered.
+    if type(row) == "table" then
+      for i, val in ipairs(row) do
+        if i <= #widths then
+          local s = cell_to_string(val, columns[i])
+          local dw = displaywidth(s)
+          widths[i] = math.max(widths[i], dw)
+          min_data_widths[i] = math.max(min_data_widths[i], dw)
+        end
       end
     end
   end
@@ -399,6 +408,16 @@ end
 --- that happens the trailing `│` lands one cell past the right border, hiding
 --- it. The rightmost column absorbs the exact remainder so every row has
 --- exactly the border width.
+--- A cell is text by the time it reaches the row builder — except a column
+--- whose NAME is absent: `col.name` can decode to the truthy `vim.NIL`, which
+--- measures fine and then raises on `..` (and `displaywidth` would have
+--- spelled it "vim.NIL" even if it had not). One name for the whole row.
+local function cell_text(v)
+  if type(v) == "string" then return v end
+  if v == nil or v == vim.NIL then return "" end
+  return tostring(v)
+end
+
 local function data_row(cells, widths, numeric_cols)
   local line_buf = { "│" }
   local col_starts = {}
@@ -407,6 +426,7 @@ local function data_row(cells, widths, numeric_cols)
   local last = #widths
   for i, cell in ipairs(cells) do
     if i > #widths then break end
+    cell = cell_text(cell)
     local w = widths[i]
     local s
     if i == last then
@@ -496,12 +516,16 @@ function M.format_dataset(r)
 
   -- USE statement: context switch
   if rtype == "use" then
+    -- util.named, not `or ""`: a decoded JSON null is the truthy vim.NIL, and
+    -- concatenating it raised inside the panel (the same "a name that names
+    -- nothing" family the AI scope, the browser schema and the DDL generators
+    -- already went through). The `???` / `unknown` fallbacks stay visible.
     local lines = {
       "",
-      "  Context switched to: " .. (data.database_name or "???"),
+      "  Context switched to: " .. (util.named(data.database_name) or "???"),
       "",
-      string.format("  Connection: %s", log.redact_url(data.connection or "")),
-      string.format("  Dialect:    %s", data.dialect or ""),
+      string.format("  Connection: %s", log.redact_url(util.named(data.connection) or "unknown")),
+      string.format("  Dialect:    %s", util.named(data.dialect) or ""),
       "",
     }
     return lines, { type = "use" }
@@ -637,6 +661,20 @@ function M.plan_resultset_layout(data)
   }
 end
 
+--- One rendered row's cells: the row number, then one cell per column.
+--- A row that is not a sequence of cells — or a view index with no row behind
+--- it — renders as empty cells instead of raising: `format_dataset` is called
+--- unpcall'd from four seams, so a raise here drops the whole response and the
+--- user sees nothing at all for a query the server answered.
+local function row_cells(rows, idx, columns, row_number)
+  local cells = { tostring(row_number) }
+  local row = type(rows[idx]) == "table" and rows[idx] or nil
+  for i = 1, #columns do
+    cells[i + 1] = cell_to_string(row and row[i] or nil, columns[i])
+  end
+  return cells
+end
+
 --- Render a single page from a Layout. Produces a bordered table with
 --- only `page_size` data rows. Column widths come from Layout (stable).
 --- @param layout table Layout from plan_resultset_layout()
@@ -683,11 +721,8 @@ function M.render_page(layout, page, page_size)
   for row_idx = start_idx, end_idx do
     line_num = line_num + 1
     row_sources[#row_sources + 1] = row_idx
-    local cells = { tostring(row_idx) }
-    for i = 1, #columns do
-      cells[i + 1] = cell_to_string(rows[row_idx][i], columns[i])
-    end
-    local line, starts = data_row(cells, col_widths, numeric_cols)
+    local line, starts = data_row(row_cells(rows, row_idx, columns, row_idx),
+      col_widths, numeric_cols)
     lines[line_num] = line
     row_col_starts[#row_col_starts + 1] = starts
   end
@@ -785,12 +820,8 @@ function M.render_view(layout, view_indices, page, page_size, opts)
     local row_num = (row_number_mode == "view") and view_pos or src_idx
     row_sources[#row_sources + 1] = src_idx
     row_numbers[#row_numbers + 1] = row_num
-    local cells = { tostring(row_num) }
-    for i = 1, #columns do
-      cells[i + 1] = cell_to_string(rows[src_idx][i], columns[i])
-
-    end
-    local line, starts = data_row(cells, col_widths, numeric_cols)
+    local line, starts = data_row(row_cells(rows, src_idx, columns, row_num),
+      col_widths, numeric_cols)
     lines[line_num] = line
     row_col_starts[#row_col_starts + 1] = starts
   end
