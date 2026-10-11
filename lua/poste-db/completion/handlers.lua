@@ -276,17 +276,21 @@ local function handle_column(bufnr, line_before, cursor_line, prefix, dialect, r
   end
 end
 
-local function handle_insert_column(line_before, prefix, ctx_data, callback)
+-- schema (from rust_ctx.ctx_schema) selects the cache entry and the column
+-- lookup; without it, `INSERT INTO public.users (` would read the wrong key.
+local function handle_insert_column(line_before, prefix, ctx_data, rust_ctx, callback)
   local tbl = ctx_data
+  local schema = rust_ctx and rust_ctx.ctx_schema or nil
+  local cache_tbl_key = schema and (schema .. "." .. tbl) or tbl
   local inside = line_before:match("%(([%w_,%s]*)$") or ""
   local seen = {}
   for col in inside:gmatch("([%w_]+)") do
     seen[col:lower()] = true
   end
-  data.ensure_columns(tbl, function()
+  data.ensure_columns(tbl, schema, function()
     local key = data.conn_key()
     local cache = data.get_cache()
-    local all = cache[key] and cache[key].columns[tbl] or {}
+    local all = cache[key] and cache[key].columns[cache_tbl_key] or {}
     local result = {}
     if #all > 0 then
       local all_csv = table.concat(all, ", ")
@@ -355,7 +359,7 @@ function M.dispatch(opts, ctx_type, ctx_data, rust_ctx, callback)
   end
 
   if ctx_type == "insert_column" then
-    return handle_insert_column(line_before, prefix, ctx_data, callback)
+    return handle_insert_column(line_before, prefix, ctx_data, rust_ctx, callback)
   end
 
   if ctx_type == "datatype" then

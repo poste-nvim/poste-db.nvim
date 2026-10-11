@@ -89,6 +89,34 @@ end
 -- These tests verify the pipeline works end-to-end with a mocked cache.
 -- We inject columns directly into the module's cache via cache_columns/cache_tables.
 
+-- Schema-qualified `INSERT INTO public.t (` only reaches the insert_column
+-- handler when the resolved binary's context detector handles the Dot token
+-- (fixed in the poste-for-db worktree; not yet in stock main builds). Probe
+-- instead of assuming, so the specs stay green against older binaries and
+-- light up automatically once the fix lands in ../poste.nvim.
+local function rust_supports_schema_insert()
+  local binary = require("poste-db.completion.data").find_binary()
+  if not binary then return false end
+  local line = "INSERT INTO public.authors ("
+  local out = vim.fn.system(binary .. " context detect " .. #line, line)
+  if vim.v.shell_error ~= 0 then return false end
+  local ok, parsed = pcall(vim.json.decode, out)
+  return ok and parsed.ctx_type == "insert_column" and parsed.ctx_schema == "public"
+end
+
+local schema_insert_ok = rust_supports_schema_insert()
+
+local function it_needs_schema_insert_rust(name, fn)
+  if rust_ok and schema_insert_ok then
+    it(name, fn)
+    return
+  end
+  it(name, function()
+    print(("SKIP: %s — binary lacks schema-qualified insert_column detection (rebuild poste-for-db worktree)"):format(name))
+    assert.is_true(true)
+  end)
+end
+
 describe("get_items with seeded cache", function()
   local function make_buf(lines)
     local buf = vim.api.nvim_create_buf(false, true)
@@ -774,6 +802,20 @@ describe("get_items insert_column", function()
     -- Only all-columns quick-insert
     assert.equals("name, slug", items[1].label)
     assert.equals(3, #items)
+  end)
+
+  it_needs_schema_insert_rust("schema-qualified INSERT reads the schema-scoped cache", function()
+    -- "public.authors" is the cache key when the schema is known; seeding the
+    -- bare "authors" key as well would mask a regression that reads it.
+    sql_comp.cache_tables({ { name = "authors", schema = "public" } })
+    sql_comp.cache_columns("authors", {
+      { name = "id" }, { name = "username" },
+    }, "public")
+    local buf = make_buf({ "###", "INSERT INTO public.authors (" })
+    local items = nil
+    get_items(buf, "INSERT INTO public.authors (", 2, function(r) items = r end)
+    assert.is_not_nil(items)
+    assert.equals("id, username", items[1].label)
   end)
 end)
 
