@@ -14,8 +14,8 @@ by poste.nvim) is the only cross-repo contract (schema:
 - Optional: [poste-ai.nvim](https://github.com/poste-nvim/poste-ai.nvim) on rtp enables the AI chat (`:PosteDbChat`, `<leader>aa`). `lua/poste-db/ai/` must only `pcall(require, "poste-ai")` and silently skip when absent
 - `plugin/poste-db.lua` calls `require("poste-db.init").setup()`
 - `ftdetect/poste_sql.vim` sets filetypes for `.sql` and `.sqlite`
-- Uses the family `poste` Rust binary (from poste.nvim). Which binary you get is resolved by `poste-db.state.find_poste_binary()`: `vim.g.poste_binary` → poste config → `target/{debug,release}/poste` next to cwd or this repo's lua dir → PATH. Point `vim.g.poste_binary` at a worktree build (e.g. `../poste-for-db/target/debug/poste`) to test unreleased Rust dialect work
-- **Unreleased Rust dialect work lives in the `../poste-for-db` worktree** (branch `poste-for-db`), kept separate so other poste.nvim dependents are unaffected; merge into poste.nvim `main` when a dialect ships. The Lua side here may advertise a dialect the stock main binary does not know yet — if Lua and binary disagree, check which binary you are running first
+- Uses the family `poste` Rust binary (from poste.nvim). Which binary you get is resolved by `poste-db.state.find_poste_binary()`: `vim.g.poste_binary` → `$POSTE_BINARY` → poste config → `target/{debug,release}/poste` next to cwd or this repo's lua dir → PATH. Rebuild `../poste.nvim` (`cargo build -p poste-cli`) when testing unreleased Rust changes
+- Rust dialect work goes straight into poste.nvim `main` (the old `../poste-for-db` worktree workflow is retired). The Lua side here may advertise a dialect the installed binary does not know yet — if Lua and binary disagree, check which binary you are running first
 - `.opencode/skills/sql/` and `.opencode/skills/sql-completion/` for agent context
 - Harness order:
   1. `.opencode/skills/sql-preflight-harness/SKILL.md`
@@ -85,7 +85,7 @@ nil/false, write an explicit `if`.
 | **Adding a SQL dialect (aliases or real)** — touchpoint checklist, priorities, pitfalls | `docs/dev/sql/dialect-support.md` |
 | **Vendored shared infra (state, cli, util, select, layout, dialog, indicators, installer)** | `lua/poste-db/` — vendor source poste.nvim@5b3759e `lua/poste/` |
 | **Binary NDJSON schema contract (the family contract)** | `../poste.nvim/docs/schema.md` |
-| **Rust CLI (crates, build system)** | `../poste.nvim/crates/` — unreleased dialect work: `../poste-for-db` worktree |
+| **Rust CLI (crates, build system)** | `../poste.nvim/crates/` |
 | **AI chat generic layer (chat UI, SSE, markdown, context API)** | `../poste-ai.nvim/lua/poste-ai/` + `docs/dev/sql/ai-chat.md` |
 | **Preflight / audit / test / architecture / refactor / nav / introspect harnesses** | `.opencode/skills/` |
 | Completion rules | `.opencode/skills/sql-completion/SKILL.md` |

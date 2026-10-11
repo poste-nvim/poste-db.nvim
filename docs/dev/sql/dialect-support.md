@@ -10,8 +10,7 @@
 > 7. 措辞修正：URL 是"构造"不是"解析"；验收标准的"建库/建表"改为"列库/列表"。
 >
 > **实施状态**：Phase 0（别名）、Phase 1（MSSQL）、Phase 2（HTTP 传输 + ClickHouse，含 Lua/Rust/容器/playground/diag）
-> 已落地；Phase 3（Trino）可复用 reqwest 传输；Phase 4（DuckDB）未开始。Rust 实现暂居
-> `../poste-for-db` worktree（branch `poste-for-db`），发货时合回 poste.nvim main。
+> poste.nvim main 直接演进（原 `../poste-for-db` worktree 流程已废弃）。
 
 ## 背景
 
@@ -27,7 +26,7 @@ poste-db 目前支持的 dialect：`postgres`（含 `postgresql` 及 PG 系别�
   - `snippets.lua`：`pick_template` 模板变体
   - `source_format.lua`：格式化器 `dialect_map`
   - `ai/system_prompt.lua`：方言清单提示词
-- **Rust 侧**（poste.nvim；演进期在 `../poste-for-db` worktree）：
+- **Rust 侧**（poste.nvim，直接在 main 改）：
   - `poste-core` 的 `Protocol` 枚举加变体
   - `sql_connection.rs` 的 `ConnectionConfig::to_url()`——**与 Lua 的 `resolve_connection_url` 是镜像实现，必须双端同步**
   - 驱动分发（`sql_executor/`、`exec_file.rs`、`session.rs`、`introspect.rs` 的 scheme/dialect 链）
@@ -173,7 +172,7 @@ tidb、singlestore、aurora-mysql、vitess、planetscale
 | 8 | `ai/system_prompt.lua` | 方言清单句 |
 | 9 | specs | `sql_constants` / `sql_connections`（**URL 构造断言，防静默误路由**）/ `sql_ident` / `sql_snippets` / `sql_completion`（tables_db_flag） |
 
-### Rust 侧（poste.nvim —— 演进期在 `../poste-for-db` worktree 改）
+### Rust 侧（poste.nvim main 直接改）
 
 | # | 位置 | 要动什么 |
 |---|------|---------|
