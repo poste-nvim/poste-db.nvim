@@ -19,13 +19,6 @@ function M.is_dark_color(color)
   return (0.299 * r + 0.587 * g + 0.114 * b) < 0.5
 end
 
---- Deprecated: kept for callers of the old util API. strdisplaywidth()-based
---- truncation under-counts Indic spacing marks — width.truncate() is the
---- maintained implementation (see lua/poste-db/width.lua and LEARNINGS #16).
-function M.truncate_displaywidth(s, max_dw)
-  return width.truncate(s, max_dw)
-end
-
 --- Fit `s` into `max` display cells, appending "..." when it had to cut.
 --- Never splits a UTF-8 character and counts CJK at their real width, so a
 --- label or confirm snippet with non-ASCII text stays inside its budget on

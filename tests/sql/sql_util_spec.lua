@@ -1,4 +1,5 @@
 local util = require("poste-db.util")
+local width = require("poste-db.width")
 
 describe("util utf8 helpers", function()
   it("utf8_char_bytes returns correct byte widths", function()
@@ -8,18 +9,20 @@ describe("util utf8 helpers", function()
     assert.equals(4, util.utf8_char_bytes(0xF0))
   end)
 
-  it("truncate_displaywidth preserves ASCII strings under limit", function()
-    assert.equals("hello", util.truncate_displaywidth("hello", 10))
+  it("width.truncate preserves ASCII strings under limit", function()
+    -- was util.truncate_displaywidth, a deprecated forwarder to the same
+    -- implementation; the maintained name lives next to the width oracle
+    assert.equals("hello", width.truncate("hello", 10))
   end)
 
-  it("truncate_displaywidth stops before multibyte overflow", function()
+  it("width.truncate stops before multibyte overflow", function()
     local s = "a│b"
-    assert.equals("a│", util.truncate_displaywidth(s, 2))
+    assert.equals("a│", width.truncate(s, 2))
   end)
 
-  it("truncate_displaywidth handles empty strings", function()
-    assert.equals("", util.truncate_displaywidth("", 5))
-    assert.equals("", util.truncate_displaywidth(nil, 5))
+  it("width.truncate handles empty strings", function()
+    assert.equals("", width.truncate("", 5))
+    assert.equals("", width.truncate(nil, 5))
   end)
 
   it("utf8_safe_cut keeps short strings unchanged", function()
