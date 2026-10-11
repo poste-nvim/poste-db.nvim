@@ -69,6 +69,20 @@ describe("export format_tsv", function()
     local out = export._test.format_tsv(data_result({ columns = { { name = "a" } }, rows = { { "l1\nl2" }, { "t\tab" }, { "c\rd" } } }))
     assert.equals("a\nl1 l2\nt ab\nc d", out)
   end)
+
+  it("flattens the same bytes in a column name", function()
+    local out = export._test.format_tsv(
+      data_result({ columns = { { name = "a\tb" } }, rows = { { "x" } } }))
+    assert.equals("a b\nx", out)
+  end)
+
+  it("renders a JSON/JSONB header cell as its JSON, not a table address", function()
+    -- header names are strings in practice, but the shape reaches the same
+    -- export_val seam the values do — a table must not render as `table: 0x…`
+    local out = export._test.format_tsv(
+      data_result({ columns = { { name = { a = 1 } } }, rows = { { "x" } } }))
+    assert.equals('{"a":1}\nx', out)
+  end)
 end)
 
 describe("export format_json", function()
@@ -113,6 +127,21 @@ describe("export format_markdown", function()
     local out = export._test.format_markdown(
       data_result({ columns = { { name = "a" } }, rows = { { "line1\nline2\r\nline3" } } }))
     assert.equals("| a |\n| --- |\n| line1<br>line2<br>line3 |", out)
+  end)
+
+  it("escapes a pipe in a COLUMN NAME, not just in a value", function()
+    -- `a|b` is a legal quoted column name; the header row was written raw, so
+    -- the exported table had one more column than the separator row and every
+    -- data row lined up under the wrong header.
+    local out = export._test.format_markdown(
+      data_result({ columns = { { name = "a|b" }, { name = "c" } }, rows = { { "x", "y" } } }))
+    assert.equals("| a\\|b | c |\n| --- | --- |\n| x | y |", out)
+  end)
+
+  it("escapes a newline in a column name the same way", function()
+    local out = export._test.format_markdown(
+      data_result({ columns = { { name = "l1\nl2" } }, rows = { { "x" } } }))
+    assert.equals("| l1<br>l2 |\n| --- |\n| x |", out)
   end)
 end)
 

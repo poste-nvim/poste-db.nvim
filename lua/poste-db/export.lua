@@ -150,8 +150,12 @@ end
 -- Formatters
 -------------------------------------------------------------------------------
 
-local function csv_escape(v)
-  local s = export_val(v)
+--- Per-format cell escapers. Every formatter pushes BOTH its header names and
+--- its values through `export_val` + one of these, so a name and a value that
+--- break the same format get the same treatment — the markdown table used to
+--- escape `|` in values but not in the header, while `a|b` is a perfectly
+--- legal column name and silently added a column to every row below it.
+local function csv_cell(s)
   -- \r must quote too: a bare CR inside a field breaks the record
   -- structure just like a bare \n does.
   if s:find('["\r\n,]') then
@@ -160,19 +164,34 @@ local function csv_escape(v)
   return s
 end
 
+--- Flatten the bytes that end a TSV record into spaces: TSV has no quoting
+--- escape, so a value that carries one is data loss either way and a space
+--- at least keeps the row rectangular.
+local function tsv_cell(s)
+  return (s:gsub("[\t\r\n]", " "))
+end
+
+--- A pipe-table cell: a raw newline splits the row (and every row below it
+--- stops being a row), and an unescaped `|` adds a column. GitHub-flavoured
+--- markdown renders <br>, which keeps one row per line while keeping the
+--- content readable.
+local function md_cell(s)
+  return (s:gsub("[\r\n]+", "<br>"):gsub("|", "\\|"))
+end
+
 local function format_csv(data_result)
   local cols = data_result.columns or {}
   local rows = data_result.rows or {}
   local lines = {}
   local header = {}
   for _, col in ipairs(cols) do
-    table.insert(header, csv_escape(col.name))
+    table.insert(header, csv_cell(export_val(col.name)))
   end
   table.insert(lines, table.concat(header, ","))
   for _, row in ipairs(rows) do
     local vals = {}
     for i = 1, #cols do
-      table.insert(vals, csv_escape(row[i]))
+      table.insert(vals, csv_cell(export_val(row[i])))
     end
     table.insert(lines, table.concat(vals, ","))
   end
@@ -185,13 +204,13 @@ local function format_tsv(data_result)
   local lines = {}
   local header = {}
   for _, col in ipairs(cols) do
-    table.insert(header, (tostring(col.name):gsub("[\t\r\n]", " ")))
+    table.insert(header, tsv_cell(export_val(col.name)))
   end
   table.insert(lines, table.concat(header, "\t"))
   for _, row in ipairs(rows) do
     local vals = {}
     for i = 1, #cols do
-      table.insert(vals, (export_val(row[i]):gsub("[\t\r\n]", " ")))
+      table.insert(vals, tsv_cell(export_val(row[i])))
     end
     table.insert(lines, table.concat(vals, "\t"))
   end
@@ -234,7 +253,7 @@ local function format_markdown(data_result)
   local lines = {}
   local header_parts = {}
   for _, col in ipairs(cols) do
-    table.insert(header_parts, tostring(col.name))
+    table.insert(header_parts, md_cell(export_val(col.name)))
   end
   table.insert(lines, "| " .. table.concat(header_parts, " | ") .. " |")
   local sep_parts = {}
@@ -245,11 +264,7 @@ local function format_markdown(data_result)
   for _, row in ipairs(rows) do
     local vals = {}
     for i = 1, #cols do
-      -- A raw newline splits the pipe-table row and every row below it stops
-      -- being a row — the same record-structure break csv_escape quotes and
-      -- format_tsv flattens. GitHub-markdown tables render <br>, which keeps
-      -- one row per line while keeping the content readable.
-      table.insert(vals, (export_val(row[i]):gsub("[\r\n]+", "<br>"):gsub("|", "\\|")))
+      table.insert(vals, md_cell(export_val(row[i])))
     end
     table.insert(lines, "| " .. table.concat(vals, " | ") .. " |")
   end
@@ -598,7 +613,7 @@ M._test = {
   format_markdown = format_markdown,
   format_sql_insert = format_sql_insert,
   sql_escape_val = sql_escape_val,
-  csv_escape = csv_escape,
+  csv_cell = csv_cell,
   generate_filename = generate_filename,
 }
 
