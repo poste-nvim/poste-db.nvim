@@ -80,7 +80,10 @@ local function show_drop_confirm(table_node, qualified, conn, context)
 end
 
 --- Execute DROP TABLE and refresh the browser tree.
-execute_drop = function(table_node, qualified, conn, schema_prefix, context)
+--- The parameter list must match the confirm dialog's call site: an extra
+--- `schema_prefix` here used to eat the context, and the refresh that
+--- follows a successful DROP raised on a nil one.
+execute_drop = function(table_node, qualified, conn, context)
   local sql_lines = {}
   table.insert(sql_lines, "DROP TABLE " .. qualified .. ";")
   local sql = table.concat(sql_lines, "\n")
@@ -474,5 +477,6 @@ function M.batch_drop_tables(selected_nodes, context)
   dlg:update(lines, highlights)
 end
 
+M._test = { execute_drop = execute_drop }
 
 return M
