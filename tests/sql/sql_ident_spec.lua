@@ -180,11 +180,31 @@ describe("ident.quote_literal", function()
     assert.equals("nan", ident.quote_literal(0 / 0, "clickhouse"))
   end)
 
-  it("leaves every finite number exactly as tostring gives", function()
+  it("emits integral numbers in full decimal, fractional ones via tostring", function()
     assert.equals("42", ident.quote_literal(42))
     assert.equals("0", ident.quote_literal(0))
     assert.equals("1.5", ident.quote_literal(1.5, "postgres"))
     assert.equals("-2", ident.quote_literal(-2, "postgres"))
+  end)
+
+  -- LuaJIT's `tostring` switches to exponent form once the shortest round-trip
+  -- needs ~16 significant digits, and past 1e14 that rounding rewrites a value
+  -- the double holds EXACTLY. An id like `123456789012345` (15 digits, under
+  -- 2^53 so perfectly representable) came back as `1.2345678901234e+14` — i.e.
+  -- 123456789012340 — so an INSERT/UPDATE generated from the row silently
+  -- retargeted a different key. `%.0f` keeps the integer intact.
+  it("does not corrupt an exact integer id through exponent form", function()
+    assert.equals("123456789012345", ident.quote_literal(123456789012345, "postgres"))
+    assert.equals("100000000000000", ident.quote_literal(1e14, "mysql"))
+    assert.equals("9007199254740991", ident.quote_literal(2 ^ 53 - 1, "postgres"))
+    assert.equals("-100000000000000", ident.quote_literal(-1e14, "sqlite"))
+    -- the corruption was real: the naive tostring spelling differs from the fix
+    assert.is_true(tostring(123456789012345):find("e+") ~= nil)
+  end)
+
+  it("keeps a genuinely fractional double's value through tostring", function()
+    assert.equals("123456.789", ident.quote_literal(123456.789, "postgres"))
+    assert.equals("-0.5", ident.quote_literal(-0.5, "mysql"))
   end)
 end)
 

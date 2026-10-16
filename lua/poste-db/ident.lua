@@ -125,6 +125,18 @@ function M.quote_literal(val, dialect)
   if type(val) == "boolean" then return val and "TRUE" or "FALSE" end
   if type(val) == "number" then
     if M.is_non_finite(val) then return non_finite_literal(val, dialect) end
+    -- An integral double gets the full decimal form, NOT `tostring`. LuaJIT
+    -- prints a number whose shortest round-trip needs more than ~15 significant
+    -- digits in exponent form, and past 1e14 even a value that the double holds
+    -- EXACTLY is rewritten by that rounding: an id `123456789012345` (15 digits,
+    -- well under 2^53 so perfectly representable) came back as `1.2345678901234e+14`
+    -- = 123456789012340, silently shifting the statement's key. `%.0f` emits the
+    -- exact integer, so INSERT/UPDATE round-trips the value the row actually has.
+    -- (Bigints above 2^53 already arrive as strings, not doubles — see
+    -- `format.cell_to_string` — so they never reach this branch.) A genuinely
+    -- fractional double has no integer form; keep `tostring`, whose exponent is
+    -- still value-preserving.
+    if val == math.floor(val) then return string.format("%.0f", val) end
     return tostring(val)
   end
   local s = tostring(val):gsub("'", "''")
