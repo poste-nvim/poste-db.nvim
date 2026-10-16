@@ -109,14 +109,14 @@ update_sql_statusline = function()
   local sql = entry and entry.sql
   -- Under globalstatus the sidebar's statusline spans the full editor width,
   -- so truncate to that; otherwise the float renders its own 40-col bar.
-  local width
+  local bar_width
   if vim.api.nvim_get_option_value("laststatus", {}) >= 3 then
-    width = vim.api.nvim_get_option_value("columns", {})
+    bar_width = vim.api.nvim_get_option_value("columns", {})
   else
-    width = vim.api.nvim_win_get_width(win)
+    bar_width = vim.api.nvim_win_get_width(win)
   end
   local nav_ui = require("poste-db.buffer.nav_ui")
-  local text = nav_ui.build_sql_statusline(sql, width)
+  local text = nav_ui.build_sql_statusline(sql, bar_width)
   pcall(vim.api.nvim_set_option_value, "statusline", text, { win = win })
   vim.cmd("redrawstatus")
 end

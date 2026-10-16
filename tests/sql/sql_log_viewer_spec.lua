@@ -489,6 +489,7 @@ describe("log viewer request_clear", function()
   -- so the keymap now asks first.
   local real_open, real_notify
   local notified
+  local written
 
   before_each(function()
     real_open = io.open
