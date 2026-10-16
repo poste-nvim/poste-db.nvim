@@ -14,6 +14,38 @@ local function normalize_text(text)
   return text
 end
 
+--- Shape scanned rows into `{ columns, rows }`. The first row is the header: a
+--- name spelled twice is ambiguous input (the column map would point both file
+--- columns at one table column and the last would silently win), and every data
+--- row must match the header width or the columns shift under the user. Either
+--- way the whole file fails, naming the row that caused it — an import must not
+--- quietly load a mis-aligned subset. Shared by the CSV and TSV paths, which
+--- differ only in how they scan rows.
+--- @param rows string[][]
+--- @return table|nil result  { columns, rows } on success
+--- @return string|nil err  reason the file was rejected
+local function to_table(rows)
+  if #rows == 0 then return nil, "No data rows found" end
+  local header = rows[1]
+  local seen = {}
+  for _, name in ipairs(header) do
+    if seen[name] then
+      return nil, ("Duplicate column '%s' in header"):format(name)
+    end
+    seen[name] = true
+  end
+  local num_cols = #header
+  local data_rows = {}
+  for ri = 2, #rows do
+    local row = rows[ri]
+    if #row ~= num_cols then
+      return nil, string.format("Row %d: expected %d columns, got %d", ri, num_cols, #row)
+    end
+    data_rows[#data_rows + 1] = row
+  end
+  return { columns = header, rows = data_rows }
+end
+
 function M.parse_csv(text)
   -- No blanket CRLF rewrite here: a CRLF INSIDE a quoted field is the cell's
   -- data (RFC 4180), and normalizing it away changed the value the exporter
@@ -85,32 +117,7 @@ function M.parse_csv(text)
     end
   end
 
-  if #parsed_rows == 0 then
-    return nil, "No data rows found"
-  end
-
-  local header = parsed_rows[1]
-  -- Two columns spelled the same are ambiguous input: the column map would
-  -- point both file columns at one table column and whichever came last
-  -- would silently win. Fail and say which name is doubled.
-  local seen = {}
-  for _, name in ipairs(header) do
-    if seen[name] then
-      return nil, ("Duplicate column '%s' in header"):format(name)
-    end
-    seen[name] = true
-  end
-  local num_cols = #header
-  local data_rows = {}
-  for ri = 2, #parsed_rows do
-    local row = parsed_rows[ri]
-    if #row ~= num_cols then
-      return nil, string.format("Row %d: expected %d columns, got %d", ri, num_cols, #row)
-    end
-    table.insert(data_rows, row)
-  end
-
-  return { columns = header, rows = data_rows }
+  return to_table(parsed_rows)
 end
 
 function M.parse_tsv(text)
@@ -127,31 +134,7 @@ function M.parse_tsv(text)
     end
   end
 
-  if #rows == 0 then
-    return nil, "No data rows found"
-  end
-
-  local header = rows[1]
-  -- same ambiguity as the CSV path: a doubled name would silently let the
-  -- right-hand column win the mapping
-  local seen = {}
-  for _, name in ipairs(header) do
-    if seen[name] then
-      return nil, ("Duplicate column '%s' in header"):format(name)
-    end
-    seen[name] = true
-  end
-  local num_cols = #header
-  local data_rows = {}
-  for i = 2, #rows do
-    local row = rows[i]
-    if #row ~= num_cols then
-      return nil, string.format("Row %d: expected %d columns, got %d", i, num_cols, #row)
-    end
-    table.insert(data_rows, row)
-  end
-
-  return { columns = header, rows = data_rows }
+  return to_table(rows)
 end
 
 function M.parse_json(text)
