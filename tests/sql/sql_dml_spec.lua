@@ -443,3 +443,89 @@ describe("non-finite numbers in a committed value", function()
       dml.generate_delete(nil, "t", { cols[2] }, { math.huge }, "postgres"))
   end)
 end)
+
+describe("insert with every cell empty or [Auto]", function()
+  local cols = { { name = "id" }, { name = "note" } }
+
+  -- `INSERT INTO t () VALUES ();` is a syntax error everywhere but MySQL, so
+  -- a row added (`o`) and committed untouched died with a raw server error.
+  it("spells DEFAULT VALUES where the engine has that form", function()
+    assert.equals('INSERT INTO "t" DEFAULT VALUES;',
+      dml.generate_insert(nil, "t", cols, { "[Auto]", nil }, "postgres"))
+    assert.equals('INSERT INTO "t" DEFAULT VALUES;',
+      dml.generate_insert(nil, "t", cols, { nil, nil }, "sqlite"))
+    assert.equals("INSERT INTO [t] DEFAULT VALUES;",
+      dml.generate_insert(nil, "t", cols, { nil, nil }, "mssql"))
+  end)
+
+  it("keeps MySQL's empty-list spelling", function()
+    assert.equals("INSERT INTO `t` () VALUES ();",
+      dml.generate_insert(nil, "t", cols, { nil, nil }, "mysql"))
+    assert.equals("INSERT INTO `t` () VALUES ();",
+      dml.generate_insert(nil, "t", cols, { "[Auto]", "[Auto]" }, "mariadb"))
+  end)
+
+  it("refuses on an engine with no default-values form", function()
+    local sql, err = dml.generate_insert(nil, "t", cols, { nil, nil }, "clickhouse")
+    assert.is_nil(sql)
+    assert.truthy(err:find("fill at least one cell"))
+  end)
+
+  it("generate_dml surfaces the refused row via skipped, not a nil statement", function()
+    local stmts, skipped = dml.generate_dml({
+      modified_cells = {},
+      deleted_rows = {},
+      added_rows = { { data = { "[Auto]", nil }, row_idx = 1 } },
+    }, {
+      layout = { schema = "", table_name = "t", columns = cols },
+      rows_source = {},
+    }, "clickhouse")
+    assert.equals(0, #stmts)
+    assert.equals(1, #skipped)
+    assert.matches("insert row 1 skipped", skipped[1])
+  end)
+end)
+
+describe("MySQL ISO-T timestamp rewrite is column-type aware", function()
+  -- No PK on purpose: the WHERE then names every non-NULL column, so each
+  -- case exercises the rewrite in the SET clause AND in the WHERE clause.
+  local function update(col, dialect)
+    local cols = { col }
+    return dml.generate_update(nil, "t", cols,
+      { { col = 1, old_val = "2024-01-01T10:00:00Z", new_val = "2024-01-01T11:00:00Z" } },
+      { "2024-01-01T10:00:00Z" }, dialect or "mysql")
+  end
+
+  -- The rewrite round-trips the spelling a DATETIME column actually stores;
+  -- applied to a text column it altered the committed value AND rewrote the
+  -- WHERE the same way, so the statement no longer matched the row it named.
+  it("rewrites on a datetime column", function()
+    assert.equals("UPDATE `t` SET `ts` = '2024-01-01 11:00:00' "
+      .. "WHERE `ts` = '2024-01-01 10:00:00';",
+      update({ name = "ts", type = "datetime" }))
+  end)
+
+  it("rewrites on a ClickHouse-style wrapped datetime64", function()
+    assert.equals("UPDATE `t` SET `ts` = '2024-01-01 11:00:00' "
+      .. "WHERE `ts` = '2024-01-01 10:00:00';",
+      update({ name = "ts", type = "Nullable(DateTime64(3))" }))
+  end)
+
+  it("keeps the T spelling on a text column", function()
+    assert.equals("UPDATE `t` SET `memo` = '2024-01-01T11:00:00Z' "
+      .. "WHERE `memo` = '2024-01-01T10:00:00Z';",
+      update({ name = "memo", type = "varchar" }))
+  end)
+
+  it("keeps the permissive rewrite when the caller carries no type", function()
+    assert.equals("UPDATE `t` SET `v` = '2024-01-01 11:00:00' "
+      .. "WHERE `v` = '2024-01-01 10:00:00';",
+      update({ name = "v" }))
+  end)
+
+  it("never touches the postgres path", function()
+    assert.equals([[UPDATE "t" SET "memo" = '2024-01-01T11:00:00Z' ]]
+      .. [[WHERE "memo" = '2024-01-01T10:00:00Z';]],
+      update({ name = "memo", type = "text" }, "postgres"))
+  end)
+end)

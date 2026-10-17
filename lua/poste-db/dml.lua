@@ -69,10 +69,21 @@ local function quote_val(val, dialect, allow_expr, col_type)
       return val
     end
     if dialect == "mysql" or dialect == "mariadb" then
-      val = val:gsub("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d%.%d+)[%+%-]%d%d:%d%d$", "%1 %2")
-      val = val:gsub("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d)[%+%-]%d%d:%d%d$", "%1 %2")
-      val = val:gsub("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d%.%d+)Z$", "%1 %2")
-      val = val:gsub("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d)Z$", "%1 %2")
+      -- The T→space rewrite exists because a DATETIME cell arrives from the
+      -- binary as `2024-01-01T10:00:00Z` while MySQL stores
+      -- `2024-01-01 10:00:00` — a round-trip for the column's own spelling.
+      -- It must not touch a text column: a VARCHAR the user committed verbatim
+      -- came out with the `T` rewritten (and the WHERE rewritten the same way,
+      -- so the statement stopped matching the row it named). An unknown type
+      -- keeps the rewrite: callers that carry no metadata keep the old,
+      -- permissive round-trip.
+      local ct = types.unwrap_modifier((col_type or ""):lower())
+      if ct == "" or ct:find("time", 1, true) or ct:find("date", 1, true) then
+        val = val:gsub("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d%.%d+)[%+%-]%d%d:%d%d$", "%1 %2")
+        val = val:gsub("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d)[%+%-]%d%d:%d%d$", "%1 %2")
+        val = val:gsub("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d%.%d+)Z$", "%1 %2")
+        val = val:gsub("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d)Z$", "%1 %2")
+      end
     end
     return ident.quote_literal(val, dialect)
   end
@@ -176,6 +187,8 @@ end
 
 --- @param allow_expr boolean|nil honor `__expr:` values as raw SQL (editor
 ---   edits only; imports pass nil so a crafted cell cannot inject SQL)
+--- @return string|nil sql nil when no dialect-legal statement can be generated
+--- @return string|nil err why generation was refused
 function M.generate_insert(schema, table_name, columns, row_values, dialect, allow_expr)
   local col_parts = {}
   local val_parts = {}
@@ -186,6 +199,25 @@ function M.generate_insert(schema, table_name, columns, row_values, dialect, all
       col_parts[#col_parts + 1] = ident.quote(col.name, dialect)
       val_parts[#val_parts + 1] = quote_val(val, dialect, allow_expr, col_type_of(col))
     end
+  end
+
+  -- Every cell skipped (nil or "[Auto]"): the row asked for nothing but the
+  -- columns' defaults, which still needs a dialect-legal spelling. The bare
+  -- `INSERT INTO t () VALUES ();` this used to emit unconditionally is a
+  -- syntax error on every engine but MySQL's, so the commit surfaced a raw
+  -- server error for a row the user added and never filled.
+  if #col_parts == 0 then
+    local target = "INSERT INTO " .. quote_schema(schema, dialect)
+      .. ident.quote(table_name, dialect)
+    if dialect == "mysql" or dialect == "mariadb" then
+      return target .. " () VALUES ();"
+    end
+    if dialect == "postgres" or dialect == "sqlite" or dialect == "mssql" then
+      return target .. " DEFAULT VALUES;"
+    end
+    -- ClickHouse has no default-values INSERT form at all; a refusal names
+    -- the gap instead of a server syntax error.
+    return nil, "every cell is empty or [Auto] — fill at least one cell to insert"
   end
 
   return "INSERT INTO " .. quote_schema(schema, dialect) .. ident.quote(table_name, dialect)
@@ -297,10 +329,15 @@ function M.generate_dml(es, tab, dialect)
     else
       row_values = added.data
     end
-    stmts[#stmts + 1] = {
-      sql = M.generate_insert(schema, table_name, columns, row_values, dialect, true),
-      type = "insert",
-    }
+    local sql, err = M.generate_insert(schema, table_name, columns, row_values, dialect, true)
+    if sql then
+      stmts[#stmts + 1] = { sql = sql, type = "insert" }
+    else
+      -- generate_insert refuses the all-empty row; surfacing the reason beats
+      -- a `{ sql = nil }` statement the executor would trip over.
+      skipped[#skipped + 1] = ("insert%s skipped: %s"):format(
+        added.row_idx and (" row %d"):format(added.row_idx) or "", err)
+    end
   end
 
   return stmts, skipped
