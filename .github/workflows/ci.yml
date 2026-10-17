@@ -33,12 +33,16 @@ jobs:
         run: luacheck --codes lua plugin ftplugin tests
 
   test:
+    # nightly is a signal, not the gate: the dev build moves daily and an
+    # unrelated nvim regression must not turn the badge red. stable is the
+    # release-quality floor.
     strategy:
       fail-fast: false
       matrix:
         nvim_version:
           - stable
           - nightly
+    continue-on-error: ${{ matrix.nvim_version == 'nightly' }}
     runs-on: ubuntu-latest
 
     steps:
