@@ -49,6 +49,22 @@ describe("format format_datetime_local", function()
     local expected = os.date("%Y-%m-%d %H:%M:%S", epoch_utc)
     assert.equals(expected, dt("2026-06-15 08:30:00-04:30"))
   end)
+
+  it("carries a fractional-seconds suffix through the conversion", function()
+    -- The sub-second part used to be swallowed by the timestamp scan, so a
+    -- timestamp(6) cell rendered without the fraction its value carries.
+    local fields = { year = 2026, month = 1, day = 1, hour = 12, min = 0, sec = 0 }
+    local epoch_utc = os.time(fields) + utc_offset()
+    local expected = os.date("%Y-%m-%d %H:%M:%S", epoch_utc) .. ".123456"
+    assert.equals(expected, dt("2026-01-01T12:00:00.123456Z"))
+  end)
+
+  it("carries the fraction through an offset conversion too", function()
+    local fields = { year = 2026, month = 6, day = 15, hour = 12, min = 0, sec = 0 }
+    local epoch_utc = os.time(fields) + utc_offset() - (5 * 3600 + 30 * 60)
+    local expected = os.date("%Y-%m-%d %H:%M:%S", epoch_utc) .. ".5"
+    assert.equals(expected, dt("2026-06-15T12:00:00.5+05:30"))
+  end)
 end)
 
 describe("format translated-SQL footnote", function()

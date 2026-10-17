@@ -85,14 +85,19 @@ end
 --- Convert a datetime string to local timezone for display.
 --- Only converts if the string has a timezone indicator (Z or +/-HH:MM);
 --- the indicator is honored — a `Z` timestamp renders as the local wall
---- clock, not as the raw UTC fields.
+--- clock, not as the raw UTC fields. A fractional-seconds suffix is carried
+--- over untouched: dropping it silently changed the value a timestamp(6)
+--- column showed (two commits 200ms apart rendered as the same second).
 --- @param s string
 --- @return string
 local function format_datetime_local(s)
   if not s or s == "" then return s end
   local tz_tail = s:match("(Z)$") or s:match("([%+%-]%d%d:%d%d)$")
   if not tz_tail then return s end
-  local ts = s:match("^(%d%d%d%d%-%d%d%-%d%d[T ]%d%d:%d%d:%d%d)")
+  -- Lua patterns cannot quantify a group, so the fraction is the greedy
+  -- digit/dot run right after the fixed-length timestamp head ("" when the
+  -- value carries no sub-second part).
+  local ts, fraction = s:match("^(%d%d%d%d%-%d%d%-%d%d[T ]%d%d:%d%d:%d%d)(%.?%d*)")
   if not ts then return s end
   local y, mo, d, h, mi, sec = ts:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)[T ](%d%d):(%d%d):(%d%d)")
   if not y then return s end
@@ -112,7 +117,8 @@ local function format_datetime_local(s)
       os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = sec })
         - tz_off + local_utc_offset())
   end)
-  return ok and result or s
+  if not ok then return s end
+  return result .. (fraction or "")
 end
 
 --- Format a Lua number for table display. Integer-valued numbers keep the
