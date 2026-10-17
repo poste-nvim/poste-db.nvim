@@ -61,8 +61,10 @@ are noted rather than re-implemented:
 - Response handling for SQL execution: `sql_runner/response.lua`.
 
 An external UI framework (nui-components) was evaluated and rejected for
-now — see `docs/dev/sql/architecture-review.md` §3 before reconsidering.
-Extending the in-house primitives is the default move.
+now (2026-08 architecture review, archived in 75382cc): it overlaps the
+house primitives above without covering their q/Esc, backdrop-refcount
+and ColorScheme-override behavior, and adopting it would change what
+users see. Extending the in-house primitives is the default move.
 
 ## Know when NOT to unify
 

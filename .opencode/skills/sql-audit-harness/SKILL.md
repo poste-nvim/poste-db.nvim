@@ -28,9 +28,10 @@ on or write into a report must survive your own verification.
   against the actual diff. (A draft once recorded the wrong direction of a
   formatting unification because it was written before the code.)
 - When deeper reading contradicts an earlier finding, amend the report with
-  an explicit revision note — do not silently edit or quietly drop it.
-  (Model: the P-B "state dual source" item revised to won't-do in
-  `docs/dev/sql/architecture-review.md`.)
+  an explicit revision note — do not silently edit or quietly drop it. Model:
+  an audit's "state dual source" item was revised to won't-do once every
+  writer/reader of both sides had been enumerated; the review itself was
+  archived in 75382cc, the revision RULE is what survives here.
 
 ## Dead-code rules
 
