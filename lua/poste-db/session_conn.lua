@@ -496,11 +496,28 @@ function M.execute(conn_url, sql, callbacks, bufnr, database, statements)
   return "dispatched"
 end
 
+--- Close exactly one pool entry and its process. Unlike M.stop this never
+--- fans out to the entry's URL siblings: a sibling keyed on another database
+--- may still have buffers using it.
+local function stop_one(key)
+  local session = pool[key]
+  if not session then return end
+  session.alive = false
+  pool[key] = nil
+  if session.job_id and vim.fn.jobwait({ session.job_id }, 0)[1] == -1 then
+    pcall(vim.fn.chansend, session.job_id, "")
+    pcall(vim.fn.chanclose, session.job_id, "stdin")
+  end
+end
+
 --- Close a session by pool key, or every session of a connection URL
 --- (any database) when given a bare URL — `:PosteDbSessionStop <arg>` takes
 --- whatever `:PosteDbSessionList` shows.
 --- @param key_or_url string
 function M.stop(key_or_url)
+  -- Snapshot first: stop_one removes possibly several pool keys (one URL,
+  -- many databases), and deleting a key other than the current one during a
+  -- pairs() walk is undefined in Lua — the same rule stop_all documents.
   local targets = {}
   for key, session in pairs(pool) do
     if key == key_or_url or session.conn_url == key_or_url then
@@ -508,13 +525,7 @@ function M.stop(key_or_url)
     end
   end
   for _, key in ipairs(targets) do
-    local session = pool[key]
-    session.alive = false
-    pool[key] = nil
-    if session.job_id and vim.fn.jobwait({ session.job_id }, 0)[1] == -1 then
-      pcall(vim.fn.chansend, session.job_id, "")
-      pcall(vim.fn.chanclose, session.job_id, "stdin")
-    end
+    stop_one(key)
   end
 end
 
@@ -531,13 +542,23 @@ function M.stop_all()
 end
 
 --- Remove a buffer from all sessions; close sessions with no remaining buffers.
+--- Each emptied entry closes on its own key — M.stop's URL fan-out would also
+--- kill a sibling session (same connection, another database) whose buffers
+--- are still open, failing its in-flight requests and dropping its SET/temp
+--- state.
 --- @param bufnr number
 function M.cleanup_buf(bufnr)
+  -- Snapshot first: stop_one removes pool keys during what used to be its
+  -- pairs() walk (undefined in Lua for keys other than the current one).
+  local emptied = {}
   for key, session in pairs(pool) do
     session.bufs[bufnr] = nil
     if not next(session.bufs) then
-      M.stop(key)
+      emptied[#emptied + 1] = key
     end
+  end
+  for _, key in ipairs(emptied) do
+    stop_one(key)
   end
 end
 

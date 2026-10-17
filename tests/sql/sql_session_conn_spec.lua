@@ -585,3 +585,53 @@ describe("session_conn on_session_stdout line assembly", function()
     assert.equals("", s.buffer)
   end)
 end)
+
+describe("session_conn cleanup_buf closes only emptied sessions", function()
+  local state = require("poste-db.state")
+  local session_conn = require("poste-db.session_conn")
+
+  local real_binary_lookup
+  local real_jobstart, real_jobwait, real_chansend
+
+  before_each(function()
+    real_binary_lookup = state.find_poste_binary
+    state.find_poste_binary = function() return "/fake/poste" end
+    real_jobstart = vim.fn.jobstart
+    vim.fn.jobstart = function() return 2000 end
+    real_jobwait = vim.fn.jobwait
+    vim.fn.jobwait = function() return { -1 } end
+    real_chansend = vim.fn.chansend
+    vim.fn.chansend = function() return 10 end
+  end)
+
+  after_each(function()
+    session_conn.stop_all()
+    state.find_poste_binary = real_binary_lookup
+    vim.fn.jobstart = real_jobstart
+    vim.fn.jobwait = real_jobwait
+    vim.fn.chansend = real_chansend
+  end)
+
+  it("a sibling session with live buffers survives one buffer's cleanup", function()
+    -- cleanup_buf used to call M.stop(key), whose URL fan-out closed BOTH
+    -- sessions of the connection: the sibling still had buffer 9 open, and
+    -- its in-flight requests failed with "SQL session exited" while its
+    -- SET/temp state died with the process.
+    local a = session_conn.get("postgres://h/app", 5, "db1")
+    local b = session_conn.get("postgres://h/app", 9, "db2")
+    assert.are_not.equal(a, b)
+
+    session_conn.cleanup_buf(5)
+
+    assert.is_nil(session_conn.list()["postgres://h/app\0db1"], "emptied session closes")
+    assert.is_not_nil(session_conn.list()["postgres://h/app\0db2"], "sibling with a live buffer stays")
+  end)
+
+  it("closing the last buffer of each session empties both", function()
+    session_conn.get("postgres://h/app", 5, "db1")
+    session_conn.get("postgres://h/app", 9, "db2")
+    session_conn.cleanup_buf(5)
+    session_conn.cleanup_buf(9)
+    assert.are.equal(0, vim.tbl_count(session_conn.list()))
+  end)
+end)
