@@ -115,9 +115,31 @@ local function is_folded_mc(cp)
   return false
 end
 
+local fold_cache = {}
+
+--- The per-codepoint cell cost the terminal oracle charges: a folded Mc
+--- mark paints its own cell (1), a mark vim folds to zero in every context
+--- costs 0, anything else its standalone strdisplaywidth. Shared by
+--- M.display_width and M.truncate so measuring and cutting can never
+--- disagree about a string — on 0.13 nightly strdisplaywidth() drifted on
+--- some Devanagari clusters, and the old whole-string formula made
+--- display_width(truncate(s, n)) exceed n.
+local function char_cost(cp, ch)
+  if is_folded_mc(cp) then return 1 end
+  local cached = fold_cache[cp]
+  if cached == nil then
+    cached = (vim.fn.strdisplaywidth("a" .. ch) == 1)
+    fold_cache[cp] = cached
+  end
+  if cached then return 0 end
+  local ok, w = pcall(vim.fn.strdisplaywidth, ch)
+  return ok and w or 1
+end
+
 --- Display width under the active width_mode:
---- "terminal": strdisplaywidth() plus one cell per folded Mc mark (agrees
----   with the terminal's linear full-line paint).
+--- "terminal": the sum of per-codepoint cell costs (see char_cost) — the
+---   same oracle M.truncate cuts with, so a truncated cell always measures
+---   within its budget.
 --- "nvim": plain strdisplaywidth() (agrees with nvim's grid — cursor, cell
 ---   navigation, partial repaints).
 --- A mark in the very first position already measures 1 (vim only folds it
@@ -131,14 +153,16 @@ function M.display_width(s)
   end
   if ascii then return #s end
 
-  local ok, w = pcall(vim.fn.strdisplaywidth, s)
-  if not ok then return #s end
-  if width_mode() == "nvim" then return w end
-  local i, first = 1, true
+  if width_mode() == "nvim" then
+    local ok, w = pcall(vim.fn.strdisplaywidth, s)
+    if ok then return w end
+    return #s
+  end
+  local w, i = 0, 1
   while i <= #s do
     local cp, next_i = decode_cp(s, i)
-    if not first and cp and is_folded_mc(cp) then w = w + 1 end
-    first = false
+    local ch = s:sub(i, (next_i or i + 1) - 1)
+    w = w + (cp and char_cost(cp, ch) or 1)
     i = next_i or i + 1
   end
   return w
@@ -152,19 +176,6 @@ end
 ---   would over-count and cut CJK-style too early.)
 --- "nvim": per-codepoint standalone strdisplaywidth, matching what vim's
 ---   grid grants each character in isolation (the historic behavior).
-local fold_cache = {}
-
-local function char_cost(cp, ch)
-  if is_folded_mc(cp) then return 1 end
-  local cached = fold_cache[cp]
-  if cached == nil then
-    cached = (vim.fn.strdisplaywidth("a" .. ch) == 1)
-    fold_cache[cp] = cached
-  end
-  if cached then return 0 end
-  local ok, w = pcall(vim.fn.strdisplaywidth, ch)
-  return ok and w or 1
-end
 
 function M.truncate(s, max_dw)
   if not s then return "" end

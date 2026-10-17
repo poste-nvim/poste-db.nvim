@@ -130,9 +130,17 @@ describe("semantic_diagnostics fetch failure recovery", function()
     return vim.wait(3000, function() return has(sem._test.cache_keys(), key) end)
   end
 
+  -- Each case gets its own connection key (declared before the before_each
+  -- that bumps it): an introspect job from a previous case can land late on
+  -- a loaded machine, and a shared "connA/blog" key would let that late
+  -- good fetch satisfy this case's assert.is_false(cached(...)). A unique
+  -- key per case makes a late fetch write a key nobody reads.
+  local case_seq = 0
+
   before_each(function()
+    case_seq = case_seq + 1
     sem.invalidate(nil)
-    fake_ctx = { connection = "connA", database = "blog" }
+    fake_ctx = { connection = "conn" .. case_seq, database = "blog" }
   end)
 
   -- Every script is made inside an `it` body, so the list only ever holds
@@ -171,11 +179,11 @@ describe("semantic_diagnostics fetch failure recovery", function()
       fake_binary = case.broken()
       local buf = sql_buf("SELECT id FROM widget;")
       sem.update(buf)
-      assert.is_false(cached("connA/blog"))
+      assert.is_false(cached(fake_ctx.connection .. "/blog"))
 
       fake_binary = sh("echo '{\"items\":[{\"name\":\"widget\"}]}'")
       sem.update(buf)
-      assert.is_true(cached("connA/blog"))
+      assert.is_true(cached(fake_ctx.connection .. "/blog"))
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
   end
