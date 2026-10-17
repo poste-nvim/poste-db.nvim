@@ -64,9 +64,24 @@ jobs:
           git clone --depth 1 https://github.com/nvim-lua/plenary.nvim \
             "$HOME/.local/share/nvim/lazy/plenary.nvim"
 
+      # nvim-treesitter isn't installed here (no `TSInstallSync` — the old
+      # step failed with E492 into /dev/null), so build the sql parser the
+      # way nvim-treesitter would: generate parser.c from the grammar, then
+      # compile parser + external scanner into site/parser. The grammar's
+      # v0.3.11 generates tree-sitter ABI 15; current stable/nightly load it.
       - name: Install tree-sitter SQL parser
         run: |
-          nvim --headless -u NONE -c "TSInstallSync sql" -c "qa" 2>/dev/null || true
+          git clone --depth 1 --branch v0.3.11 \
+            https://github.com/DerekStride/tree-sitter-sql /tmp/tree-sitter-sql
+          curl -sSLf "https://github.com/tree-sitter/tree-sitter/releases/download/v0.26.13/tree-sitter-linux-x64.gz" \
+            | gunzip > /tmp/tree-sitter
+          chmod +x /tmp/tree-sitter
+          (cd /tmp/tree-sitter-sql && /tmp/tree-sitter generate)
+          mkdir -p "$HOME/.local/share/nvim/site/parser"
+          cc -O2 -shared -fPIC -o "$HOME/.local/share/nvim/site/parser/sql.so" \
+            /tmp/tree-sitter-sql/src/parser.c /tmp/tree-sitter-sql/src/scanner.c \
+            -I /tmp/tree-sitter-sql/src
+          test -f "$HOME/.local/share/nvim/site/parser/sql.so"
 
       - name: Run tests
         working-directory: poste-db.nvim

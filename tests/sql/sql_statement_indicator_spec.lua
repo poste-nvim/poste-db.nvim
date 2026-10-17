@@ -6,11 +6,12 @@
 local statement_indicator = require("poste-db.statement_indicator")
 
 --- The boundary rows come from `ts_stmt.find_stmt_span`, so with no Tree-sitter
---- `sql` parser installed this whole describe measures the environment: three of
---- its tests fail on extmarks that can never appear, and the fourth — "does not
---- paint" — passes for exactly the same reason. `sql_ts_stmt_spec` skips on this
---- same predicate; here the skip has to be explicit because the assertions are
---- about the plugin's painting, not about the parser.
+--- `sql` parser installed the painting assertions measure the environment, not
+--- the plugin: the marks can never appear. Every parser-dependent test below
+--- goes through `it_needs_parser`; anything left on a bare `it` must assert
+--- behaviour that holds without a parser (e.g. "does not paint"). `sql_ts_stmt_spec`
+--- skips on this same predicate; here the skip has to be explicit because the
+--- assertions are about the plugin's painting, not about the parser.
 local has_sql_parser = require("poste-db.ts_stmt").check_parser()
 
 local function it_needs_parser(name, fn)
@@ -169,7 +170,7 @@ describe("statement_indicator boundary gutter", function()
     vim.api.nvim_buf_delete(buf, { force = true })
   end)
 
-  it("tints the number column instead of the text", function()
+  it_needs_parser("tints the number column instead of the text", function()
     statement_indicator.update(buf, 1)
     assert.is_true(vim.wait(2000, function() return #marks() > 0 end),
       "boundary extmarks should appear after update")
@@ -185,7 +186,7 @@ describe("statement_indicator boundary gutter", function()
     assert.same({ 1, 2, 3, 4 }, rows, "one mark per statement row")
   end)
 
-  it("drops the marks when the cursor leaves the statement", function()
+  it_needs_parser("drops the marks when the cursor leaves the statement", function()
     statement_indicator.update(buf, 1)
     assert.is_true(vim.wait(2000, function() return #marks() > 0 end))
     vim.api.nvim_buf_set_lines(buf, 4, 4, false, { "", "SELECT 2;", "" })
