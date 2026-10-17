@@ -14,3 +14,4 @@ ignore/
 
 # Local AI-session artifacts
 .zcode/
+.workbuddy/

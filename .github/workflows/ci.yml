@@ -71,7 +71,7 @@ jobs:
       - name: Run tests
         working-directory: poste-db.nvim
         run: |
-          ./tests/run.sh 2>&1 || echo "::warning::Tests failed or skipped (missing binary?)"
+          ./tests/run.sh 2>&1
 
       - name: Show test summary
         working-directory: poste-db.nvim
