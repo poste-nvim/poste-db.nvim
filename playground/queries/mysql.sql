@@ -1,9 +1,9 @@
 -- @connection local
 -- @database blog
 
--- ============================================================
+-- ================================================
 -- Blog: basic queries
--- ============================================================
+-- ================================================
 SELECT * FROM authors LIMIT 5;
 SELECT * FROM posts ORDER BY created_at DESC LIMIT 10;
 SELECT * FROM comments WHERE approved = TRUE ORDER BY created_at DESC LIMIT 10;

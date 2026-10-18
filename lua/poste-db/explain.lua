@@ -1,5 +1,6 @@
 --- EXPLAIN — run the statement under the cursor through the dialect's
---- EXPLAIN form and render the plan in the introspection float.
+--- EXPLAIN form and render the plan as a dataset table in the dataset panel
+--- (the same view a normal query opens).
 ---
 --- The wrappers below are plan-only forms: plain EXPLAIN never executes the
 --- statement (postgres/mysql/clickhouse), and EXPLAIN QUERY PLAN neither
@@ -14,7 +15,6 @@ local const = require("poste-db.constants")
 -- aware SQL masker, and the DML guard and ai/actions already split statements
 -- with it, so EXPLAIN cannot disagree with them about where a statement ends.
 local dml_guard = require("poste-db.dml_guard")
-local verdict = require("poste-db.verdict")
 
 local EXPLAIN_PREFIX = {
   postgres = "EXPLAIN ",
@@ -74,65 +74,8 @@ function M.wrap_sql(dialect, stmt)
   return prefix .. inner, nil
 end
 
-local function cell_text(v)
-  if v == nil or v == vim.NIL then return "" end
-  return tostring(v)
-end
-
---- Pull human-readable plan lines out of a legacy exec_run response.
---- Single-column results (pg/mysql/clickhouse tree text) render one cell per
---- line; sqlite's EXPLAIN QUERY PLAN returns id/parent/detail columns — its
---- "detail" column carries the readable text; anything else renders row
---- cells joined with " | ".
---- @param resp table|nil legacy response from exec_run.run_sql
---- @return string[]|nil lines, string|nil error_message
-function M.plan_lines(resp)
-  if not resp then
-    return nil, "EXPLAIN failed (no response)"
-  end
-  local result = resp.results and resp.results[1]
-  if not result then
-    return nil, "EXPLAIN returned no plan"
-  end
-  -- The flag decides, the text only explains — and the caller concatenates
-  -- whatever comes back, so a `vim.NIL` error field had to be filtered out
-  -- rather than passed through as "the reason".
-  local failed, err_text = verdict.classify(result)
-  if not failed and resp.has_error == true then
-    failed, err_text = true, verdict.UNEXPLAINED_FAILURE
-  end
-  if failed then
-    return nil, err_text
-  end
-
-  local columns = result.columns or {}
-  local detail_idx
-  for i, col in ipairs(columns) do
-    if type(col) == "table" and col.name and col.name:lower() == "detail" then
-      detail_idx = i
-      break
-    end
-  end
-
-  local lines = {}
-  for _, row in ipairs(result.rows or {}) do
-    if #columns <= 1 then
-      lines[#lines + 1] = cell_text(row[1])
-    elseif detail_idx then
-      lines[#lines + 1] = cell_text(row[detail_idx])
-    else
-      local cells = {}
-      for _, c in ipairs(row) do cells[#cells + 1] = cell_text(c) end
-      lines[#lines + 1] = table.concat(cells, " | ")
-    end
-  end
-  if #lines == 0 then
-    return nil, "EXPLAIN returned no plan"
-  end
-  return lines, nil
-end
-
---- EXPLAIN the statement under the cursor and show the plan in a float.
+--- EXPLAIN the statement under the cursor and open the plan as a dataset
+--- table in the dataset panel.
 function M.explain()
   local src_buf = vim.api.nvim_get_current_buf()
   local state = require("poste-db.state")
@@ -171,7 +114,8 @@ function M.explain()
     conn_url = require("poste-db.connections").resolve_connection_url(conn)
   end
 
-  local resp = require("poste-db.exec_run").run_sql(sql, {
+  local exec_run = require("poste-db.exec_run")
+  local resp = exec_run.run_sql(sql, {
     src_file = vim.api.nvim_buf_get_name(src_buf),
     conn_url = conn_url,
     database = database,
@@ -179,18 +123,56 @@ function M.explain()
     log_extra = { connection = conn ~= "" and conn or nil },
   })
 
-  local lines, plan_err = M.plan_lines(resp)
-  if not lines then
+  if not resp then
+    vim.notify("EXPLAIN failed (no response)", vim.log.levels.ERROR, { title = "PosteDb" })
+    return
+  end
+  -- A rejected EXPLAIN arrives as a normal response carrying a per-result
+  -- error; `first_error` is the same reading the sql_runner path uses, so a
+  -- plan the server refused never renders as an empty table.
+  local plan_err = exec_run.first_error(resp)
+  if plan_err then
     vim.notify("EXPLAIN: " .. plan_err, vim.log.levels.ERROR, { title = "PosteDb" })
     return
   end
 
-  local title = conn ~= ""
-    and ("EXPLAIN: " .. conn .. (database ~= "" and "/" .. database or ""))
-    or "EXPLAIN"
-  -- Plan trees carry their own indentation/arrows; sql highlighting would be
-  -- noise, so render as plain text.
-  require("poste-db.introspect").show_float(lines, title, "text")
+  -- A plan is an ordinary result set, so it opens where a query result does:
+  -- the dataset split, with the dataset's borders, header and column widths.
+  -- A wide grid (MySQL's twelve-column EXPLAIN) then scrolls horizontally in
+  -- the split instead of wrapping inside a float.
+  --
+  -- A fresh history entry, like a query run: without one the plan would land
+  -- in the previous request's slot (render_dataset resets the active entry's
+  -- tabs) and read as that request's result.
+  local dataset = require("poste-db.dataset")
+  local line_nr = vim.fn.line(".")
+  local ts = dataset.now_wall()
+  local entry = dataset.new_entry({
+    label = statement.extract_label(buf_lines, line_nr) or "EXPLAIN",
+    ts_sec = ts.sec,
+    ts_nsec = ts.nsec,
+    src_buf = src_buf,
+    src_file = vim.api.nvim_buf_get_name(src_buf),
+    stmt_line = line_nr,
+  })
+  entry.sql = sql
+
+  local sql_format = require("poste-db.format")
+  local lines, meta, layout = sql_format.format_dataset(resp)
+  -- Prefer the decoded result set (same as db_browser and the AI actions) so
+  -- cell preview (K) / yank / sort read these rows, not state.last_response.
+  local data
+  if resp.body then
+    local ok, decoded = pcall(vim.json.decode, resp.body)
+    if ok then data = decoded end
+  end
+  require("poste-db.buffer").render_dataset(lines, meta or {}, {
+    data = data,
+    layout = layout,
+    original_sql = sql,
+    src_file = vim.api.nvim_buf_get_name(src_buf),
+    src_buf = src_buf,
+  })
 end
 
 return M
