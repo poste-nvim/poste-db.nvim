@@ -2,7 +2,10 @@
 --- plugin can actually spawn, and only reaches the network when nothing
 --- usable exists. The candidate walk itself lives in state.find_poste_binary
 --- (see sql_state_spec.lua); these cases pin that ensure() delegates to it
---- rather than keeping a second, drifted copy of the rule.
+--- rather than keeping a second, drifted copy of the rule. The download
+--- itself runs detached (vim.system), so its failure paths are pinned
+--- against the two shapes a user can hit: the spawn failing (no curl) and
+--- curl exiting non-zero.
 local install = require("poste-db.install")
 local state = require("poste-db.state")
 local uv = vim.uv or vim.loop
@@ -89,6 +92,24 @@ describe("poste-db install ensure", function()
     assert.is_nil(install.ensure())
     assert.equals(1, download_calls)
   end)
+
+  it("hands on_done to the download when nothing usable exists", function()
+    -- The download settles asynchronously, so :PosteDbInstall and any other
+    -- caller learn the outcome through this callback; ensure() must forward
+    -- it untouched.
+    vim.cmd("unlet! g:poste_binary")
+    vim.env.POSTE_BINARY = nil
+    local captured_version, captured_cb
+    install.download = function(version, cb)
+      download_calls = download_calls + 1
+      captured_version, captured_cb = version, cb
+      return true
+    end
+    local marker = function() end
+    assert.is_nil(install.ensure(marker))
+    assert.equals("latest", captured_version)
+    assert.equals(marker, captured_cb)
+  end)
 end)
 
 describe("poste-db install ps_literal", function()
@@ -112,10 +133,11 @@ describe("poste-db install ps_literal", function()
 end)
 
 describe("poste-db install curl_argv", function()
-  -- Both downloads happen inside ensure(), which setup() calls, so they block
-  -- Neovim's startup: a run without a ceiling can freeze the editor for as long
-  -- as the OS socket timeout, which reads as a hung plugin rather than a failed
-  -- download.
+  -- Every curl call carries explicit ceilings. The archive fetch runs detached
+  -- from the main loop now, but a run without a ceiling would keep the
+  -- background curl alive for as long as the OS socket timeout — minutes with
+  -- no failure reported — and the checksum fetch runs on the main loop, where
+  -- the same ceiling is what bounds a brief pause.
   local function has(argv, flag, value)
     for i, v in ipairs(argv) do
       if v == flag and argv[i + 1] == value then return true end
@@ -190,34 +212,66 @@ describe("poste-db install checksum_matches", function()
   end)
 end)
 
-describe("poste-db install download without curl", function()
-  -- vim.fn.system RAISES E475 when argv[0] is missing, and download() sits on
-  -- the setup() path via ensure(): a box without curl must end in the
-  -- graceful "download failed" notify, not a plugin-load exception
-  -- (synced from the poste-redis sibling).
-  it("reports failure instead of raising when curl is missing", function()
-    local saved_notify = vim.notify
-    local saved_system = vim.fn.system
-    local notices = {}
+describe("poste-db install download failure paths", function()
+  -- The archive fetch is spawned with vim.system. Both failure shapes a user
+  -- can hit must end in a notify (never a raise — download() sits on the
+  -- setup() path via ensure()) and settle on_done(false): the spawn itself
+  -- failing (curl missing), and curl exiting non-zero (404, timeout, a
+  -- captive portal reset).
+  local saved_notify, saved_system, notices
+
+  before_each(function()
+    saved_notify = vim.notify
+    saved_system = vim.system
+    notices = {}
     vim.notify = function(msg, level) notices[#notices + 1] = { msg = msg, level = level } end
-    -- raise the exact error a missing curl produces (Vim:E475); a PATH
+  end)
+
+  after_each(function()
+    vim.notify = saved_notify
+    vim.system = saved_system
+  end)
+
+  local function failure_notice()
+    for _, n in ipairs(notices) do
+      if n.level == vim.log.levels.ERROR then return n end
+    end
+  end
+
+  it("reports failure instead of raising when curl is missing", function()
+    -- raise the exact error a spawn failure produces (Vim:E475); a PATH
     -- rewrite does not reliably hide the real curl from the spawn
-    vim.fn.system = function(argv)
+    vim.system = function(argv)
       error(("Vim:E475: Invalid value for argument cmd: '%s' is not executable"):format(argv[1]))
     end
+    local settled = {}
+    assert.is_false(install.download("latest", function(ok) settled[#settled + 1] = ok end))
+    assert.truthy(failure_notice(), "the failure must be reported, not raised")
+    assert.is_truthy(failure_notice().msg:find("curl is not available", 1, true))
+    assert.same({ false }, settled)
+  end)
 
-    local ok, err = pcall(function()
-      assert.is_false(install.download("latest"))
-    end)
-    vim.fn.system = saved_system
-    vim.notify = saved_notify
-    if not ok then error(err) end
-    -- notices[1] is the INFO "Downloading …"; the failure rides after it
-    local failure
-    for _, n in ipairs(notices) do
-      if n.level == vim.log.levels.ERROR then failure = n end
+  it("reports a curl exit code and settles on_done(false)", function()
+    -- The spawn succeeded; curl's exit code is the failure. download() still
+    -- returns true (the fetch *ran*), and the outcome rides on_done for
+    -- callers like :PosteDbInstall.
+    vim.system = function(_, _, on_exit)
+      on_exit({ code = 22 })
+      return {}
     end
-    assert.truthy(failure, "the failure must be reported, not raised")
-    assert.is_truthy(failure.msg:find("curl is not available", 1, true))
+    local settled = {}
+    assert.is_true(install.download("latest", function(ok) settled[#settled + 1] = ok end))
+    -- on_exit lands from the libuv loop (a fast event): handling is deferred
+    -- to the main loop, so nothing may have run synchronously — a notify
+    -- there is E5560, the bug an isolated first-run smoke test caught after
+    -- an all-green unit run (a stub calls on_exit from safe context).
+    assert.same({}, settled)
+    assert.is_nil(failure_notice())
+    -- vim.wait pumps the event loop until the scheduled handler has run
+    assert.truthy(vim.wait(1000, function() return #settled == 1 end),
+      "the scheduled handler must settle on_done")
+    assert.truthy(failure_notice(), "a curl exit code must surface as a notify")
+    assert.is_truthy(failure_notice().msg:find("exit 22", 1, true))
+    assert.same({ false }, settled)
   end)
 end)

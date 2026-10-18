@@ -28,7 +28,7 @@ function M.check()
     local version = state.poste_version(binary)
     if version then ok("poste version: " .. version) end
   else
-    error("poste binary not found — run :PosteInstall, or set vim.g.poste_binary / $POSTE_BINARY")
+    error("poste binary not found — run :PosteDbInstall to download it, or set vim.g.poste_binary / $POSTE_BINARY")
   end
 
   -- curl

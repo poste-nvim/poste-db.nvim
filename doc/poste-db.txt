@@ -37,11 +37,13 @@ leaving the editor.
 The `poste` Rust binary talks to the databases (see |poste-db-requirements|):
 a usable one (readable and executable) is picked up from `g:poste_binary`,
 `$POSTE_BINARY`, the install path, a local dev build or `PATH`, and only
-downloaded from the poste.nvim releases when none of those exists. That
-download is bounded — 10s to connect, 180s for the archive — so a network that
-black-holes it fails at startup with a message instead of freezing the editor.
-All Lua lives in this repo — there is no runtime dependency on poste.nvim
-itself.
+downloaded from the poste.nvim releases when none of those exists. The
+download never blocks the editor: the archive fetch runs in the background
+and is bounded — 10s to connect, 180s for the archive — so a network that
+black-holes it reports a failed install instead of hanging anything. When the
+download failed (offline machine, no `curl`), `:PosteDbInstall` retries it at
+any time. All Lua lives in this repo — there is no runtime dependency on
+poste.nvim itself.
 
 Supported dialects: PostgreSQL, MySQL/MariaDB, SQLite, SQL Server,
 ClickHouse, plus PostgreSQL/MySQL-compatible aliases (cockroachdb, tidb,
@@ -65,7 +67,8 @@ and PG-family to `postgres`.
 Run `:checkhealth poste-db` to verify your installation. It names the
 candidate that won (the install path outranks `PATH`, which is why a stray
 download can mask your own build); `:PosteDbInfo` prints the same `from:`
-line with the binary's build time and version.
+line with the binary's build time and version. `:PosteDbInstall` (re)runs the
+release download by hand — `:PosteDbInstall v0.4.2` pins a tag.
 
 ==============================================================================
 3. SETUP                                                        *poste-db-setup*
@@ -335,6 +338,9 @@ introspected schema cache, with known system schemas ignored.
                           (y), clear all (C)
 `:PosteDbShowSql`         The SQL behind the active dataset tab
 `:PosteDbInfo`            Environment summary (binary, parsers, completion)
+`:PosteDbInstall`         (Re)download the poste binary from GitHub releases
+                          in the background; an optional argument pins a
+                          version tag (`:PosteDbInstall v0.4.2`)
 
 ==============================================================================
 16. AI CHAT                                                      *poste-db-ai*

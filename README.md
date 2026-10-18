@@ -20,9 +20,12 @@ when none of those exist. "Usable" means readable **and** executable: a file
 without the exec bit is skipped rather than picked over a working `PATH` entry.
 On Windows each candidate is tried both as spelled and with `.exe` appended,
 which is where the installer and cargo actually put the binary.
-The download itself is bounded (10s to connect, 180s for the archive), so a
-network that black-holes it reports a failed install instead of freezing
-startup.
+The download itself never blocks the editor: the archive fetch runs in the
+background (`vim.system`), and it is bounded (10s to connect, 180s for the
+archive), so a network that black-holes it reports a failed install instead of
+hanging a hidden process forever. If the first-setup download failed — an
+offline machine, no `curl` — `:PosteDbInstall` retries it at any time
+(`:PosteDbInstall v0.4.2` pins a release tag).
 
 Full documentation lives in `doc/poste-db.txt` (`:h poste-db`), with a
 [quick reference](docs/user/sql/quick-reference.md) for the everyday keys.
@@ -53,14 +56,15 @@ issue.
 -- lazy.nvim
 {
   "poste-nvim/poste-db.nvim",
-  dependencies = {
-    "saghen/blink.cmp",
-  },
   config = function()
     require("poste-db.init").setup()
   end,
 }
 ```
+
+No hard plugin dependencies. SQL completion is provided through blink.cmp
+(recommended) or nvim-cmp when either is installed — registration is silent
+when neither is, and execution is unaffected.
 
 On first setup the plugin looks for a usable `poste` binary — in
 `vim.g.poste_binary`, then `$POSTE_BINARY`, then the install path
@@ -75,6 +79,14 @@ your own build — e.g. `../poste.nvim/target/debug/poste` with dialect work
 that has not shipped yet — set
 `vim.g.poste_binary = "/path/to/poste"` (or `export POSTE_BINARY=…` for
 headless/CI processes, which never see a `vim.g`) before setup.
+
+**Filetype note** — the plugin claims `*.sql` / `*.sqlite` files with its own
+`poste_sql` / `poste_sqlite` filetypes (not the builtin `sql`), so keymaps,
+queries and completion arrive without colliding with other SQL plugins. If
+your existing config attaches LSP servers, snippets or treesitter queries to
+`sql`, retarget those autocommands/patterns at `poste_sql` as well — anything
+keyed on the builtin `sql` silently stops applying to `.sql` files once this
+plugin loads.
 
 Run `:checkhealth poste-db` to verify the installation. Both it and
 `:PosteDbInfo` name the candidate that won (`from: $PATH`, `(from installed
@@ -320,8 +332,8 @@ require("poste-db").setup({
 |-----------|-------------|-------|
 | Neovim | ≥ 0.10.0 | Uses `vim.system`, `vim.treesitter.language` |
 | `poste` binary | Any release from [poste.nvim releases](https://github.com/poste-nvim/poste.nvim/releases) | Auto-installed on first setup if none found; see [SUPPORT.md](SUPPORT.md) § "Binary / dialect mismatch" when Lua and binary disagree on a dialect |
-| blink.cmp | recommended | Auto-registers the `poste_db` source. nvim-cmp also supported. |
-| tree-sitter `sql` parser | required | `:TSInstall sql`. Statement splitting, completion, and diagnostics depend on it. |
+| blink.cmp | recommended | Auto-registers the `poste_db` source. nvim-cmp also supported; neither is required. |
+| tree-sitter `sql` parser | recommended | `:TSInstall sql`. Without it, statement splitting falls back to the poste binary's splitter and then a Lua `;` scan; treesitter gives better statement/completion/diagnostic boundaries. |
 | `ssh` | only for `tunnel` connections | Must be on `$PATH`. |
 
 CI runs luacheck + the plenary suite on **nvim stable + nightly**. Older

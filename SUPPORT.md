@@ -13,8 +13,10 @@ This is the single most useful diagnostic. It checks:
 
 - **Neovim version** — the plugin needs ≥ 0.10.0 (`vim.system`, `vim.treesitter.language`).
 - **`poste` binary** — whether one was found, which candidate won, and its version.
-- **curl** — needed for the binary auto-download.
-- **tree-sitter SQL parser** — needed for statement splitting and completion.
+- **curl** — needed for the binary auto-download (`:PosteDbInstall` re-runs it
+  by hand at any time).
+- **tree-sitter SQL parser** — recommended for the best statement splitting and
+  completion; a binary/Lua fallback exists without it.
 - **blink.cmp / nvim-cmp** — whether the `poste_db` completion provider registered.
 - **Platform** — whether prebuilt binaries exist for your OS/arch.
 - **`connections.toml`** — whether one was discovered from the current buffer.

@@ -26,15 +26,6 @@ local function detect_platform()
   return nil
 end
 
---- Full path to the binary (including .exe suffix on Windows).
-local function binary_path()
-  local plat = detect_platform()
-  if plat and plat:find("windows") then
-    return BIN_DIR .. "/poste.exe"
-  end
-  return BIN_DIR .. "/poste"
-end
-
 --- Render a path as a PowerShell string literal.
 --- `vim.fn.system` in list form still hands everything after `-Command` to
 --- PowerShell as a *command line*, so a `stdpath("data")` containing a space
@@ -48,12 +39,14 @@ function M.ps_literal(path)
 end
 
 --- Build the curl argv for one release download.
---- Both downloads happen inside `ensure()`, which `setup()` calls, so each one
---- blocks Neovim's startup. Without an explicit ceiling a blackholed
---- connection — a captive portal, or a firewall that answers the SYN and drops
---- the rest — leaves the editor frozen until the OS socket timeout expires,
---- which is minutes and looks like a hung plugin load rather than a failed
---- download. The failure then reports itself and the next startup retries.
+--- Every call carries an explicit ceiling. The archive fetch runs detached
+--- from the main loop (vim.system), but a ceiling is still what makes it
+--- *finish*: a blackholed connection — a captive portal, or a firewall that
+--- answers the SYN and drops the rest — would otherwise keep the background
+--- curl alive until the OS socket timeout expires, minutes later, with no
+--- failure reported in between. The checksum fetch shares this function and
+--- runs on the main loop inside the download callback, where --max-time
+--- bounds a brief pause instead of an unbounded one.
 --- @param flags string curl's short flags, "-fL" or the silent "-sfL"
 --- @param url string
 --- @param out string path to write the body to
@@ -169,47 +162,16 @@ local function verify_checksum(archive_path, platform, version)
   return M.checksum_matches(actual, expected)
 end
 
---- Download and install the poste binary.
---- @param version string  tag or "latest" (default)
---- @return boolean        success
-function M.download(version)
-  version = version or "latest"
-  local platform = detect_platform()
-  if not platform then
-    vim.notify(
-      "[Poste] Unsupported platform: " .. vim.inspect(vim.loop.os_uname()),
-      vim.log.levels.ERROR
-    )
-    return false
-  end
-
-  -- mkdir raises E739 on a permission wall or a read-only data dir — the
-  -- same plugin-load kill the un-pcall'd curl calls were (round 50); report
-  -- and fail the install instead
-  local ok_dir, dir_err = pcall(vim.fn.mkdir, BIN_DIR, "p")
-  if not ok_dir then
-    vim.notify("[Poste] Cannot create install directory " .. BIN_DIR .. ": "
-      .. tostring(dir_err), vim.log.levels.ERROR)
-    return false
-  end
-
-  local url = M.download_url(platform, version)
+--- Synchronous tail of an install: verify checksum, extract, make runnable,
+--- stamp the version file. Runs on the main loop from the download callback;
+--- every subprocess here is short (a ~1 kB checksum file, the hasher, tar) —
+--- the one long call, the archive itself, already finished.
+--- @param tmp_archive string  path of the downloaded archive
+--- @param platform string  e.g. "aarch64-macos"
+--- @param version string  tag or "latest"
+--- @return boolean  success
+local function finalize_download(tmp_archive, platform, version)
   local ext = archive_ext(platform)
-  local tmp_archive = BIN_DIR .. "/download" .. ext
-
-  vim.notify("[Poste] Downloading " .. url, vim.log.levels.INFO)
-
-  local dl_ok = pcall(vim.fn.system, M.curl_argv("-fL", url, tmp_archive, 180))
-  if not dl_ok or vim.v.shell_error ~= 0 then
-    -- dl_ok=false is curl itself missing (E475 raise), not a curl exit code
-    vim.notify(
-      dl_ok and "[Poste] Download failed (exit " .. vim.v.shell_error .. ")"
-        or "[Poste] Download failed — curl is not available on PATH",
-      vim.log.levels.ERROR
-    )
-    pcall(os.remove, tmp_archive)
-    return false
-  end
 
   if not verify_checksum(tmp_archive, platform, version) then
     vim.notify("[Poste] Checksum mismatch — download corrupted", vim.log.levels.ERROR)
@@ -263,8 +225,81 @@ function M.download(version)
   return true
 end
 
+--- Download and install the poste binary.
+--- The archive fetch — the one call that can run for minutes — is spawned
+--- with vim.system so the editor stays usable while it runs; the outcome
+--- arrives via on_done and the notify log. Everything before the spawn
+--- (platform check, mkdir, curl missing) settles synchronously.
+--- @param version string  tag or "latest" (default)
+--- @param on_done function|nil  called with true/false once the install settles
+--- @return boolean  false when the install could not even start (unsupported
+---   platform, mkdir wall, curl missing) — ensure() turns that into the
+---   "set vim.g.poste_binary" warning; true means the fetch is running and
+---   its result is reported asynchronously
+function M.download(version, on_done)
+  version = version or "latest"
+  local platform = detect_platform()
+  if not platform then
+    vim.notify(
+      "[Poste] Unsupported platform: " .. vim.inspect(vim.loop.os_uname()),
+      vim.log.levels.ERROR
+    )
+    if on_done then on_done(false) end
+    return false
+  end
+
+  -- mkdir raises E739 on a permission wall or a read-only data dir — the
+  -- same plugin-load kill the un-pcall'd curl calls were (round 50); report
+  -- and fail the install instead
+  local ok_dir, dir_err = pcall(vim.fn.mkdir, BIN_DIR, "p")
+  if not ok_dir then
+    vim.notify("[Poste] Cannot create install directory " .. BIN_DIR .. ": "
+      .. tostring(dir_err), vim.log.levels.ERROR)
+    if on_done then on_done(false) end
+    return false
+  end
+
+  local url = M.download_url(platform, version)
+  local tmp_archive = BIN_DIR .. "/download" .. archive_ext(platform)
+
+  vim.notify("[Poste] Downloading " .. url, vim.log.levels.INFO)
+
+  local ok_spawn = pcall(vim.system, M.curl_argv("-fL", url, tmp_archive, 180), {}, function(res)
+    -- on_exit arrives straight from the libuv loop — a fast event context
+    -- where nvim_echo (vim.notify) and vim.fn.system raise E5560. The
+    -- checksum fetch, extraction and every notify move to the main loop
+    -- first; caught by an isolated first-run smoke test, not by the specs
+    -- (a stubbed vim.system calls on_exit from safe main-loop context).
+    vim.schedule(function()
+      local ok = false
+      if res.code ~= 0 then
+        -- a curl exit code (404, timeout, captive portal reset), not a raise
+        vim.notify("[Poste] Download failed (exit " .. tostring(res.code) .. ")",
+          vim.log.levels.ERROR)
+        pcall(os.remove, tmp_archive)
+      else
+        ok = finalize_download(tmp_archive, platform, version)
+      end
+      if on_done then on_done(ok) end
+    end)
+  end)
+  if not ok_spawn then
+    -- vim.system RAISES when the spawn itself fails (curl missing, E475) —
+    -- the same "graceful notify, never a plugin-load exception" contract the
+    -- old vim.fn.system call was pcall'd for
+    vim.notify("[Poste] Download failed — curl is not available on PATH", vim.log.levels.ERROR)
+    pcall(os.remove, tmp_archive)
+    if on_done then on_done(false) end
+    return false
+  end
+  return true
+end
+
 --- Ensure the binary is available.
---- Called at plugin startup. Returns the binary path if found, nil otherwise.
+--- Called at plugin startup. Returns the binary path when one is already
+--- usable; otherwise it starts the release download in the background and
+--- returns nil — the installed binary answers the next find_poste_binary()
+--- call, and the outcome rides the notify log (plus on_done).
 --- The search itself belongs to `state.find_poste_binary()`: one rule, one
 --- copy. The second copy this function used to carry had drifted — no
 --- runnability test (a readable-but-not-executable override was returned as
@@ -274,21 +309,22 @@ end
 --- that then took precedence over the user's own build. What this function
 --- adds is only what a lookup cannot: downloading a release when nothing
 --- usable exists anywhere.
-function M.ensure()
+--- @param on_done function|nil  forwarded to download()
+--- @return string|nil  the usable binary path, nil while a download runs
+function M.ensure(on_done)
   local found = require("poste-db.state").find_poste_binary()
   if found then return found end
 
   -- Fallback: attempt download
-  local ok = M.download("latest")
-  if not ok then
+  local started = M.download("latest", on_done)
+  if not started then
     vim.notify(
       "[Poste] Binary not found and download failed. "
         .. "Set `vim.g.poste_binary = \"/path/to/poste\"` in your config.",
       vim.log.levels.WARN
     )
-    return nil
   end
-  return binary_path()
+  return nil
 end
 
 return M

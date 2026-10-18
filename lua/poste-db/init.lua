@@ -30,7 +30,13 @@ function M.setup(opts)
   -- release download).
   if not vim.g.poste_db_setup_done then
     vim.g.poste_db_setup_done = true
-    require("poste-db.install").ensure()
+    -- Deferred past the rest of startup: the candidate walk itself is a few
+    -- file stats, but a miss ends in a release download, and nothing on the
+    -- startup path needs that binary. download() runs the fetch off the main
+    -- loop; this only postpones the lookup so first paint is never delayed.
+    vim.schedule(function()
+      require("poste-db.install").ensure()
+    end)
   end
 
   require("poste-db.snippets").setup(opts)
@@ -49,7 +55,11 @@ function M.setup(opts)
   end
 
   if not pcall(vim.treesitter.language.get_lang, "sql") then
-    vim.notify("poste-db: Tree-sitter SQL parser not found. Run :TSInstall sql to enable. Falling back to Rust/Lua heuristics.", vim.log.levels.WARN, { title = "PosteDb" })
+    -- :TSInstall only exists under nvim-treesitter; name it, or a user
+    -- without the plugin hits E492 on the advice. The fallback splitter
+    -- (binary, then Lua ;-scan) keeps execution working, so this is a
+    -- quality note, not a failure.
+    vim.notify("poste-db: Tree-sitter SQL parser not found (install nvim-treesitter, then :TSInstall sql). Falling back to the binary/Lua statement splitter; execution works without it.", vim.log.levels.WARN, { title = "PosteDb" })
   end
 
   local ok = pcall(require("poste-db.completion.register").register)

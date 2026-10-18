@@ -98,6 +98,27 @@ function M.setup()
     vim.notify(table.concat(parts, "\n"), vim.log.levels.INFO, { title = "PosteDb" })
   end, { desc = "Show PosteDb environment info" })
 
+  vim.api.nvim_create_user_command("PosteDbInstall", function(args)
+    local version = vim.trim(args.args)
+    -- The download runs in the background (install.download), so the command
+    -- returns before there is an outcome; the callback is where it is named.
+    -- On success the resolved path matters more than "Installed": the lookup
+    -- may legitimately answer from g:poste_binary or $PATH instead of the
+    -- fresh release, and the user should know which one will actually run.
+    require("poste-db.install").download(version ~= "" and version or "latest", function(ok)
+      if not ok then
+        vim.notify("[Poste] Install failed — see the message above, or set vim.g.poste_binary",
+          vim.log.levels.WARN, { title = "PosteDb" })
+        return
+      end
+      local binary = require("poste-db.state").find_poste_binary()
+      vim.notify("[Poste] Ready: " .. (binary or "poste binary"), vim.log.levels.INFO, { title = "PosteDb" })
+    end)
+  end, {
+    nargs = "?",
+    desc = "Download/install the poste binary from GitHub releases (optional: version tag, e.g. v0.4.2)",
+  })
+
   vim.api.nvim_create_user_command("PosteDbCmpStatus", function()
     local sql_comp = require("poste-db.completion")
     local ft = vim.bo.filetype
