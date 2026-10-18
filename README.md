@@ -9,13 +9,7 @@ against PostgreSQL, MySQL/MariaDB, SQLite, SQL Server or ClickHouse, and get
 a keyboard-driven dataset panel — pagination, cell navigation, search, sort,
 inline transactional editing — instead of a wall of text.
 
-<!--
-Hero screenshot: a .sql buffer with the cursor on a statement, the dataset
-panel below showing a result grid, and the statusline context
-[connection/database] highlighted per-connection color.
-Drop the image at .github/assets/dataset.png and uncomment.
 ![poste-db.nvim — SQL buffer + dataset panel](.github/assets/dataset.png)
--->
 
 Part of the [Poste](https://github.com/poste-nvim/poste.nvim) family. The
 plugin is fully self-contained (shared infra is vendored); the one shared
@@ -40,17 +34,12 @@ issue.
 
 - **Execute SQL statements** from `.sql` files — PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, ClickHouse, and PG/MySQL-compatible aliases
 - **Dataset panel** — Paginated results, cell navigation (hjkl), vim-style search/filter, sorting
-
-<!--
-Screenshot: a dataset panel mid-navigation — cell cursor on a row, the
-search/filter prompt active, multiple result tabs along the top.
-Suggested path: .github/assets/dataset-panel.png
--->
+![poste-db.nvim — dataset panel](.github/assets/dataset-panel.png)
 
 - **Inline editing** — Edit cells, insert/delete rows, commit as one **transaction** (BEGIN/COMMIT/ROLLBACK) with affected-row verification
 - **DB Browser** — Tree view of schemas, tables, columns; context menu with create/import/drop/clone actions and DDL generators
 - **SSH tunnels** — Declare a jump host per connection; everything works through `127.0.0.1:<local port>`
-- **EXPLAIN** — Dialect-aware query plan in a float (`<leader>ep`)
+- **EXPLAIN** — Dialect-aware query plan as a dataset table (`<leader>ep`)
 - **SQL completion** — Keywords, tables, columns, functions, snippets (blink.cmp / nvim-cmp)
 - **Semantic diagnostics** — Table/column references validated against the live schema
 - **Export/import** — CSV, TSV, JSON, Markdown, SQL INSERT; paste CSV/JSON into a table
@@ -205,11 +194,7 @@ file or clipboard.
 
 Press `<leader>db` in a SQL file to open the database tree browser.
 
-<!--
-Screenshot: the browser tree open on a schema — a table node expanded to
-columns, one node highlighted, the context menu (x) floating beside it.
-Suggested path: .github/assets/db-browser.png
--->
+![poste-db.nvim — db browser](.github/assets/db-browser.png)
 
 | Key | Action |
 |-----|--------|
@@ -240,25 +225,17 @@ your SQL buffer: `ma` add column, `mr` rename column, `md` drop column,
 ### EXPLAIN
 
 `<leader>ep` (or `:PosteDbExplain`) shows the query plan of the statement
-under the cursor in a float — `EXPLAIN` on postgres/mysql/clickhouse,
-`EXPLAIN QUERY PLAN` on sqlite. Plan-only forms never execute the statement.
-
-<!--
-Screenshot: the EXPLAIN float over a .sql buffer, showing a posted plan
-(ANALYZE rows on top of the raw plan if the dialect supports it).
-Suggested path: .github/assets/explain.png
--->
+under the cursor in the dataset panel, like an ordinary query result —
+`EXPLAIN` on postgres/mysql/clickhouse, `EXPLAIN QUERY PLAN` on sqlite.
+Plan-only forms never execute the statement. A wide plan scrolls
+horizontally in the split instead of wrapping.
 
 ### AI chat
 
 With [poste-ai.nvim](https://github.com/poste-nvim/poste-ai.nvim) installed,
 `:PosteDbChat` opens a schema-aware chat:
 
-<!--
-Screenshot: the chat sidebar beside a dataset tab — a question about the
-result set, with a ```sql block from the answer about to be executed.
-Suggested path: .github/assets/ai-chat.png
--->
+![poste-db.nvim — ai chat](.github/assets/ai-chat.png)
 
 - `/connections` / `/databases` scope the conversation
 - `@connection/database[/table]` mentions inject schema summaries; tables
