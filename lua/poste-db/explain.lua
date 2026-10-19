@@ -25,14 +25,27 @@ local EXPLAIN_PREFIX = {
 
 --- `extract_stmt_at_cursor` returns a synthetic block: leading `-- @`
 --- directives, a `###` marker, then the statement. EXPLAIN must wrap only
---- the SQL, so strip directives, markers, and comment lines. Comments can't
---- affect a plan and dropping them keeps the single-statement check honest.
+--- the SQL, so strip the leading directives, marker and comment lines.
+---
+--- Only the LEADING ones. Directives are plugin-owned and must not reach the
+--- server, and they sit at the top by construction — but stripping interior
+--- `--` lines by shape would corrupt a statement whose string literal spans a
+--- newline (`SELECT 'multi\n-- not a comment' FROM t`): the line starts with
+--- `--`, yet it is string content, and dropping it takes the closing quote and
+--- the rest of the statement with it. Interior comments are harmless to keep —
+--- a comment cannot change a plan, and the single-statement check runs on
+--- dml_guard's comment/string-aware mask, which already reads them right.
 local function clean_stmt(content)
   local out = {}
+  local leading = true
   for _, l in ipairs(vim.split(content or "", "\n", { plain = true })) do
-    if not const.is_directive_comment(l)
-      and not l:match("^%s*###%s*$")
-      and not l:match("^%s*%-%-") then
+    if leading and (l:match("^%s*$")
+      or const.is_directive_comment(l)
+      or l:match("^%s*###%s*$")
+      or l:match("^%s*%-%-")) then
+      -- skip the synthetic block's own header: directives, marker, blanks
+    else
+      leading = false
       out[#out + 1] = l
     end
   end
@@ -174,5 +187,9 @@ function M.explain()
     src_buf = src_buf,
   })
 end
+
+M._test = {
+  clean_stmt = clean_stmt,
+}
 
 return M

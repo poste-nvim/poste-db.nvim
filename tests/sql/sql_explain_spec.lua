@@ -80,4 +80,33 @@ describe("explain", function()
       assert.truthy(err:find("no statement"))
     end)
   end)
+
+  describe("clean_stmt", function()
+    -- extract_stmt_at_cursor hands over a synthetic block: leading `-- @`
+    -- directives, a `###` marker, then the statement text. Only that header
+    -- may be stripped by line shape.
+    it("strips the leading directives, marker and comment lines", function()
+      assert.equals("SELECT 1", explain._test.clean_stmt(table.concat({
+        "-- @connection local", "-- @database app", "", "###", "SELECT 1",
+      }, "\n")))
+    end)
+
+    it("keeps a statement intact whose string literal spans a newline", function()
+      -- The line inside the literal starts with `--`, but it is string
+      -- content: stripping it took the closing quote and the rest of the
+      -- statement with it, and the wrapped EXPLAIN went to the server as an
+      -- unterminated string. Interior lines are kept whatever they look like.
+      local stmt = "SELECT 'multi\n-- not a comment' AS x FROM t"
+      assert.equals(stmt, explain._test.clean_stmt("###\n" .. stmt))
+    end)
+
+    it("keeps interior comment lines — a comment cannot change a plan", function()
+      local stmt = "SELECT a,\n  -- the count\n  count(*)\nFROM t"
+      assert.equals(stmt, explain._test.clean_stmt("###\n" .. stmt))
+    end)
+
+    it("returns empty text for an all-comment block", function()
+      assert.equals("", explain._test.clean_stmt("-- @connection local\n###\n-- just a note"))
+    end)
+  end)
 end)
