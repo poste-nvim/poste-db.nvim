@@ -210,11 +210,6 @@ poste.nvim main），不要再往里写代码。验证：直接给二进制喂
 返回 JSON，`hidden_hid` 应与 `HEX(hidden_hid)` 一致；改完记得 `cargo build`
 重建 `poste.nvim/target/debug/poste`（插件按 rtp 目录解析二进制，不用装）。
 
----
-
-*Latest: 2026-09-12 MySQL 种子乱码（init 连接 latin1 双重编码）会话。
-新增条目时保持同一格式：发生了什么（带 file:line）→ 约束（可执行的检查动作）。*
-
 ## 16. Devanagari 顶掉 dataset 右边框：strdisplaywidth 折叠了 Mc 间隔标记
 
 **发生了什么**：`सिंधु घाटी`（10 码点）被 `strdisplaywidth` 算成 5 格，终端却画
@@ -242,11 +237,6 @@ Mc 记 1 格）；光标/高亮触发的**局部重绘**按 nvim 自己的网格
 是哪种绘制。真正的修复在上游（nvim 宽度表对 Mc 的折叠）或 GUI 客户端
 （网格即唯一真相）。另外注意：复制到终端外的文本按各自渲染器折叠 Mc，
 看起来错位是假象，别据此下结论。
-
----
-
-*Latest: 2026-09-13 Devanagari Mc 标记宽度（dataset 右边框被盖）会话。
-新增条目时保持同一格式：发生了什么（带 file:line）→ 约束（可执行的检查动作）。*
 
 ---
 
@@ -329,11 +319,6 @@ handler，旧实例缓存永不失效）还是 `clear = false`（只有第一个
 `nvim_get_autocmds` 数一下实际注册数，别信 `create_autocmd` 的返回值；一个
 "隔离跑必过、全量跑偶挂"的失败，先怀疑同文件更早测试留下的注册/状态。
 
----
-
-*Latest: 2026-10-03 autocmd 回调按内容等价去重，per-instance 注册是死路（#20）。
-新增条目时保持同一格式：发生了什么（带 file:line）→ 约束（可执行的检查动作）。*
-
 ## 21. 给"被桩的模块"提升 require，全量门是绿的，单文件跑才炸
 
 **发生了什么**：round 57 把 `nav/handlers.lua` 的 `require("poste-db.context")`
@@ -356,3 +341,23 @@ require 前，先 grep 那个模块的 spec 找 `stub_module`/`package.loaded`�
 结构时，单文件跑一次受影响的 spec 是必要验收，全量绿不算数（两个环境在
 `package.loaded` 的预填充状态上不等价——`tests/run_one.sh` 头注释记录过
 另一个实例）。
+
+## 22. Lua 负索引从尾部数：`s:sub(1, cut)` 的 cut 必须先钳非负
+
+**发生了什么**：`util.utf8_safe_cut`（`lua/poste-db/util.lua`）在预算超过串长
+时直接 `s:sub(1, cut)` 截断。调用方传进 `max_bytes = -1` 时，`#s <= max_bytes`
+为假、`while cut > 0` 直接跳过，`("abc"):sub(1, -1)` 按 Lua 语义返回
+`"ab"`——负数下标从**尾部**数，-1 是"去掉最后一个字符"而不是"什么都不要"。
+调用方要截断、函数却几乎原样返回，且无任何报错（2026-10-19 检视中发现，
+修复为 `max_bytes <= 0` 先返回空串）。
+
+**约束**：任何 `string.sub`/`string.byte` 的位置参数可能为负（来自计算、
+配置或外部输入）时，先钳到合法区间再下标。同类陷阱还有 `s:sub(i, j)` 在
+`j < i` 时返回空串（无害）与 `("abc"):sub(2, -2)` 返回 `"b"`（把"中间段"
+写成了"去掉两端"）。审这类代码时专找 `sub(1, <变量>)` 且变量没有下界保护
+的位置。
+
+---
+
+*Latest: 2026-10-19 检视会话（#22 Lua 负索引从尾部数）。
+新增条目时保持同一格式：发生了什么（带 file:line）→ 约束（可执行的检查动作）。*
