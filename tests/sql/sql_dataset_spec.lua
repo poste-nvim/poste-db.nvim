@@ -76,6 +76,24 @@ describe("dataset compute_view_indices", function()
 
     assert.same({ 2, 1, 3 }, tab.view_indices)
   end)
+
+  it("sorts rows that are not tables last instead of raising", function()
+    -- The render path renders a non-sequence row as empty cells; the sort
+    -- used to index it and crash the whole view. They sort like empty cells:
+    -- last.
+    local tab = D.alloc_tab(1)
+    tab.rows_source = {
+      { 2 },
+      "garbage",
+      { 1 },
+      42,
+    }
+    tab.sort = { col = 1, ascending = true }
+
+    D.compute_view_indices(tab)
+
+    assert.same({ 3, 1, 2, 4 }, tab.view_indices)
+  end)
 end)
 
 describe("dataset default page size", function()

@@ -238,7 +238,11 @@ function M.compute_view_indices(tab)
     local col = tab.sort.col
     local ascending = tab.sort.ascending
     table.sort(indices, function(a, b)
-      local va, vb = src[a][col], src[b][col]
+      -- A row that is not a sequence of cells (a malformed or hand-built
+      -- response — the render path already shows it as empty cells) sorts
+      -- like an empty one instead of raising mid-sort and dropping the view.
+      local va = type(src[a]) == "table" and src[a][col] or nil
+      local vb = type(src[b]) == "table" and src[b][col] or nil
       if va == nil or va == vim.NIL then return false end
       if vb == nil or vb == vim.NIL then return true end
       local ta, tb = type(va), type(vb)
