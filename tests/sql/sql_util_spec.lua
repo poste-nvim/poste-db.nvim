@@ -39,6 +39,15 @@ describe("util utf8 helpers", function()
     local s = string.rep("\u{6570}", 5)
     assert.equals(string.rep("\u{6570}", 3), util.utf8_safe_cut(s, 10))
   end)
+
+  it("utf8_safe_cut answers empty for a zero or negative budget", function()
+    -- A negative budget used to fall through to `s:sub(1, cut)`, and Lua
+    -- reads a negative index as from-the-end — `("abc"):sub(1, -1)` is the
+    -- whole string, so a caller bug asked for a truncation and got everything.
+    assert.equals("abc", util.utf8_safe_cut("abc", 3))
+    assert.equals("", util.utf8_safe_cut("abc", 0))
+    assert.equals("", util.utf8_safe_cut("abc", -1))
+  end)
 end)
 
 describe("util ellipsize", function()

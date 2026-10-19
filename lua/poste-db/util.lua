@@ -43,6 +43,7 @@ function M.utf8_safe_cut(s, max_bytes)
   -- at the cut.
   if s == nil or s == vim.NIL then return "" end
   if type(s) ~= "string" then s = tostring(s) end
+  if max_bytes <= 0 then return "" end
   if #s <= max_bytes then return s end
   local cut = max_bytes
   while cut > 0 do
