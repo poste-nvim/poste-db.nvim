@@ -412,6 +412,72 @@ describe("exec_run", function()
     end)
   end)
 
+  describe("run_sql timeout message", function()
+    -- vim.system kills the child with code 124 (the GNU-timeout convention)
+    -- when its own ceiling fires. The message used to read "exec-file exit
+    -- code 124", which sounds like the statement failed server-side when it
+    -- may still be running there; the journal must name the local kill.
+    -- run_sql captures sql_log at load time, so the stub is installed before
+    -- the module loads (same shape as the failed-start describe below).
+    local saved_sql_log, saved_exec_run, saved_binary, saved_system
+    local fails, dir_made
+
+    before_each(function()
+      saved_sql_log = package.loaded["poste-db.sql_log"]
+      saved_exec_run = package.loaded["poste-db.exec_run"]
+      saved_binary = vim.g.poste_binary
+      saved_system = vim.system
+      fails = {}
+      -- find_poste_binary runnability-tests the override, so the fake must
+      -- exist and be executable (same shape as the lifecycle describe).
+      local dir = vim.fn.tempname() .. ".d"
+      vim.fn.mkdir(dir, "p")
+      local fake = dir .. "/poste"
+      vim.fn.writefile({ "#!/bin/sh" }, fake)
+      vim.fn.setfperm(fake, "rwxr-xr-x")
+      vim.g.poste_binary = fake
+      dir_made = dir
+      package.loaded["poste-db.sql_log"] = {
+        seam_base = function() return { source = "spec" } end,
+        fail = function(_base, msg) fails[#fails + 1] = msg end,
+        result = function() end,
+      }
+      package.loaded["poste-db.exec_run"] = nil
+    end)
+
+    after_each(function()
+      package.loaded["poste-db.sql_log"] = saved_sql_log
+      package.loaded["poste-db.exec_run"] = saved_exec_run
+      if saved_binary == nil then
+        vim.cmd("unlet! g:poste_binary")
+      else
+        vim.g.poste_binary = saved_binary
+      end
+      vim.system = saved_system
+      if dir_made then vim.fn.delete(dir_made, "rf") end
+    end)
+
+    it("names the local kill, not a bare 'exit code 124'", function()
+      vim.system = function(_cmd, _opts)
+        return { wait = function() return { code = 124, stdout = "", stderr = "" } end }
+      end
+      local er = require("poste-db.exec_run")
+      assert.is_nil(er.run_sql("SELECT 1;", { log_source = "spec" }))
+      assert.equals(1, #fails)
+      assert.truthy(fails[1]:find("did not finish within 30s", 1, true))
+      assert.truthy(fails[1]:find("may still be running server", 1, true))
+    end)
+
+    it("keeps stderr first when the child said something", function()
+      vim.system = function(_cmd, _opts)
+        return { wait = function() return { code = 1, stdout = "", stderr = "boom" } end }
+      end
+      local er = require("poste-db.exec_run")
+      assert.is_nil(er.run_sql("SELECT 1;", { log_source = "spec" }))
+      assert.same({ "boom" }, fails)
+    end)
+  end)
+
   describe("run_async failed-start delivery", function()
     -- A run that never started must report through on_error exactly once and
     -- return 1 ("handled inline"). The old shape delivered the binary-missing

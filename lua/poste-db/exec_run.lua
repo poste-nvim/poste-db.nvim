@@ -17,6 +17,11 @@ local util = require("poste-db.util")
 local verdict = require("poste-db.verdict")
 local lex = require("poste-db.lex")
 
+--- Ceiling for the synchronous `run_sql` path (`vim.system`'s own timeout;
+--- the process is killed with 124, GNU-timeout style). The failure message
+--- names this value, so the two cannot drift.
+local SYNC_TIMEOUT_MS = 30000
+
 ----------------------------------------------------------------------------
 -- Request journaling
 --
@@ -411,7 +416,7 @@ local function run_sql(sql, opts)
   end
   local tmpfile = write_temp_file(sql)
   local cmd = vim.list_extend({ binary }, build_cmd(tmpfile, opts))
-  local ok_sys, result_obj = pcall(vim.system, cmd, { timeout = 30000 })
+  local ok_sys, result_obj = pcall(vim.system, cmd, { timeout = SYNC_TIMEOUT_MS })
   if not ok_sys then
     -- Nothing was spawned, so no child can still want the file.
     pcall(vim.fn.delete, tmpfile)
@@ -424,8 +429,13 @@ local function run_sql(sql, opts)
   local result = result_obj:wait()
   pcall(vim.fn.delete, tmpfile)
   if result.code ~= 0 then
+    -- code 124 is vim.system's sentinel for its own timeout kill (the same
+    -- convention GNU timeout uses): "exit code 124" reads like the statement
+    -- failed server-side, when the statement may still be running there.
     local err = (result.stderr and result.stderr ~= "") and result.stderr
-      or ("exec-file exit code " .. tostring(result.code))
+      or (result.code == 124
+        and ("exec-file did not finish within " .. tostring(SYNC_TIMEOUT_MS / 1000) .. "s — killed locally; the statement may still be running server-side")
+        or ("exec-file exit code " .. tostring(result.code)))
     sql_log.fail(base, err, vim.uv.now() - t0)
     return nil
   end
