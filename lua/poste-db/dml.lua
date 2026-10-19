@@ -290,7 +290,11 @@ function M.generate_dml(es, tab, dialect)
   table.sort(mod_rows)
   for _, row_idx in ipairs(mod_rows) do
     local mods = row_mods[row_idx]
-    if row_idx <= #rows_source then
+    -- A row that is not a sequence of cells (a malformed or hand-built
+    -- response — the render path shows it as empty cells) has no original
+    -- values to build a WHERE from: skip it with a reason instead of raising
+    -- mid-commit, which would drop the REST of the batch with it.
+    if row_idx <= #rows_source and type(rows_source[row_idx]) == "table" then
       table.sort(mods, function(a, b) return a.col < b.col end) -- stable SET order
       local original_row = {}
       for i = 1, #columns do
@@ -305,6 +309,8 @@ function M.generate_dml(es, tab, dialect)
       else
         skipped[#skipped + 1] = ("update row %d skipped: %s"):format(row_idx, err)
       end
+    elseif row_idx <= #rows_source then
+      skipped[#skipped + 1] = ("update row %d skipped: row is not tabular data"):format(row_idx)
     end
   end
 
@@ -312,13 +318,15 @@ function M.generate_dml(es, tab, dialect)
   for row_idx in pairs(es.deleted_rows or {}) do del_rows[#del_rows + 1] = row_idx end
   table.sort(del_rows)
   for _, row_idx in ipairs(del_rows) do
-    if row_idx <= #rows_source then
+    if row_idx <= #rows_source and type(rows_source[row_idx]) == "table" then
       local sql, err = M.generate_delete(schema, table_name, columns, rows_source[row_idx], dialect)
       if sql then
         stmts[#stmts + 1] = { sql = sql, type = "delete" }
       else
         skipped[#skipped + 1] = ("delete row %d skipped: %s"):format(row_idx, err)
       end
+    elseif row_idx <= #rows_source then
+      skipped[#skipped + 1] = ("delete row %d skipped: row is not tabular data"):format(row_idx)
     end
   end
 

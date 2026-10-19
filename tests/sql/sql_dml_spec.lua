@@ -176,6 +176,37 @@ describe("dml generation", function()
     assert.equals(1, #skipped)
     assert.truthy(skipped[1]:find("update row 1"))
   end)
+
+  it("skips edits on rows that are not tabular instead of crashing the batch", function()
+    -- A malformed/hand-built response can carry non-sequence rows; the render
+    -- path shows them as empty cells. Editing one used to index it and raise
+    -- mid-commit, dropping the rest of the batch with it.
+    local cols = { { name = "id", primary_key = true }, { name = "title" } }
+    local stmts, skipped = dml.generate_dml({
+      modified_cells = {
+        ["2:2"] = { col = 2, old_val = nil, new_val = "new" },
+        ["3:2"] = { col = 2, old_val = "ok", new_val = "fine" },
+      },
+      deleted_rows = { [4] = true },
+      added_rows = {},
+    }, {
+      layout = { schema = "", table_name = "t", columns = cols },
+      rows_source = {
+        { 1, "x" },
+        "garbage", -- row the edit targets
+        { 3, "ok" },
+        42,        -- row the delete targets
+      },
+    }, "postgres")
+
+    assert.equals(1, #stmts, "only the tabular row's update survives")
+    assert.equals("update", stmts[1].type)
+    assert.matches('WHERE "id" = 3', stmts[1].sql)
+    assert.equals(2, #skipped)
+    assert.truthy(skipped[1]:find("update row 2"))
+    assert.truthy(skipped[1]:find("not tabular"))
+    assert.truthy(skipped[2]:find("delete row 4"))
+  end)
 end)
 
 describe("generate_dml with a result set that has no table name", function()
