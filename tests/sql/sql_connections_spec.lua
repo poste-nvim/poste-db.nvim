@@ -580,6 +580,28 @@ describe("connections list_connections", function()
     assert.same({}, captured)
   end)
 
+  it("notifies instead of staying silent when the toml is broken", function()
+    -- A parse failure used to answer the same empty list as a missing file,
+    -- and the picker then advised creating a connections.toml that exists.
+    local config_path = tmpdir .. "/connections.toml"
+    vim.fn.writefile({ "[primary", "dialect = \"postgres\"" }, config_path)
+    util_stub.find_file_upwards = function() return config_path end
+    package.loaded["poste-db.toml"].parse_file = function()
+      return nil, "Invalid table header"
+    end
+    local saved_notify = vim.notify
+    local notices = {}
+    vim.notify = function(msg, level) notices[#notices + 1] = { msg = msg, level = level } end
+    local captured
+    connections.list_connections(function(list) captured = list end)
+    vim.wait(100, function() return captured ~= nil end)
+    vim.notify = saved_notify
+    assert.same({}, captured)
+    assert.equals(1, #notices)
+    assert.truthy(notices[1].msg:find("parse failed", 1, true))
+    assert.truthy(notices[1].msg:find("Invalid table header", 1, true))
+  end)
+
   it("calls callback with parsed connections", function()
     local config_path = tmpdir .. "/connections.toml"
     vim.fn.writefile({ "[primary]", "dialect = \"postgres\"" }, config_path)

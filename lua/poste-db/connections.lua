@@ -496,8 +496,13 @@ function M.list_connections(callback)
     return
   end
   local toml = require("poste-db.toml")
-  local parsed, _ = toml.parse_file(config_path)
+  local parsed, err = toml.parse_file(config_path)
   if not parsed then
+    -- A broken file must not look like "no connections": the picker's next
+    -- message advises creating a connections.toml, and the file is right
+    -- there. Name the parse error so the typo is fixable from the message.
+    vim.notify("connections.toml parse failed: " .. tostring(err),
+      vim.log.levels.WARN, { title = "PosteDb" })
     vim.schedule(function() callback({}) end)
     return
   end
