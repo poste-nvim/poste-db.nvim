@@ -51,12 +51,14 @@ see `.opencode/skills/sql-architecture-harness/SKILL.md` for the house rules
 | `toml.lua` | Minimal pure-Lua TOML parser behind `connections.toml` (documented subset: sections, scalars, strings, comments) |
 | `tunnel.lua` | SSH tunnel for connections.toml `tunnel` sections (URL only ever sees the local forward end) |
 | `executor.lua` | Chooses session vs exec path per connection/operation |
+| `diagnostics.lua` | Tree-sitter syntax diagnostics (ERROR nodes → vim.diagnostic), debounced on change/write; fans out to semantic checks |
 | `session_conn.lua` | Long-lived `poste session` pool (temp tables, `USE`, session vars persist across `<CR>`); keyed by conn_url, shared across buffers |
 | `exec_run.lua` / `file_exec.lua` | One-shot `poste exec-file` runs (editor/file entry) with NDJSON event parsing |
 | `sql_runner.lua` | Resultset request path used by the dataset R-refresh flows |
 | `sql_runner/response.lua` | Response → statement results mapping, DDL classification |
 | `session.lua` | Request-scoped session lifecycle (fresh Session per run, persistent context) |
 | `sql_log.lua` | Persistent SQL activity journal (`sql_log.jsonl`) — the single writer behind the `<leader>l` viewer |
+| `log.lua` | Log-line redaction (URL passwords/DSN secret keys) shared by the journal, the dataset panel and AI context |
 | `async.lua` | jobstart/timeout scaffolding |
 | `edit_commit/` | Dataset edit commit: DML generation (`dml.lua`, `dml_guard.lua`), commit/rollback exec, SQL log |
 | `table_ops.lua` | Table-level DDL operations from the browser |
@@ -197,4 +199,4 @@ cross-repo contracts are:
 
 ---
 
-*SQL developer documentation — Last updated: 2026-09-15 (module index: added the seven unlisted modules — explain, source_format, width, toml, tunnel, sql_log, snippets)*
+*SQL developer documentation — Last updated: 2026-10-19 (module index: added the two unlisted modules — diagnostics, log)*

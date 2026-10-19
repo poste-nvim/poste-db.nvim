@@ -62,4 +62,5 @@ part of a `_test` export surface, and not user-settable state.
 
 - Findings first with evidence tables; roadmap with per-phase acceptance
   criteria and completion status; explicit "not done and why" section.
-  See `docs/dev/sql/architecture-review.md` for the shape.
+  (`docs/dev/sql/audit-2026-10-17.md` in this repo is a live example of
+  the shape.)
