@@ -227,7 +227,11 @@ local function format_json(data_result)
   -- name — accepted, the same trade most exporters make.
   local seen, keys = {}, {}
   for _, col in ipairs(cols) do
-    local key = tostring(col.name)
+    -- A JSON null column name decodes to the truthy vim.NIL userdata, and a
+    -- bare tostring would name the key "vim.NIL" (and collide two such
+    -- columns into one). The real binary never sends null names; the empty
+    -- string keeps a hand-built response exportable.
+    local key = (col.name == nil or col.name == vim.NIL) and "" or tostring(col.name)
     if seen[key] then
       seen[key] = seen[key] + 1
       key = key .. "_" .. seen[key]

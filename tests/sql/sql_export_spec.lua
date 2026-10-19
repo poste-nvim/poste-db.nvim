@@ -105,6 +105,17 @@ describe("export format_json", function()
     })
     assert.same({ { id = 1, id_2 = 2 } }, vim.json.decode(out))
   end)
+
+  it("keeps a JSON null column name from becoming the key 'vim.NIL'", function()
+    -- tostring(vim.NIL) names the key "vim.NIL" and merges two such columns
+    -- into one. The real binary never sends null names; a hand-built
+    -- response should still export with an empty-string key.
+    local out = export._test.format_json({
+      columns = { { name = vim.NIL }, { name = vim.NIL } },
+      rows = { { 1, 2 } },
+    })
+    assert.same({ { [""] = 1, ["_2"] = 2 } }, vim.json.decode(out))
+  end)
 end)
 
 describe("export format_markdown", function()
