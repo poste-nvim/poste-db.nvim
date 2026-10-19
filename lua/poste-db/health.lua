@@ -28,7 +28,14 @@ function M.check()
     local version = state.poste_version(binary)
     if version then ok("poste version: " .. version) end
   else
-    error("poste binary not found — run :PosteDbInstall to download it, or set vim.g.poste_binary / $POSTE_BINARY")
+    -- A startup download may already be running (init.setup deferred it):
+    -- "run :PosteDbInstall" for a fetch that is mid-flight chains onto the
+    -- same download, so say that instead of erroring.
+    if require("poste-db.install").in_progress() then
+      warn("poste binary not found YET — a release download is already running; re-run :checkhealth in a moment")
+    else
+      error("poste binary not found — run :PosteDbInstall to download it, or set vim.g.poste_binary / $POSTE_BINARY")
+    end
   end
 
   -- curl

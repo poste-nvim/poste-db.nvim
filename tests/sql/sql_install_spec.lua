@@ -363,4 +363,16 @@ describe("poste-db install concurrent downloads", function()
     assert.equals(1, spawns)
     vim.wait(1000, function() return install._test.inflight_version() == nil end)
   end)
+
+  it("in_progress() tracks the slot for :checkhealth", function()
+    assert.is_false(install.in_progress())
+    vim.system = function(_, _, on_exit)
+      on_exit({ code = 22 })
+      return {}
+    end
+    assert.is_true(install.download("latest"))
+    assert.is_true(install.in_progress(), "a running fetch must be visible to health")
+    vim.wait(1000, function() return not install.in_progress() end)
+    assert.is_false(install.in_progress())
+  end)
 end)

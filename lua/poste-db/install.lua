@@ -328,6 +328,14 @@ function M.download(version, on_done)
   return true
 end
 
+--- Whether a release download is currently in flight. Surfaces in
+--- :checkhealth, which otherwise reports "binary not found — run
+--- :PosteDbInstall" for a download that is already running.
+--- @return boolean
+function M.in_progress()
+  return inflight ~= nil
+end
+
 --- Ensure the binary is available.
 --- Called at plugin startup. Returns the binary path when one is already
 --- usable; otherwise it starts the release download in the background and
