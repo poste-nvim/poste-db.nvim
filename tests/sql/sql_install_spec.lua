@@ -271,7 +271,96 @@ describe("poste-db install download failure paths", function()
     assert.truthy(vim.wait(1000, function() return #settled == 1 end),
       "the scheduled handler must settle on_done")
     assert.truthy(failure_notice(), "a curl exit code must surface as a notify")
-    assert.is_truthy(failure_notice().msg:find("exit 22", 1, true))
+    assert.truthy(failure_notice().msg:find("exit 22", 1, true))
     assert.same({ false }, settled)
+  end)
+end)
+
+describe("poste-db install concurrent downloads", function()
+  -- Both the archive path and the checksum path are global files, so two
+  -- downloads running at once would interleave writes into the same archive
+  -- and hand finalize a half-written file. The overlap is real: startup
+  -- (ensure) starts fetching the moment no binary exists, and a user who
+  -- does not know that runs :PosteDbInstall.
+  local saved_notify, saved_system, notices
+
+  before_each(function()
+    install._test.reset_inflight()
+    saved_notify = vim.notify
+    saved_system = vim.system
+    notices = {}
+    vim.notify = function(msg, level) notices[#notices + 1] = { msg = msg, level = level } end
+  end)
+
+  after_each(function()
+    install._test.reset_inflight()
+    vim.notify = saved_notify
+    vim.system = saved_system
+  end)
+
+  local function notices_matching(fragment)
+    local out = {}
+    for _, n in ipairs(notices) do
+      if n.msg:find(fragment, 1, true) then out[#out + 1] = n end
+    end
+    return out
+  end
+
+  it("chains a same-version second call onto the running fetch", function()
+    -- One spawn; the second download() must not start its own. The stub
+    -- exits 22 (a curl failure, code path) rather than 0: a 0 would run the
+    -- real finalize_download — network fetch, extraction — inside the test.
+    local spawns = 0
+    vim.system = function(_, _, on_exit)
+      spawns = spawns + 1
+      on_exit({ code = 22 })
+      return {}
+    end
+    local first, second = {}, {}
+    assert.is_true(install.download("latest", function(ok) first[#first + 1] = ok end))
+    assert.is_true(install.download("latest", function(ok) second[#second + 1] = ok end))
+    assert.equals(1, spawns, "the second call must reuse the running fetch, not race it")
+    assert.truthy(#notices_matching("already running") > 0)
+    -- Both callbacks settle with the ONE fetch's outcome.
+    vim.wait(1000, function() return #first == 1 and #second == 1 end)
+    assert.same({ false }, first)
+    assert.same({ false }, second)
+    -- The slot is released once the fetch settles: the next call starts fresh.
+    assert.is_nil(install._test.inflight_version())
+  end)
+
+  it("refuses a different version while a download runs", function()
+    -- Chaining v0.4.2 onto a running latest fetch would silently install the
+    -- wrong version; the caller's on_done settles false instead.
+    vim.system = function(_, _, on_exit)
+      on_exit({ code = 22 })
+      return {}
+    end
+    assert.is_true(install.download("latest"))
+    local settled = {}
+    assert.is_false(install.download("v0.4.2", function(ok) settled[#settled + 1] = ok end))
+    assert.same({ false }, settled)
+    assert.truthy(#notices_matching("already running") > 0)
+    assert.equals("latest", install._test.inflight_version(),
+      "the refusal must not clear the running fetch")
+    vim.wait(1000, function() return install._test.inflight_version() == nil end)
+  end)
+
+  it("releases the slot when the spawn itself fails", function()
+    vim.system = function()
+      error("Vim:E475: Invalid value for argument cmd: 'curl' is not executable")
+    end
+    assert.is_false(install.download("latest"))
+    assert.is_nil(install._test.inflight_version())
+    -- A retry after the failed spawn starts a fresh attempt, not a chain.
+    local spawns = 0
+    vim.system = function(_, _, on_exit)
+      spawns = spawns + 1
+      on_exit({ code = 22 })
+      return {}
+    end
+    assert.is_true(install.download("latest"))
+    assert.equals(1, spawns)
+    vim.wait(1000, function() return install._test.inflight_version() == nil end)
   end)
 end)

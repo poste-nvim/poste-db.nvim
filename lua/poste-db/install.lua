@@ -225,6 +225,18 @@ local function finalize_download(tmp_archive, platform, version)
   return true
 end
 
+--- One archive path serves every download (`BIN_DIR/download.<ext>`), and the
+--- checksum file and extraction step are just as global — so two concurrent
+--- downloads would interleave writes into the same files and hand finalize a
+--- half-written archive. The overlap is real, not theoretical: startup
+--- (`ensure()`) begins fetching the moment no binary is found, and a user who
+--- does not know that runs `:PosteDbInstall`. A second call is therefore
+--- chained onto the in-flight fetch when it wants the same version (its
+--- on_done fires with that fetch's outcome) and refused with a notice
+--- otherwise — chaining a different version would silently install the
+--- wrong one.
+local inflight  -- nil, or { version = string, callbacks = function[] }
+
 --- Download and install the poste binary.
 --- The archive fetch — the one call that can run for minutes — is spawned
 --- with vim.system so the editor stays usable while it runs; the outcome
@@ -233,11 +245,25 @@ end
 --- @param version string  tag or "latest" (default)
 --- @param on_done function|nil  called with true/false once the install settles
 --- @return boolean  false when the install could not even start (unsupported
----   platform, mkdir wall, curl missing) — ensure() turns that into the
----   "set vim.g.poste_binary" warning; true means the fetch is running and
----   its result is reported asynchronously
+---   platform, mkdir wall, curl missing, a different download already
+---   running) — ensure() turns that into the "set vim.g.poste_binary"
+---   warning; true means the fetch is running (possibly one this call
+---   chained onto) and its result is reported asynchronously
 function M.download(version, on_done)
   version = version or "latest"
+  if inflight then
+    if inflight.version == version then
+      vim.notify("[Poste] Download of " .. version
+        .. " is already running — chained to it", vim.log.levels.INFO)
+      if on_done then table.insert(inflight.callbacks, on_done) end
+      return true
+    end
+    vim.notify("[Poste] Download of " .. inflight.version
+      .. " is already running; wait for it to finish, then retry " .. version,
+      vim.log.levels.WARN)
+    if on_done then on_done(false) end
+    return false
+  end
   local platform = detect_platform()
   if not platform then
     vim.notify(
@@ -264,6 +290,7 @@ function M.download(version, on_done)
 
   vim.notify("[Poste] Downloading " .. url, vim.log.levels.INFO)
 
+  inflight = { version = version, callbacks = on_done and { on_done } or {} }
   local ok_spawn = pcall(vim.system, M.curl_argv("-fL", url, tmp_archive, 180), {}, function(res)
     -- on_exit arrives straight from the libuv loop — a fast event context
     -- where nvim_echo (vim.notify) and vim.fn.system raise E5560. The
@@ -280,13 +307,19 @@ function M.download(version, on_done)
       else
         ok = finalize_download(tmp_archive, platform, version)
       end
-      if on_done then on_done(ok) end
+      -- Cleared before the callbacks run: a callback that starts the next
+      -- download (or a chained :PosteDbInstall retry) must not find this
+      -- finished fetch still holding the slot.
+      local callbacks = inflight and inflight.callbacks or {}
+      inflight = nil
+      for _, cb in ipairs(callbacks) do cb(ok) end
     end)
   end)
   if not ok_spawn then
     -- vim.system RAISES when the spawn itself fails (curl missing, E475) —
     -- the same "graceful notify, never a plugin-load exception" contract the
     -- old vim.fn.system call was pcall'd for
+    inflight = nil
     vim.notify("[Poste] Download failed — curl is not available on PATH", vim.log.levels.ERROR)
     pcall(os.remove, tmp_archive)
     if on_done then on_done(false) end
@@ -326,5 +359,13 @@ function M.ensure(on_done)
   end
   return nil
 end
+
+M._test = {
+  --- Spec isolation: a download that never settles inside a test (a stubbed
+  --- vim.system whose on_exit nobody pumps) would otherwise chain the next
+  --- test's download onto a phantom fetch.
+  reset_inflight = function() inflight = nil end,
+  inflight_version = function() return inflight and inflight.version or nil end,
+}
 
 return M
