@@ -32,6 +32,14 @@ local function get_parser(buf)
   return nil
 end
 
+--- Top-level nodes that carry a statement. The grammar closes a `statement`
+--- only once the syntax is complete, so a half-written statement is left as a
+--- root-level ERROR instead: `UPDATE users SET ▮ WHERE ;` parses as one ERROR
+--- holding `keyword_update`, `relation users`, `keyword_set`, and the walk
+--- below never sees an `update` container. Those ERROR nodes are included so
+--- the table and the columns already typed are still extracted (and checked)
+--- while the statement is being typed -- `ts_stmt` treats them as statements
+--- for the same reason.
 local function get_statement_nodes(buf)
   local parser = get_parser(buf)
   if not parser then return nil end
@@ -41,7 +49,7 @@ local function get_statement_nodes(buf)
   local stmts = {}
   for child in root:iter_children() do
     local t = child:type()
-    if t == "statement" or t == "transaction" then
+    if t == "statement" or t == "transaction" or t == "ERROR" then
       stmts[#stmts + 1] = child
     end
   end
@@ -156,6 +164,10 @@ local function extract_references_from_node(stmt_node, buf)
     name = unquote(name)
     if name == "" then return end
     if cte_names[name:lower()] then return end
+    -- `UPDATE SET users;` (no target table) leaves `SET users` parsed as a
+    -- relation; now that the ERROR it sits in is walked, that would be looked
+    -- up as a table literally named SET. The keyword can never be a name there.
+    if name:lower() == "set" then return end
     local key = name:lower() .. ":" .. node:start() .. ":" .. node:end_()
     if seen_tables[key] then return end
     seen_tables[key] = true
@@ -202,6 +214,26 @@ local function extract_references_from_node(stmt_node, buf)
       for c in node:iter_children() do walk(c, context_stack) end
       table.remove(context_stack)
       return
+    end
+
+    -- A half-written statement arrives as an ERROR whose container is missing
+    -- (`UPDATE t SET ▮ WHERE ;` has no `update` node at all) and only a bare
+    -- `keyword_update`/`keyword_insert`/`keyword_delete` marks the verb. Enter
+    -- that context for the rest of the ERROR's children so the table
+    -- reference beside it is still read as a table, not as a column.
+    -- Restricted to an ERROR parent: a complete statement always has its
+    -- container node, and re-walking its children from here would duplicate
+    -- every reference it holds.
+    if nt == "keyword_update" or nt == "keyword_insert" or nt == "keyword_delete" then
+      local parent = node:parent()
+      if parent and parent:type() == "ERROR" then
+        table.insert(context_stack, nt:sub(#"keyword_" + 1))
+        for c in parent:iter_children() do
+          if c:id() ~= node:id() then walk(c, context_stack) end
+        end
+        table.remove(context_stack)
+        return
+      end
     end
 
     if nt == "update" then

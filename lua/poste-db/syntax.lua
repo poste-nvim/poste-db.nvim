@@ -242,6 +242,7 @@ local CONSTRUCT_KEYWORDS = {
   REPLACE = true, ROLLBACK = true, ABORT = true, FAIL = true, IGNORE = true,
   WITHIN = true, GROUP = true, ORDER = true, SELECT = true, FROM = true,
   WHERE = true, JOIN = true, LIMIT = true, AS = true, ASC = true, DESC = true,
+  UPDATE = true, SET = true, DELETE = true,
   INTERVAL = true, SEPARATOR = true, SHOW = true,
   OFFSET = true, FETCH = true, NEXT = true, FIRST = true,
   ROWS = true, ONLY = true, JSON = true, XML = true,
@@ -287,6 +288,66 @@ local function hl_err_tokens(buf, row, from_col, to_col)
       i = we + 1
     end
   end
+end
+
+--- Tree-sitter node types for the `SET` keyword of a DML statement. An
+--- unfinished `UPDATE t SET ▮` parses as a root-level ERROR whose SET is a
+--- `keyword_set` sibling; a misspelt table (`UPDATE SET users;`) parses
+--- `SET users` as a `relation` instead. That difference is what tells
+--- "still typing" apart from "wrong".
+local DML_SET_NODES = { keyword_set = true, set = true }
+
+--- True when `node` is a DML statement whose clause is still open
+--- (`UPDATE t SET ▮`, `UPDATE t SET ▮ WHERE ;`, `INSERT INTO t (a, ▮`,
+--- `DELETE FROM t WHERE ▮`): the grammar closes no `statement` around a
+--- half-written statement, so nvim paints the line as an error. Red is the
+--- wrong signal for "keep typing".
+---
+--- "Open" means the `SET` is the last thing written before the terminator or
+--- the next clause: `UPDATE users SET DEFAULT;` also parses as one ERROR, but
+--- DEFAULT is a real mistake there, so it keeps its red.
+--- @param node TSNode
+--- @param buf number
+--- @return boolean
+local function is_unfinished_dml(node, buf)
+  local verb = nil
+  local insert_paren = false
+  local set_seen = false
+  for c in node:iter_children() do
+    local t = c:type()
+    -- `;` closes whatever came before it: nothing after the `;` belongs to
+    -- this statement, so a SET already seen was left open.
+    if t == ";" then return set_seen end
+    if verb == nil then
+      -- only UPDATE/INSERT/DELETE own a SET clause: `SET NAMES ...` is a
+      -- session statement, never an unfinished DML one
+      local text = vim.treesitter.get_node_text(c, buf):lower()
+      if text ~= "update" and text ~= "insert" and text ~= "delete" then return false end
+      verb = text
+    elseif t == "keyword" then
+      -- a keyword tokenized as plain text means the rest was not recognised:
+      -- that is a real error, not an unfinished statement
+      return false
+    elseif verb == "insert" then
+      if t == "(" then insert_paren = true end
+    elseif verb == "delete" then
+      if t == "keyword_where" then return true end
+    elseif DML_SET_NODES[t] then
+      set_seen = true
+    elseif set_seen then
+      -- A clause keyword after SET (`WHERE`) closes an empty SET list, so the
+      -- clause was left open.
+      if t:match("^keyword_") then return true end
+      -- SET followed by the WHERE clause itself. It surfaces as a plain
+      -- `identifier` here (the grammar lost the clause while recovering), so
+      -- match its text: that is the SET clause being closed, not a value.
+      if vim.treesitter.get_node_text(c, buf):lower() == "where" then return true end
+      -- SET followed by an assignment/identifier: the SET list has begun.
+      return false
+    end
+  end
+  -- the ERROR simply ends after SET (`UPDATE t SET ▮`)
+  return set_seen or insert_paren
 end
 
 --- Recolors ERROR nodes that are known tree-sitter false positives so they
@@ -335,19 +396,22 @@ function M.highlight_known_error_constructs(buf, dialect)
         or lower:match("fetch%s*next") or lower:match("fetch%s*first")
         or lower:match("for%s+json") or lower:match("for%s+xml")
         or lower:match("^join%s")) then known = true end
+      -- A fragment of a statement that is still being typed, so nothing was
+      -- parsed wrong (see is_unfinished_dml).
+      if not known and is_unfinished_dml(node, buf) then known = true end
       if known then
-          local sr, sc, er, ec = node:range()
-          pcall(vim.api.nvim_buf_set_extmark, buf, ERROR_CONSTRUCT_NS, sr, sc, {
-            end_row = er, end_col = ec, hl_group = "Normal", priority = 250,
-          })
-          if er == sr then
-            hl_err_tokens(buf, sr, sc, ec)
-          else
-            hl_err_tokens(buf, sr, sc, #((vim.api.nvim_buf_get_lines(buf, sr, sr + 1, false)[1] or "")))
-            for row = sr + 1, er - 1 do
-              hl_err_tokens(buf, row, 0, #((vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or "")))
-            end
-            hl_err_tokens(buf, er, 0, ec)
+        local sr, sc, er, ec = node:range()
+        pcall(vim.api.nvim_buf_set_extmark, buf, ERROR_CONSTRUCT_NS, sr, sc, {
+          end_row = er, end_col = ec, hl_group = "Normal", priority = 250,
+        })
+        if er == sr then
+          hl_err_tokens(buf, sr, sc, ec)
+        else
+          hl_err_tokens(buf, sr, sc, #((vim.api.nvim_buf_get_lines(buf, sr, sr + 1, false)[1] or "")))
+          for row = sr + 1, er - 1 do
+            hl_err_tokens(buf, row, 0, #((vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or "")))
+          end
+          hl_err_tokens(buf, er, 0, ec)
         end
       end
     end

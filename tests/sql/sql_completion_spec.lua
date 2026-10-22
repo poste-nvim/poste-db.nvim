@@ -163,6 +163,28 @@ describe("get_items with seeded cache", function()
     assert.is_true(labels["email"],    "missing column: email")
   end)
 
+  -- The statement is still being typed: `SET ▮` with more of the UPDATE after
+  -- the cursor. tree-sitter never parses this shape (the statement is one
+  -- ERROR root node), so if the table list had to come from the parse tree the
+  -- column offer would collapse to bare keywords.
+  it_needs_rust("incomplete UPDATE ... SET offers the target's columns", function()
+    local buf = make_buf({
+      "###",
+      "UPDATE authors SET  WHERE ;",
+    })
+
+    local items = nil
+    get_items(buf, "UPDATE authors SET ", 2, function(result)
+      items = result
+    end)
+
+    assert.is_not_nil(items, "callback never ran for an unfinished UPDATE")
+    local labels = {}
+    for _, item in ipairs(items) do labels[item.label] = true end
+    assert.is_true(labels["username"], "authors columns must survive an unfinished SET clause")
+    assert.is_true(labels["email"], "authors columns must survive an unfinished SET clause")
+  end)
+
   it_needs_rust("WHERE us filters to prefix", function()
     local buf = make_buf({
       "###",

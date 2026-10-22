@@ -779,6 +779,41 @@ if sem_ok and sem._test and sem._test.extract_references_from_node then
     end)
   end)
 
+  describe("semantic reference extraction (statement still being typed)", function()
+    local extract = sem._test.extract_references_from_node
+
+    -- The grammar closes no `statement` until the syntax is complete, so an
+    -- unfinished UPDATE arrives as a root-level ERROR. Reading only
+    -- `statement` nodes dropped the target table, and every column typed so
+    -- far went unchecked -- the table's own columns were then reported
+    -- missing on the next edit.
+    local function extract_from_roots(sql)
+      local buf = make_buf({ sql })
+      local parser = assert(vim.treesitter.get_parser(buf, "sql"))
+      local tbl_names = {}
+      for child in parser:parse()[1]:root():iter_children() do
+        for _, t in ipairs(extract(child, buf).tables) do tbl_names[#tbl_names + 1] = t.name end
+      end
+      return tbl_names
+    end
+
+    it("extracts the target of an unfinished UPDATE", function()
+      assert.same({ "users" }, extract_from_roots("update users set  where ;"))
+      assert.same({ "users" }, extract_from_roots("update users set "))
+      assert.same({ "users" }, extract_from_roots("UPDATE users SET "))
+    end)
+
+    it("extracts the target from a qualified or aliased UPDATE", function()
+      assert.same({ "users" }, extract_from_roots("UPDATE public.users SET "))
+      assert.same({ "users" }, extract_from_roots("UPDATE users u SET "))
+    end)
+
+    it("does not take the SET/WHERE keyword for a table", function()
+      assert.same({}, extract_from_roots("UPDATE SET users;"))
+      assert.same({}, extract_from_roots("set names utf8;"))
+    end)
+  end)
+
   describe("semantic catalog exemption", function()
     local is_catalog_ref = sem._test.is_catalog_ref
 
@@ -963,6 +998,46 @@ describe("known-error-construct re-highlight (syntax.highlight_known_error_const
     local kinds = construct_marks(buf)
     assert.is_true(vim.tbl_contains(kinds, "Normal"), "the , 10 fragment must not stay @error red")
     assert.is_true(vim.tbl_contains(kinds, "Number"), "the count literal must render as a number")
+  end)
+
+  -- While an UPDATE is being typed the grammar closes no `statement`, so the
+  -- whole line is one root-level ERROR and nvim paints it red.
+  it("recolors an unfinished UPDATE (UPDATE t SET ▮)", function()
+    local buf = make_buf({ "UPDATE users SET " })
+    syntax.highlight_known_error_constructs(buf)
+    local kinds = construct_marks(buf)
+    assert.is_true(vim.tbl_contains(kinds, "Normal"), "the unfinished UPDATE must not stay @error red")
+    assert.is_true(vim.tbl_contains(kinds, "Statement"), "UPDATE/SET keywords must be highlighted")
+  end)
+
+  it("recolors an unfinished UPDATE with an empty SET/WHERE", function()
+    local buf = make_buf({ "update table_name set  where ;" })
+    syntax.highlight_known_error_constructs(buf)
+    local kinds = construct_marks(buf)
+    assert.is_true(vim.tbl_contains(kinds, "Normal"))
+    assert.is_true(vim.tbl_contains(kinds, "Statement"))
+  end)
+
+  it("keeps a misspelt UPDATE target red", function()
+    -- `SET users` parses as the table name here, so the SET clause is not
+    -- the unfinished one: the statement is genuinely wrong.
+    local buf = make_buf({ "UPDATE SET users;" })
+    syntax.highlight_known_error_constructs(buf)
+    assert.same({}, construct_marks(buf), "a missing table name must stay @error")
+  end)
+
+  it("keeps an invalid SET DEFAULT red", function()
+    -- Also one ERROR node, but the SET list was written: this is a mistake,
+    -- not a clause still being typed.
+    local buf = make_buf({ "UPDATE users SET DEFAULT;" })
+    syntax.highlight_known_error_constructs(buf)
+    assert.same({}, construct_marks(buf), "SET DEFAULT is a real error")
+  end)
+
+  it("does not treat a session SET statement as an unfinished UPDATE", function()
+    local buf = make_buf({ "SET SESSION x = 1;" })
+    syntax.highlight_known_error_constructs(buf)
+    assert.same({}, construct_marks(buf))
   end)
 end)
 
