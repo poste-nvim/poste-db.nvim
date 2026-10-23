@@ -319,7 +319,7 @@ local function handle_line(line)
         elapsed = elapsed,
         error = error_msg,
       })
-      vim.notify(string.format("[%d/%d] %s", seq, S.total, error_msg), vim.log.levels.ERROR, { title = "PosteDb" })
+      vim.notify(string.format("[%d/%d] %s", seq, S.total, error_msg), vim.log.levels.ERROR, { title = constants.PLUGIN_TITLE })
     end
     render_progress()
 
@@ -341,7 +341,7 @@ end
 function M.run(opts)
   opts = opts or {}
   if S.is_running then
-    vim.notify("File execution already in progress", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("File execution already in progress", vim.log.levels.WARN, { title = constants.PLUGIN_TITLE })
     return
   end
   local filepath = opts.filepath
@@ -352,7 +352,7 @@ function M.run(opts)
   local max_rows = opts.max_rows or 1000
 
   if not filepath or filepath == "" then
-    vim.notify("No file specified", vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("No file specified", vim.log.levels.ERROR, { title = constants.PLUGIN_TITLE })
     return
   end
 
@@ -405,7 +405,7 @@ function M.run(opts)
     if not url then
       if S.dialog then S.dialog:close(); S.dialog = nil end
       S.is_running = false
-      vim.notify("Connection '" .. resolved_conn .. "' not found: " .. (err or "create a connections.toml in your project root"), vim.log.levels.ERROR, { title = "PosteDb" })
+      vim.notify("Connection '" .. resolved_conn .. "' not found: " .. (err or "create a connections.toml in your project root"), vim.log.levels.ERROR, { title = constants.PLUGIN_TITLE })
       require("poste-db.sql_log").record({
         source = "run_file",
         sql = "[file] " .. filepath,
@@ -490,7 +490,7 @@ function M.run(opts)
           -- whole-run failure did not. Report it on the same channel.
           vim.notify(
             string.format("SQL file run failed: exit code %s (no summary event)", code),
-            vim.log.levels.ERROR, { title = "PosteDb" })
+            vim.log.levels.ERROR, { title = constants.PLUGIN_TITLE })
         end
         S.is_running = false
         render_progress()
@@ -501,7 +501,7 @@ function M.run(opts)
   S.job_id = ok_job and job or -1
 
   if S.job_id <= 0 then
-    vim.notify("Failed to start poste exec-file job", vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("Failed to start poste exec-file job", vim.log.levels.ERROR, { title = constants.PLUGIN_TITLE })
     S.is_running = false
     render_progress()
     require("poste-db.sql_log").record({

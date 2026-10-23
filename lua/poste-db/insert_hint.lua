@@ -7,7 +7,7 @@ local DEBOUNCE_MS = 150
 
 local function dbg(msg)
   if vim.g.poste_insert_hint_debug then
-    vim.notify("[insert_hint] " .. msg, vim.log.levels.INFO, { title = "PosteDb" })
+    vim.notify("[insert_hint] " .. msg, vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
   end
 end
 

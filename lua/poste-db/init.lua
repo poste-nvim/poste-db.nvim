@@ -2,6 +2,7 @@ local config = require("poste-db.config")
 local statement = require("poste-db.statement")
 local sql_introspect = require("poste-db.introspect")
 local sql_runner = require("poste-db.sql_runner")
+local const = require("poste-db.constants")
 
 local M = {}
 M.ensure_sql_keymaps = sql_runner.ensure_sql_keymaps
@@ -59,7 +60,7 @@ function M.setup(opts)
     -- without the plugin hits E492 on the advice. The fallback splitter
     -- (binary, then Lua ;-scan) keeps execution working, so this is a
     -- quality note, not a failure.
-    vim.notify("poste-db: Tree-sitter SQL parser not found (install nvim-treesitter, then :TSInstall sql). Falling back to the binary/Lua statement splitter; execution works without it.", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("poste-db: Tree-sitter SQL parser not found (install nvim-treesitter, then :TSInstall sql). Falling back to the binary/Lua statement splitter; execution works without it.", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
   end
 
   local ok = pcall(require("poste-db.completion.register").register)

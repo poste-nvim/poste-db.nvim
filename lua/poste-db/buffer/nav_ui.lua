@@ -3,6 +3,7 @@ local D = require("poste-db.dataset")
 local config = require("poste-db.config")
 
 local sql_state = require("poste-db.state")
+local const = require("poste-db.constants")
 
 local M = {}
 
@@ -249,12 +250,12 @@ end
 function M.show_dataset_sql()
   local entry = D.active_entry()
   if not entry then
-    vim.notify("No active request", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("No active request", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return
   end
   local sql = entry.sql
   if not sql or sql == "" then
-    vim.notify("No SQL for this request", vim.log.levels.INFO, { title = "PosteDb" })
+    vim.notify("No SQL for this request", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
     return
   end
   local lines = vim.split(sql, "\n")

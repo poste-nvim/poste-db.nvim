@@ -7,6 +7,7 @@
 --- Covered globals:
 ---   config, debug, legacy_completion, dialect, autoformat
 
+local const = require("poste-db.constants")
 local M = {}
 
 local SUPPORTED = {
@@ -36,7 +37,7 @@ function M.opt(name)
       vim.notify(
         string.format("poste-db: `g:%s` is deprecated, use `g:%s`", old_key, new_key),
         vim.log.levels.WARN,
-        { title = "PosteDb" }
+        { title = const.PLUGIN_TITLE }
       )
     end
     return vim.g[old_key]

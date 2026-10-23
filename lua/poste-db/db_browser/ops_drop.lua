@@ -8,6 +8,7 @@ local notify = require("poste-db.db_browser.notify")
 local util = require("poste-db.db_browser.util")
 
 local ops_sql = require("poste-db.db_browser.ops_sql")
+local const = require("poste-db.constants")
 local get_dialect = ops_sql.get_dialect
 local get_connection_name = ops_sql.get_connection_name
 local get_search_dir = ops_sql.get_search_dir
@@ -92,7 +93,7 @@ execute_drop = function(table_node, qualified, conn, context)
   local connections = require("poste-db.connections")
   local url, err = connections.resolve_connection_url(conn)
   if not url then
-    vim.notify("Drop table failed: " .. (err or "unknown"), vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("Drop table failed: " .. (err or "unknown"), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -119,7 +120,7 @@ execute_drop = function(table_node, qualified, conn, context)
           -- (a dependent view, a permission), and that text only exists in
           -- this response — the journal is not where one looks mid-action.
           local reason = exec_run.first_error(resp) or "unknown error"
-          vim.notify("Failed to drop table '" .. qualified .. "': " .. reason, vim.log.levels.ERROR, { title = "PosteDb" })
+          vim.notify("Failed to drop table '" .. qualified .. "': " .. reason, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
           return
         end
         notify.info("Dropped table: " .. qualified)
@@ -131,13 +132,13 @@ execute_drop = function(table_node, qualified, conn, context)
     end,
     on_error = function(message)
       vim.schedule(function()
-        vim.notify("Failed to drop table '" .. qualified .. "': " .. message, vim.log.levels.ERROR, { title = "PosteDb" })
+        vim.notify("Failed to drop table '" .. qualified .. "': " .. message, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
       end)
     end,
   })
 
   if not job_id or job_id <= 0 then
-    vim.notify("Failed to start poste job", vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("Failed to start poste job", vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
   end
 end
 

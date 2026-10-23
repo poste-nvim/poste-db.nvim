@@ -21,11 +21,11 @@ end
 local function check_edit_guards(tab)
   if not tab or not tab.layout then return false end
   if tab.layout.rows and #tab.layout.rows > const.EDIT_MAX_ROWS then
-    vim.notify("Editing is not supported for result sets > " .. const.EDIT_MAX_ROWS .. " rows", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("Editing is not supported for result sets > " .. const.EDIT_MAX_ROWS .. " rows", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return false
   end
   if tab.original_sql and cell.has_join(tab.original_sql) then
-    vim.notify("Editing is not supported for multi-table (JOIN) queries", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("Editing is not supported for multi-table (JOIN) queries", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return false
   end
   local column = require("poste-db.editor.column")
@@ -208,7 +208,7 @@ local function apply_typed_edit(row_idx, col_idx, col_meta, old_val, input)
     if tab then
       cell.set_cell_error(ensure_edit_state(tab), row_key, err)
     end
-    vim.notify("Validation error: " .. err, vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("Validation error: " .. err, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
   local tab = get_dataset().T()
@@ -372,7 +372,7 @@ function M.edit_cell()
   if not M.is_data_row(tab, row_idx) then return end
 
   if not cell.is_editable_field(col_meta) then
-    vim.notify("Cannot edit " .. (col_meta.ctype or "unknown") .. " field", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("Cannot edit " .. (col_meta.ctype or "unknown") .. " field", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -419,7 +419,7 @@ function M.delete_row()
     if get_dataset().dataset_window and vim.api.nvim_win_is_valid(get_dataset().dataset_window) then
       pcall(vim.api.nvim_set_option_value, "winbar", winbar_base or "", { win = get_dataset().dataset_window })
     end
-    vim.notify("Insert cancelled", vim.log.levels.INFO, { title = "PosteDb" })
+    vim.notify("Insert cancelled", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -481,7 +481,7 @@ function M.insert_row()
     pcall(vim.api.nvim_set_option_value, "winbar", winbar_base or "", { win = get_dataset().dataset_window })
   end
 
-  vim.notify("Row queued for insertion (commit with <leader>w)", vim.log.levels.INFO, { title = "PosteDb" })
+  vim.notify("Row queued for insertion (commit with <leader>w)", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 end
 
 --- Rollback all edits and re-run query.
@@ -489,7 +489,7 @@ function M.rollback_edits()
   local tab = get_dataset().T()
   if not tab then return end
   if not tab.edit_state or not tab.edit_state.dirty then
-    vim.notify("No pending changes", vim.log.levels.INFO, { title = "PosteDb" })
+    vim.notify("No pending changes", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
     return
   end
 

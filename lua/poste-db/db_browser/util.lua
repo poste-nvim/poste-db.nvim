@@ -1,6 +1,7 @@
 
 local sql_state = require("poste-db.state")
 local core_util = require("poste-db.util")
+local const = require("poste-db.constants")
 
 local M = {}
 
@@ -131,7 +132,7 @@ function M.run_ddl_and_refresh(sql, conn_name, context, opts)
   local connections = require("poste-db.connections")
   local url, err = connections.resolve_connection_url(conn_name)
   if not url then
-    vim.notify(opts.fail_prefix .. " failed: " .. (err or "unknown"), vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify(opts.fail_prefix .. " failed: " .. (err or "unknown"), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -163,7 +164,7 @@ function M.run_ddl_and_refresh(sql, conn_name, context, opts)
       if resp.has_error or body.has_error or #errors > 0 then
         local msg = table.concat(errors, "\n")
         if msg == "" then msg = "Unknown SQL error" end
-        vim.notify(opts.fail_prefix .. " failed:\n" .. msg, vim.log.levels.ERROR, { title = "PosteDb" })
+        vim.notify(opts.fail_prefix .. " failed:\n" .. msg, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
       else
         notify.info(opts.success_msg)
         M.invalidate_completion_cache()
@@ -171,12 +172,12 @@ function M.run_ddl_and_refresh(sql, conn_name, context, opts)
       M.refresh_subtree(opts.target_node, context, opts.node_type)
     end,
     on_error = function(message)
-      vim.notify(opts.fail_prefix .. " failed: " .. message, vim.log.levels.ERROR, { title = "PosteDb" })
+      vim.notify(opts.fail_prefix .. " failed: " .. message, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     end,
   })
 
   if not job_id or job_id <= 0 then
-    vim.notify(opts.fail_prefix .. ": failed to start poste process", vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify(opts.fail_prefix .. ": failed to start poste process", vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
   end
 end
 

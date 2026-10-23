@@ -11,6 +11,7 @@ local sql_buffer = require("poste-db.buffer")
 local dml_guard = require("poste-db.dml_guard")
 local D = require("poste-db.dataset")
 local response = require("poste-db.sql_runner.response")
+local const = require("poste-db.constants")
 
 local stmt_indicator_line = response.stmt_indicator_line
 
@@ -196,7 +197,7 @@ function M.run_sql_request()
     if cut then
       vim.notify(
         "Selection ends mid-statement — extend it to the statement's last line (the `;`), or run it with the cursor on it.",
-        vim.log.levels.WARN, { title = "PosteDb" })
+        vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
       return
     end
     -- NB: statement start lines come back via stmt_lines; indicator and
@@ -220,7 +221,7 @@ function M.run_sql_request()
   -- Only clear after we confirm there's something to execute
   local tab = D.T()
   if tab and tab.edit_state and tab.edit_state.dirty then
-    vim.notify("You have unsaved edits. Commit or discard them first.", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("You have unsaved edits. Commit or discard them first.", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return
   end
   exec_seq = exec_seq + 1
@@ -304,7 +305,7 @@ function M.run_sql_request()
       conn_url = url
     else
       indicators.clear_all(src_buf)
-      vim.notify("Connection '" .. ctx.connection .. "' not found: " .. (err or "create a connections.toml in your project root"), vim.log.levels.ERROR, { title = "PosteDb" })
+      vim.notify("Connection '" .. ctx.connection .. "' not found: " .. (err or "create a connections.toml in your project root"), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
       return
     end
   end
@@ -365,7 +366,7 @@ function M.run_sql_request()
         "&Yes, execute\n&No, cancel", 2, "Warning")
       if choice ~= 1 then
         vim.notify("Cancelled — statement(s) without a WHERE clause were not executed.",
-          vim.log.levels.WARN, { title = "PosteDb" })
+          vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
         return
       end
     end

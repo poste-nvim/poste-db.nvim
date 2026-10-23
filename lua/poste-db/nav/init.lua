@@ -1,6 +1,7 @@
 local detect = require("poste-db.nav.detect")
 local handlers = require("poste-db.nav.handlers")
 local route = require("poste-db.nav.route")
+local const = require("poste-db.constants")
 
 local M = {}
 
@@ -15,7 +16,7 @@ function M.goto_definition()
     -- directives and the table word all return before that), so the message
     -- names the real cause — this used to say "add a @connection header",
     -- which the user cannot fix by adding one.
-    vim.notify("No word under cursor", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("No word under cursor", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return
   end
 

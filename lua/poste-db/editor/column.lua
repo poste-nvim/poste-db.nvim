@@ -1,6 +1,7 @@
 --- Column metadata introspection and primary key detection.
 --- Handles building and running SQL queries for PK/enum metadata.
 
+local const = require("poste-db.constants")
 local M = {}
 
 local state = nil
@@ -144,7 +145,7 @@ local function run_introspection_query(query, connection, database, src_file)
   if parsed.has_error then
     local reason = exec_run.first_error(parsed)
     vim.notify("Table metadata lookup failed: " .. tostring(reason or "the server reported a failure"),
-      vim.log.levels.WARN, { title = "PosteDb" })
+      vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return nil
   end
   local body_ok, body = pcall(vim.json.decode, parsed.body or "{}")

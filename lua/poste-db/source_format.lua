@@ -14,6 +14,7 @@
 local config = require("poste-db.config")
 
 local sql_state = require("poste-db.state")
+local const = require("poste-db.constants")
 
 local M = {}
 
@@ -372,7 +373,7 @@ function M.format(opts)
   })
 
   if not result then
-    vim.notify(string.format("Format failed: %s", err or "unknown error"), vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify(string.format("Format failed: %s", err or "unknown error"), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -397,7 +398,7 @@ function M.format(opts)
   -- Notify which formatter was used
   local name = used_formatter or opts.formatter or M.best(dialect) or "unknown"
   vim.notify(string.format("Formatted with %s%s", name,
-    dialect ~= "" and string.format(" (%s dialect)", dialect) or ""), vim.log.levels.INFO, { title = "PosteDb" })
+    dialect ~= "" and string.format(" (%s dialect)", dialect) or ""), vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 end
 
 --- Format the entire buffer in-place (for :PosteDbFormat command).
@@ -445,7 +446,7 @@ function M.status(bufnr)
   local best = M.best(dialect)
   table.insert(lines, string.format("Best formatter: %s", best or "(none available)"))
 
-  vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO, { title = "PosteDb" })
+  vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 end
 
 ---------------------------------------------------------------------------

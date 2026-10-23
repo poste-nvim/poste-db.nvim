@@ -248,7 +248,7 @@ function M.handle(deps, parsed)
   end)
   if not ok_cb then
     state.log("ERROR", "SQL on_response error: " .. tostring(err_cb))
-    vim.notify("SQL execution error: " .. tostring(err_cb), vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("SQL execution error: " .. tostring(err_cb), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
   end
 end
 
@@ -279,7 +279,7 @@ function M.handle_error(deps, message, parsed)
     -- stays transport-only: the same failure should not behave differently
     -- because of which transport happened to serve it.
     if type(parsed) ~= "table" then
-      vim.notify(message, vim.log.levels.ERROR, { title = "PosteDb" })
+      vim.notify(message, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     end
     local lines = sql_format.format_error(message, state.context.connection or "")
     sql_buffer.render_dataset(lines, { type = "error" })

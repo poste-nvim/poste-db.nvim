@@ -5,6 +5,7 @@
 
 local D = require("poste-db.dataset")
 local config = require("poste-db.config")
+local const = require("poste-db.constants")
 
 local M = {}
 
@@ -124,17 +125,17 @@ end
 local function get_current_data()
   local tab = D.T()
   if not tab or not tab.data then
-    vim.notify("No dataset to export", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("No dataset to export", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return nil
   end
   local body = tab.data
   if body.type ~= "resultset" then
-    vim.notify("Only resultset data can be exported", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("Only resultset data can be exported", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return nil
   end
   local results = body.results
   if not results or #results == 0 then
-    vim.notify("No result rows to export", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("No result rows to export", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return nil
   end
   local layout = tab.layout or {}
@@ -373,19 +374,19 @@ local function export_to_file(data_result, info, format_value, path)
     local ok_dir, dir_err = pcall(vim.fn.mkdir, dir, "p")
     if not ok_dir then
       vim.notify("Cannot create directory " .. dir .. ": " .. tostring(dir_err),
-        vim.log.levels.ERROR, { title = "PosteDb" })
+        vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
       return
     end
   end
   local ok, text = pcall(fn, data_result, info)
   if not ok then
-    vim.notify("Export failed: " .. tostring(text), vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("Export failed: " .. tostring(text), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
   local tmp = path .. ".tmp"
   local f = io.open(tmp, "w")
   if not f then
-    vim.notify("Cannot write to " .. path, vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("Cannot write to " .. path, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
   -- Check both halves: a full disk or a revoked directory must not end in the
@@ -394,27 +395,27 @@ local function export_to_file(data_result, info, format_value, path)
   f:close()
   if not ok_write then
     os.remove(tmp)
-    vim.notify("Export failed while writing: " .. tostring(write_err), vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("Export failed while writing: " .. tostring(write_err), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
   local renamed = os.rename(tmp, path)
   if not renamed then
     os.remove(tmp)
-    vim.notify("Export failed: could not move the file into place at " .. path, vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("Export failed: could not move the file into place at " .. path, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
   local abs_path = vim.fn.fnamemodify(path, ":p")
   vim.fn.setreg("+", abs_path)
   vim.fn.setreg('"', abs_path)
   local row_count = data_result.row_count or #(data_result.rows or {})
-  vim.notify(string.format("Exported %d rows to %s (path in clipboard)", row_count, abs_path), vim.log.levels.INFO, { title = "PosteDb" })
+  vim.notify(string.format("Exported %d rows to %s (path in clipboard)", row_count, abs_path), vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 end
 
 local function export_to_clipboard(data_result, info, format_value)
   local fn = FORMATTERS[format_value]
   local ok, text = pcall(fn, data_result, info)
   if not ok then
-    vim.notify("Export failed: " .. tostring(text), vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("Export failed: " .. tostring(text), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
   vim.fn.setreg("+", text)
@@ -427,7 +428,7 @@ local function export_to_clipboard(data_result, info, format_value)
       break
     end
   end
-  vim.notify(string.format("Copied %d rows as %s to clipboard", row_count, fmt_label), vim.log.levels.INFO, { title = "PosteDb" })
+  vim.notify(string.format("Copied %d rows as %s to clipboard", row_count, fmt_label), vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 end
 
 -------------------------------------------------------------------------------
@@ -443,7 +444,7 @@ local function save_default_dir(dir)
   local cfg = load_export_config()
   cfg.last_dir = dir
   save_export_config(cfg)
-  vim.notify("Default export directory saved: " .. dir, vim.log.levels.INFO, { title = "PosteDb" })
+  vim.notify("Default export directory saved: " .. dir, vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 end
 
 function P.format_picker(on_format)
@@ -468,7 +469,7 @@ function P.browse_path(format_value)
   local ok, finder = pcall(require, "finder")
   if not ok then
     vim.notify(
-      "beyondlex/finder required for Browse. Add { \"beyondlex/finder\" } to your plugin specs.", vim.log.levels.ERROR, { title = "PosteDb" })
+      "beyondlex/finder required for Browse. Add { \"beyondlex/finder\" } to your plugin specs.", vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -536,7 +537,7 @@ function M.run(format_value, destination, path)
   -- nil value" from the formatter dispatch — say what is legal instead.
   if format_value and not FORMATTERS[format_value] then
     vim.notify("Unknown export format '" .. tostring(format_value)
-      .. "' (csv|tsv|json|md|sql)", vim.log.levels.ERROR, { title = "PosteDb" })
+      .. "' (csv|tsv|json|md|sql)", vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
 

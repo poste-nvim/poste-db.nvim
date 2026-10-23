@@ -4,6 +4,7 @@
 --- would capture the real module before the stub lands.
 local detect = require("poste-db.nav.detect")
 local util = require("poste-db.util")
+local const = require("poste-db.constants")
 
 local M = {}
 
@@ -40,17 +41,17 @@ function M.handle_connection_directive(buf, conn_name)
   local search_dir = M.build_connection_search_dir(buf)
   local config_path = connections.find_connections_toml(search_dir)
   if not config_path then
-    vim.notify("connections.toml not found", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("connections.toml not found", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return true
   end
   local config_lines = vim.fn.readfile(config_path)
   if not config_lines then
-    vim.notify("Cannot read connections.toml", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("Cannot read connections.toml", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return true
   end
   local target_line = M.find_connection_target_line(config_lines, conn_name)
   if not target_line then
-    vim.notify("Connection '" .. conn_name .. "' not found in connections.toml", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("Connection '" .. conn_name .. "' not found in connections.toml", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return true
   end
   vim.cmd("normal! m'")
@@ -62,7 +63,7 @@ end
 function M.handle_database_directive(buf, line_num, db_name)
   local full_ctx = require("poste-db.context").resolve_full_context(buf, line_num)
   if not full_ctx.connection then
-    vim.notify("No connection context for database '" .. db_name .. "'. Add -- @connection <name> to the file.", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("No connection context for database '" .. db_name .. "'. Add -- @connection <name> to the file.", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return true
   end
   vim.cmd("normal! m'")

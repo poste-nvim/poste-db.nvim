@@ -2,6 +2,7 @@ local ts_stmt = require("poste-db.ts_stmt")
 local state = require("poste-db.state")
 local config = require("poste-db.config")
 local util = require("poste-db.util")
+local const = require("poste-db.constants")
 
 local M = {}
 
@@ -163,10 +164,10 @@ function M.toggle()
   _disabled = not _disabled
   if _disabled then
     M.clear(vim.api.nvim_get_current_buf())
-    vim.notify("SQL boundary highlight: OFF", vim.log.levels.INFO, { title = "PosteDb" })
+    vim.notify("SQL boundary highlight: OFF", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
   else
     M.update(vim.api.nvim_get_current_buf(), vim.fn.line("."))
-    vim.notify("SQL boundary highlight: ON", vim.log.levels.INFO, { title = "PosteDb" })
+    vim.notify("SQL boundary highlight: ON", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
   end
 end
 

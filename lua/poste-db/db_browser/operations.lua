@@ -85,7 +85,7 @@ function M.show_ddl(node, context)
   local connections = require("poste-db.connections")
   local url, url_err = connections.resolve_connection_url(conn)
   if not url then
-    vim.notify("DDL: " .. (url_err or "unknown error"), vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("DDL: " .. (url_err or "unknown error"), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
 

@@ -703,7 +703,7 @@ function M.re_run()
   if not idx then return end
   local entry = entries[idx]
   if not entry.sql or entry.sql == "" then
-    vim.notify("No SQL to re-run", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("No SQL to re-run", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return
   end
   local lines = rerun_lines(entry)
@@ -717,7 +717,7 @@ function M.yank_sql()
   if not idx then return end
   local entry = entries[idx]
   if not entry.sql or entry.sql == "" then
-    vim.notify("No SQL to yank", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("No SQL to yank", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return
   end
   vim.fn.setreg('"', entry.sql)
@@ -777,7 +777,7 @@ function M.request_clear(opts)
     answered = true
     dlg:close() -- re-enters via on_close; the answered flag absorbs it
     if is_cancel then
-      vim.notify("SQL log left untouched", vim.log.levels.INFO, { title = "PosteDb" })
+      vim.notify("SQL log left untouched", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
       if opts.on_cancel then opts.on_cancel() end
       return
     end
@@ -821,10 +821,10 @@ function M.clear_logs()
   -- The in-memory view is always cleared; only claim the file itself is
   -- gone when the truncate actually opened for writing.
   if truncated then
-    vim.notify("SQL log cleared", vim.log.levels.INFO, { title = "PosteDb" })
+    vim.notify("SQL log cleared", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
   else
     vim.notify("Cleared the in-memory log, but " .. path .. " could not be written",
-      vim.log.levels.WARN, { title = "PosteDb" })
+      vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
   end
 end
 

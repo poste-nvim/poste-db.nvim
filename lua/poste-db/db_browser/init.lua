@@ -8,6 +8,7 @@ local util = require("poste-db.db_browser.util")
 local HEADER_LINES = require("poste-db.db_browser.icons").HEADER_LINES
 local notify = require("poste-db.db_browser.notify")
 local yank = require("poste-db.db_browser.yank")
+local const = require("poste-db.constants")
 
 local M = {}
 
@@ -184,7 +185,7 @@ local function start_copy(buf_line)
     vim.notify(string.format(
       "Cannot copy: dialect mismatch (%s → %s). Both must be the same dialect.",
       src_dialect, tgt_dialect
-    ), vim.log.levels.ERROR, { title = "PosteDb" })
+    ), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -517,7 +518,7 @@ local function setup_browser_buffer()
             end,
           })
         end, function(err)
-          vim.notify("Failed to enumerate objects for paste: " .. tostring(err), vim.log.levels.ERROR, { title = "PosteDb" })
+          vim.notify("Failed to enumerate objects for paste: " .. tostring(err), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
         end)
       elseif entry.kind == "table" or entry.kind == "view" then
         copy_mod.paste_objects(entry, {

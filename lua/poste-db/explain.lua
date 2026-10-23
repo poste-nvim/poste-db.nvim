@@ -93,7 +93,7 @@ function M.explain()
   local src_buf = vim.api.nvim_get_current_buf()
   local state = require("poste-db.state")
   if not state.find_poste_binary() then
-    vim.notify("Poste binary not found.", vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("Poste binary not found.", vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -102,7 +102,7 @@ function M.explain()
   local content = statement.extract_stmt_at_cursor(buf_lines, vim.fn.line("."), src_buf)
   local stmt = clean_stmt(content)
   if stmt:match("^%s*$") then
-    vim.notify("No statement under cursor.", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("No statement under cursor.", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -117,7 +117,7 @@ function M.explain()
 
   local sql, err = M.wrap_sql(dialect, stmt)
   if not sql then
-    vim.notify(err, vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify(err, vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -137,7 +137,7 @@ function M.explain()
   })
 
   if not resp then
-    vim.notify("EXPLAIN failed (no response)", vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("EXPLAIN failed (no response)", vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
   -- A rejected EXPLAIN arrives as a normal response carrying a per-result
@@ -145,7 +145,7 @@ function M.explain()
   -- plan the server refused never renders as an empty table.
   local plan_err = exec_run.first_error(resp)
   if plan_err then
-    vim.notify("EXPLAIN: " .. plan_err, vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify("EXPLAIN: " .. plan_err, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
 

@@ -502,7 +502,7 @@ function M.list_connections(callback)
     -- message advises creating a connections.toml, and the file is right
     -- there. Name the parse error so the typo is fixable from the message.
     vim.notify("connections.toml parse failed: " .. tostring(err),
-      vim.log.levels.WARN, { title = "PosteDb" })
+      vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     vim.schedule(function() callback({}) end)
     return
   end
@@ -568,7 +568,7 @@ end
 function M.select_connection()
   M.list_connections(function(connections)
     if #connections == 0 then
-      vim.notify("No connections found. Create a connections.toml file.", vim.log.levels.WARN, { title = "PosteDb" })
+      vim.notify("No connections found. Create a connections.toml file.", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
       return
     end
 
@@ -634,7 +634,7 @@ function M.apply_connection(conn)
     })
   end
 
-  vim.notify(string.format("Connection set to: %s", conn_name), vim.log.levels.INFO, { title = "PosteDb" })
+  vim.notify(string.format("Connection set to: %s", conn_name), vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 end
 
 ---------------------------------------------------------------------------
@@ -645,7 +645,7 @@ end
 function M.test_connection()
   M.list_connections(function(connections)
     if #connections == 0 then
-      vim.notify("No connections found.", vim.log.levels.WARN, { title = "PosteDb" })
+      vim.notify("No connections found.", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
       return
     end
 
@@ -672,11 +672,11 @@ end
 --- connections.toml directly and cannot route through the Lua-side tunnel,
 --- so probe with a trivial SELECT on the rewritten URL instead.
 function M.run_test_via_tunnel(conn)
-  vim.notify(string.format("Testing '%s' (via tunnel)...", conn.name), vim.log.levels.INFO, { title = "PosteDb" })
+  vim.notify(string.format("Testing '%s' (via tunnel)...", conn.name), vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 
   local url, err = M.resolve_connection_url(conn.name)
   if not url then
-    vim.notify(string.format("✗ Connection '%s': %s", conn.name, err or "unresolved"), vim.log.levels.ERROR, { title = "PosteDb" })
+    vim.notify(string.format("✗ Connection '%s': %s", conn.name, err or "unresolved"), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -689,7 +689,7 @@ function M.run_test_via_tunnel(conn)
   local ok = resp ~= nil and not resp.has_error
   vim.notify(
     ok and string.format("✓ Connection '%s' OK (via tunnel)", conn.name)
-      or string.format("✗ Connection '%s' FAILED (via tunnel)", conn.name), ok and vim.log.levels.INFO or vim.log.levels.ERROR, { title = "PosteDb" })
+      or string.format("✗ Connection '%s' FAILED (via tunnel)", conn.name), ok and vim.log.levels.INFO or vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
 end
 
 --- Run the test for a specific connection.
@@ -702,7 +702,7 @@ function M.run_test(conn)
   local search_dir = get_search_dir()
   local cmd = { "connection", "test", conn.name, "--path", search_dir }
 
-  vim.notify(string.format("Testing '%s'...", conn.name), vim.log.levels.INFO, { title = "PosteDb" })
+  vim.notify(string.format("Testing '%s'...", conn.name), vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 
   local t0 = vim.uv.now()
   cli.run_async(cmd, {
@@ -717,9 +717,9 @@ function M.run_test(conn)
       })
       vim.schedule(function()
         if code == 0 then
-          vim.notify(string.format("✓ Connection '%s' OK", conn.name), vim.log.levels.INFO, { title = "PosteDb" })
+          vim.notify(string.format("✓ Connection '%s' OK", conn.name), vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
         else
-          vim.notify(string.format("✗ Connection '%s' FAILED", conn.name), vim.log.levels.ERROR, { title = "PosteDb" })
+          vim.notify(string.format("✗ Connection '%s' FAILED", conn.name), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
         end
       end)
     end,

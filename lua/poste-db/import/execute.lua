@@ -5,6 +5,7 @@ local edit_commit = require("poste-db.edit_commit")
 local mapping = require("poste-db.import.mapping")
 local dialog = require("poste-db.dialog")
 local verdict = require("poste-db.verdict")
+local const = require("poste-db.constants")
 
 local M = {}
 
@@ -74,7 +75,7 @@ end
 
 function M.execute_import(table_info, valid_rows, col_map, table_cols, callback)
   if #valid_rows == 0 then
-    vim.notify("No valid rows to import", vim.log.levels.WARN, { title = "PosteDb" })
+    vim.notify("No valid rows to import", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     if callback then callback(nil) end
     return
   end
@@ -122,10 +123,10 @@ function M.execute_import(table_info, valid_rows, col_map, table_cols, callback)
           for _, e in ipairs(all_errors) do bad_chunks[e.chunk_start] = true end
           local n_chunks = 0
           for _ in pairs(bad_chunks) do n_chunks = n_chunks + 1 end
-          vim.notify(msg .. string.format(" (%d chunk(s) with errors)", n_chunks), vim.log.levels.WARN, { title = "PosteDb" })
+          vim.notify(msg .. string.format(" (%d chunk(s) with errors)", n_chunks), vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
           show_import_errors(all_errors)
         else
-          vim.notify(msg, vim.log.levels.INFO, { title = "PosteDb" })
+          vim.notify(msg, vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
         end
         if callback then callback({ imported = total_imported, errors = all_errors }) end
       end)
@@ -261,7 +262,7 @@ function M.execute_import(table_info, valid_rows, col_map, table_cols, callback)
         })
         state.log("WARN", "Import chunk error: " .. message)
         vim.schedule(function()
-          vim.notify("Import stopped due to process error", vim.log.levels.ERROR, { title = "PosteDb" })
+          vim.notify("Import stopped due to process error", vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
           if callback then callback({ imported = total_imported, errors = all_errors }) end
         end)
       end,

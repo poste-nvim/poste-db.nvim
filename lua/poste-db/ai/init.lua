@@ -2,6 +2,7 @@
 --- (optional dependency). Zero coupling: poste-ai is never required at load
 --- time; registration is attempted in setup() and on :PosteDbChat.
 
+local const = require("poste-db.constants")
 local M = {}
 
 --- True when poste-ai.nvim is on the runtimepath.
@@ -54,7 +55,7 @@ end
 local function ensure_available()
   if M.available() then return true end
   vim.notify("PosteDb AI chat needs poste-ai.nvim (poste-nvim/poste-ai.nvim) installed.",
-    vim.log.levels.WARN, { title = "PosteDb" })
+    vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
   return false
 end
 
@@ -110,7 +111,7 @@ function M.ask_last_error()
   if not ensure_available() then return end
   local err = require("poste-db.state").last_error
   if not err or not err.message then
-    vim.notify("no failed execution to ask about", vim.log.levels.INFO, { title = "PosteDb" })
+    vim.notify("no failed execution to ask about", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
     return
   end
   local text = table.concat({
@@ -138,7 +139,7 @@ function M.ask_resultset()
   if not ensure_available() then return end
   local data = require("poste-db.state").last_dataset
   if not data or data.type ~= "resultset" or not data.results or #data.results == 0 then
-    vim.notify("no resultset to ask about", vim.log.levels.INFO, { title = "PosteDb" })
+    vim.notify("no resultset to ask about", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
     return
   end
   local res = data.results[1]
@@ -146,7 +147,7 @@ function M.ask_resultset()
   for _, c in ipairs(res.columns or {}) do cols[#cols + 1] = c.name or "?" end
   local rows = res.rows or {}
   if #cols == 0 or #rows == 0 then
-    vim.notify("the result set is empty", vim.log.levels.INFO, { title = "PosteDb" })
+    vim.notify("the result set is empty", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -202,7 +203,7 @@ function M.ask_view()
     return M.ask_resultset()
   end
   if state_sql.last_error then return M.ask_last_error() end
-  vim.notify("nothing to ask about — run a query first", vim.log.levels.INFO, { title = "PosteDb" })
+  vim.notify("nothing to ask about — run a query first", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 end
 
 --- `a` in the db browser: ask the AI about the node's table/database via an
@@ -226,7 +227,7 @@ function M.ask_node(node)
   end
   if not mention then
     vim.notify("put the cursor on a table or database node to ask the AI",
-      vim.log.levels.INFO, { title = "PosteDb" })
+      vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
     return
   end
   M.open_chat()

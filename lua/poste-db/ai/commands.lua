@@ -6,6 +6,7 @@
 --- message, injected into the system prompt and used as the default SQL
 --- execution target (ai/actions.lua resolve_target).
 
+local const = require("poste-db.constants")
 local M = {}
 
 --- Databases hidden from /databases (same skip list as the db browser).
@@ -47,7 +48,7 @@ end
 function M.complete_databases(prefix, scope, cb)
   local conn = scope and scope.connection
   if not conn then
-    vim.notify("Pick a connection first with /connections", vim.log.levels.INFO, { title = "PosteDb" })
+    vim.notify("Pick a connection first with /connections", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
     cb({})
     return
   end
