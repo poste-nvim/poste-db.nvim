@@ -95,7 +95,6 @@ Unknown `{{VAR}}` references stay literal.
 
 | Command | Function |
 |---------|----------|
-| `:PosteDbContext` | Open context selector |
 | `:PosteDbConnection` | Open connection manager |
 | `:PosteDbBrowser` | Open database browser |
 | `<leader>rr` | Execute current SQL statement/block |
