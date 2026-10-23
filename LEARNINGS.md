@@ -357,7 +357,22 @@ require 前，先 grep 那个模块的 spec 找 `stub_module`/`package.loaded`�
 写成了"去掉两端"）。审这类代码时专找 `sub(1, <变量>)` 且变量没有下界保护
 的位置。
 
+## 23. 判死代码前，从 require 行推出全部别名，不要猜别名名
+
+**发生了什么**：2026-10-24 审查里，子代理判定 `constants.lua` 的
+`M.TITLE = M.PLUGIN_TITLE` 别名"零使用"。复核发现 `buffer/` 子树有
+12+ 处在用——但都是 `C.TITLE` 形态，因为那些文件写的是
+`local C = require("poste-db.constants")`。子代理 grep 的是
+`const.TITLE` / `constants.TITLE`（猜的别名名），本仓库同一模块在
+不同文件里至少有 `C`、`const`、`constants`、`core_util` 四种别名
+（`state` 还有 `sql_state`/`poste_state` 两个）。
+
+**约束**：宣布一个 `M.x` 导出死之前，先
+`grep -rn 'require("poste-db.<mod>")' lua/` 拿到**全部**绑定的局部名，
+再逐个别名 grep `别名.x`。猜别名名等于只搜了符号空间的一个子集；
+harness 里"Grep both shapes"的 local alias 一指，落地动作就是这一步。
+
 ---
 
-*Latest: 2026-10-19 检视会话（#22 Lua 负索引从尾部数）。
+*Latest: 2026-10-24 审查会话（#23 从 require 行推别名）。
 新增条目时保持同一格式：发生了什么（带 file:line）→ 约束（可执行的检查动作）。*
