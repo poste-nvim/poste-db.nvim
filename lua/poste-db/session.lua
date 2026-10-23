@@ -6,8 +6,6 @@
 
 local M = {}
 
-local active = nil
-
 --- @param meta? table  { buf, line, file }
 --- @return table
 function M.new(meta)
@@ -30,20 +28,7 @@ function M.begin(meta)
   state.last_dataset = nil
   state.cell = { row = 1, col = 1 }
 
-  active = session
-  state._sql_session = session
   return session
-end
-
---- @return table|nil
-function M.active()
-  return active
-end
-
-function M.finish()
-  active = nil
-  local sql_state = require("poste-db.state")
-  sql_state._sql_session = nil
 end
 
 return M

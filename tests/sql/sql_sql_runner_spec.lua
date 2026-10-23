@@ -17,7 +17,6 @@ local poste_state_stub = {
   log = function() end,
   last_response = nil,
   context = { connection = nil, database = nil },
-  _sql_session = nil,
 }
 local sql_state_stub = poste_state_stub
 local config_stub = {
@@ -346,7 +345,6 @@ describe("sql_runner run_sql_request", function()
     assert.equals(1, #executed, "clean SELECT must reach the executor")
     assert.is_nil(poste_state_stub.last_response)
     assert.is_nil(sql_state_stub.last_dataset)
-    assert.is_not_nil(sql_state_stub._sql_session)
   end)
 
   after_each(function()
