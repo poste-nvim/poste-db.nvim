@@ -812,6 +812,10 @@ if sem_ok and sem._test and sem._test.extract_references_from_node then
       assert.same({}, extract_from_roots("UPDATE SET users;"))
       assert.same({}, extract_from_roots("set names utf8;"))
     end)
+
+    it("keeps a quoted table that is really named set", function()
+      assert.same({ "set" }, extract_from_roots("SELECT * FROM `set`;"))
+    end)
   end)
 
   describe("semantic catalog exemption", function()

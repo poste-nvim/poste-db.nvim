@@ -11,6 +11,7 @@ local context = require("poste-db.context")
 local connections = require("poste-db.connections")
 local state = require("poste-db.state")
 local const = require("poste-db.constants")
+local util = require("poste-db.util")
 
 local M = {}
 
@@ -161,13 +162,16 @@ local function extract_references_from_node(stmt_node, buf)
   end
 
   local function add_table(name, node, db_prefix, start_node)
+    -- The raw node text, before any unquote, tells a bare keyword from a
+    -- quoted identifier: `UPDATE SET users;` (no target table) parses as one
+    -- root ERROR whose `SET users` is a relation, and the bare keyword would
+    -- be looked up as a table literally named SET. A quoted `` `set` `` is a
+    -- real, if rare, table and survives the check.
+    local raw = vim.treesitter.get_node_text(node, buf)
+    if raw and raw:lower() == "set" then return end
     name = unquote(name)
     if name == "" then return end
     if cte_names[name:lower()] then return end
-    -- `UPDATE SET users;` (no target table) leaves `SET users` parsed as a
-    -- relation; now that the ERROR it sits in is walked, that would be looked
-    -- up as a table literally named SET. The keyword can never be a name there.
-    if name:lower() == "set" then return end
     local key = name:lower() .. ":" .. node:start() .. ":" .. node:end_()
     if seen_tables[key] then return end
     seen_tables[key] = true
@@ -459,8 +463,7 @@ local function run_introspect(args, store, callback)
   local ok, job = pcall(vim.fn.jobstart, args, {
     stdout_buffered = true,
     on_stdout = function(_, data)
-      if not data then return end
-      while #data > 0 and data[#data] == "" do data[#data] = nil end
+      data = util.ensure_job_data(data)
       if #data == 0 then return end
       local decoded, parsed = pcall(vim.json.decode, table.concat(data, "\n"))
       if decoded and parsed and parsed.items then
