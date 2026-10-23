@@ -205,20 +205,9 @@ function M.format_key_string(key)
   return key
 end
 
---- Resolve and format a keymap for (section, action).
---- @param section string
---- @param action string
---- @return string
-function M.format_keymap(section, action)
-  local key = M.get_keymap(section, action)
-  if not key then return "" end
-  return M.format_key_string(key)
-end
-
 M._test = {
   get_keymap = M.get_keymap,
   format_key_string = M.format_key_string,
-  format_keymap = M.format_keymap,
   merge = M.merge,
 }
 

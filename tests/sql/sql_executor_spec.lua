@@ -27,7 +27,6 @@ package.loaded["poste-db.log"] = {
   error = function() end,
   debug = function() end,
   info_fmt = function() end,
-  warn_fmt = function() end,
   redact_cmd = function(s) return s end,
   redact_url = function(s) return s end,
 }

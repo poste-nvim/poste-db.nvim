@@ -102,14 +102,4 @@ function M.info_fmt(fmt, ...)
   log("INFO", string.format(fmt, unpack(args)))
 end
 
-function M.warn_fmt(fmt, ...)
-  local args = { ... }
-  for i, v in ipairs(args) do
-    if type(v) == "string" then
-      args[i] = M.redact_url(v)
-    end
-  end
-  log("WARN", string.format(fmt, unpack(args)))
-end
-
 return M
