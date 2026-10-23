@@ -234,11 +234,6 @@ local function get_items(bufnr, line_before, cursor_line, callback, dialect)
   detect_context_async(bufnr, line_before, cursor_line, function(ctx_type, ctx_data, rust_ctx)
     local rust_functions = (rust_ctx and rust_ctx.functions) or nil
 
-    if compat.opt("debug") then
-      state.log("INFO", string.format("DEBUG get_items: ctx=%s, prefix='%s', line='%s'",
-        ctx_type, prefix, line_before))
-    end
-
     debug.set("ctx_type", ctx_type)
     debug.set("ctx_data", ctx_data)
     if rust_ctx and rust_ctx.tables then
