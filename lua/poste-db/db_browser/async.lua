@@ -91,7 +91,14 @@ function M.run_introspect(conn_name, introspect_type, schema, table_name, databa
     .. (table_name and (" table=" .. table_name) or "")
     .. (database and (" db=" .. database) or "")
 
+  -- Journal only the first outcome: async.run already suppresses a second
+  -- callback for a cancelled run, but the parse path and the exit path can
+  -- both reach journal independently — the same once-guard the other two
+  -- introspect runners (db_browser/actions.lua, introspect/exec.lua) carry.
+  local journaled = false
   local function journal(ok_status, error_msg)
+    if journaled then return end
+    journaled = true
     sql_log.record({
       source = "browser",
       sql = journal_sql,
@@ -106,8 +113,7 @@ function M.run_introspect(conn_name, introspect_type, schema, table_name, databa
   return async.run(cmd, {
     timeout = 15000,
     on_data = function(data)
-      if not data then return end
-      while #data > 0 and data[#data] == "" do data[#data] = nil end
+      data = util.ensure_job_data(data)
       if #data == 0 then return end
 
       local output = table.concat(data, "\n")
@@ -115,7 +121,7 @@ function M.run_introspect(conn_name, introspect_type, schema, table_name, databa
       if ok and type(parsed) == "table" then
         parsed_result = parsed
       else
-        state.log("WARN", "Introspect JSON parse failed: " .. output:sub(1, 200))
+        log.warn("Introspect JSON parse failed: " .. output:sub(1, 200))
       end
     end,
     on_stderr = function(data)
@@ -462,7 +468,7 @@ function M.prefetch_children(node, search_dir)
 end
 
 function M.load_connections(callback, search_dir)
-  state.log("INFO", "DB Browser load_connections: search_dir=" .. search_dir)
+  log.info("DB Browser load_connections: search_dir=" .. search_dir)
 
   local config_path = util.find_file_upwards("connections.toml", search_dir)
 
@@ -492,12 +498,12 @@ function M.load_connections(callback, search_dir)
           ::continue::
         end
       else
-        state.log("WARN", "DB Browser: TOML parse failed: " .. (err or "unknown"))
+        log.warn("DB Browser: TOML parse failed: " .. (err or "unknown"))
       end
     else
-      state.log("WARN", "DB Browser: connections.toml not found")
+      log.warn("DB Browser: connections.toml not found")
     end
-    state.log("INFO", "DB Browser: loaded " .. #nodes .. " connections")
+    log.info("DB Browser: loaded " .. #nodes .. " connections")
     callback(nodes)
   end)
 end
