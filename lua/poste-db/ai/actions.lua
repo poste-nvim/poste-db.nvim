@@ -174,12 +174,9 @@ function M.render_dataset(parsed, sql)
   local sql_buffer = require("poste-db.buffer")
   local lines, meta, layout = format.format_dataset(parsed)
   -- Prefer the decoded resultset (matches db_browser's execute_table_select)
-  -- so cell preview (K) / yank / sort read fresh rows.
-  local data = parsed
-  if parsed and parsed.body then
-    local ok, d = pcall(vim.json.decode, parsed.body)
-    if ok then data = d end
-  end
+  -- so cell preview (K) / yank / sort read fresh rows; a legacy envelope
+  -- without a decodable body carries the rows itself.
+  local data = util.decode_dataset_body(parsed) or parsed
   sql_buffer.render_dataset(lines, meta, {
     data = data,
     layout = layout,
@@ -223,8 +220,8 @@ function M.execute_sql(sql, refs, cb)
       if parsed and parsed.has_error then
         local results = parsed.results
         if not results and type(parsed.body) == "string" then
-          local ok_d, decoded = pcall(vim.json.decode, parsed.body)
-          results = ok_d and decoded.results or nil
+          local decoded = util.decode_dataset_body(parsed)
+          results = decoded and decoded.results or nil
         end
         for _, r in ipairs(results or {}) do
           if r.error and r.error ~= "" then

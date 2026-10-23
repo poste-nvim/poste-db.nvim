@@ -195,4 +195,18 @@ function M.ensure_job_data(data)
   return data
 end
 
+--- Decoded body of a CLI response envelope, or nil when there is nothing
+--- decodable (no body, invalid JSON, or a non-object body). nil — not an
+--- empty table — is the contract: render_dataset treats a missing `data`
+--- as "fall back to state.last_response.body", and that fallback must stay
+--- reachable when decoding fails.
+--- @param resp table|nil  response envelope with a `body` JSON string
+--- @return table|nil
+function M.decode_dataset_body(resp)
+  if type(resp) ~= "table" or not resp.body then return nil end
+  local ok, body = pcall(vim.json.decode, resp.body)
+  if not ok or type(body) ~= "table" then return nil end
+  return body
+end
+
 return M

@@ -8,6 +8,7 @@ local util = require("poste-db.db_browser.util")
 local core_util = require("poste-db.util")
 local compat = require("poste-db.compat")
 local notify = require("poste-db.db_browser.notify")
+local const = require("poste-db.constants")
 
 local HEADER_LINES = icons.HEADER_LINES
 local M = {}
@@ -117,8 +118,7 @@ function M.show_ddl(node, context)
 
   cli.run_async(cmd, {
     on_stdout = function(data)
-      if not data then return end
-      while #data > 0 and data[#data] == "" do data[#data] = nil end
+      data = core_util.ensure_job_data(data)
       if #data == 0 then return end
       local output = table.concat(data, "\n")
       local ok, parsed = pcall(vim.json.decode, output)

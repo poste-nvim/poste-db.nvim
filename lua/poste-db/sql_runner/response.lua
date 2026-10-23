@@ -10,10 +10,12 @@ local state = require("poste-db.state")
 local config = require("poste-db.config")
 local indicators = require("poste-db.indicators")
 local statement = require("poste-db.statement")
+local util = require("poste-db.util")
 local sql_format = require("poste-db.format")
 local dataset = require("poste-db.dataset")
 local sql_buffer = require("poste-db.buffer")
 local verdict = require("poste-db.verdict")
+local const = require("poste-db.constants")
 
 local M = {}
 
@@ -106,8 +108,8 @@ function M.handle(deps, parsed)
       results = filtered
       parsed.results = results
       -- Re-encode body for consumers that rely on parsed.body
-      local ok_body, decoded = pcall(vim.json.decode, parsed.body)
-      if ok_body and type(decoded) == "table" then
+      local decoded = util.decode_dataset_body(parsed)
+      if decoded then
         decoded.results = results
         decoded.total_results = #results
         parsed.body = vim.json.encode(decoded)

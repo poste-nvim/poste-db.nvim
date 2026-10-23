@@ -7,6 +7,7 @@ local const = require("poste-db.constants")
 local dml = require("poste-db.dml")
 local exec = require("poste-db.edit_commit.exec")
 local log = require("poste-db.edit_commit.log")
+local util = require("poste-db.util")
 
 local M = {}
 M.generate_update = dml.generate_update
@@ -120,11 +121,7 @@ function M.refresh_dataset(tab)
         -- back to state.last_response.body, which only the sql_runner request
         -- path updates — after an R-refresh, cell preview (K) / yank / sort
         -- would read the pre-refresh rows while the buffer shows new ones.
-        local data = nil
-        if parsed and parsed.body then
-          local ok, d = pcall(vim.json.decode, parsed.body)
-          if ok then data = d end
-        end
+        local data = util.decode_dataset_body(parsed)
 
         local sql_runner = require("poste-db.sql_runner")
         sql_buffer.render_dataset(lines, meta, {

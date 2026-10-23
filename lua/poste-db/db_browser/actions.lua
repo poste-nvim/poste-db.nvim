@@ -6,6 +6,7 @@ local util = require("poste-db.db_browser.util")
 local core_util = require("poste-db.util")
 local notify = require("poste-db.db_browser.notify")
 local ops_sql = require("poste-db.db_browser.ops_sql")
+local const = require("poste-db.constants")
 
 local HEADER_LINES = icons.HEADER_LINES
 
@@ -230,11 +231,7 @@ execute_table_select = function(node, context)
       -- Pass the fresh resultset explicitly: render_dataset otherwise falls
       -- back to state.last_response.body (only the sql_runner path updates
       -- it), so cell preview (K) / yank / sort would read stale rows.
-      local data = nil
-      if parsed and parsed.body then
-        local ok, d = pcall(vim.json.decode, parsed.body)
-        if ok then data = d end
-      end
+      local data = core_util.decode_dataset_body(parsed)
       sql_buffer.render_dataset(lines, meta, {
         -- opts.data is the DECODED body (a previous `data = parsed` duplicate
         -- key here was silently overwritten — keep only the decoded value)
@@ -514,8 +511,7 @@ function M.show_table_info(buf_line, context)
 
   cli.run_async(cmd, {
     on_stdout = function(data)
-      if not data then return end
-      while #data > 0 and data[#data] == "" do data[#data] = nil end
+      data = core_util.ensure_job_data(data)
       if #data == 0 then return end
       local output = table.concat(data, "\n")
       local ok, parsed = pcall(vim.json.decode, output)

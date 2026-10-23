@@ -1,6 +1,8 @@
 --- Shared async SQL runner for DB Browser copy/catalog operations.
 --- Extracted from db_browser/copy.lua so catalog.lua can reuse the same
 --- connection resolution + job plumbing.
+local util = require("poste-db.util")
+
 local M = {}
 
 local function find_search_dir()
@@ -63,8 +65,8 @@ function M.decode_first_result(output)
   if not parsed.body then
     return false, "no body in response"
   end
-  local ok_body, decoded = pcall(vim.json.decode, parsed.body)
-  if not ok_body or type(decoded) ~= "table" then
+  local decoded = util.decode_dataset_body(parsed)
+  if not decoded then
     return false, "failed to decode body"
   end
   if not decoded.results or not decoded.results[1] then
