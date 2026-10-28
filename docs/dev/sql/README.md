@@ -193,9 +193,9 @@ cross-repo contracts are:
 
 | Document | Description |
 |----------|-------------|
-| [Dialect Support](./dialect-support.md) | 新增 SQL 方言：优先级、别名机制、三层测试、容器方案、**Lua/Rust 触点清单**（动手前照单全查） |
+| [Dialect Support](./dialect-support.md) | Adding a SQL dialect: priorities, the alias mechanism, the three test layers, container setup, and the **Lua/Rust touchpoint checklist** (read it before touching anything) |
 | [Context Architecture](./context-architecture.md) | SQL completion context detection architecture |
-| [Session Design](./session-design.md) | 持久 SQL session 池：问题、路由、生命周期 |
+| [Session Design](./session-design.md) | The persistent SQL session pool: problems, routing, lifecycle |
 | [AI Chat Integration](./ai-chat.md) | poste-ai.nvim "db" context: @connection mentions, schema injection, SQL code-block execution into the dataset |
 
 ---

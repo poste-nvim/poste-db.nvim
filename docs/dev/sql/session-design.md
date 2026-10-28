@@ -1,19 +1,23 @@
-# SQL Session 持久连接设计
+# SQL Session Persistent Connection Design
 
-## 问题
+## Problem
 
-每次 `<CR>` 执行都 spawn 一个全新 `exec-file` 进程，每个进程创建独立数据库连接，执行完立即关闭。session 变量（`SET @a=1;`）在跨语句时不持久化：
+Every `<CR>` execution spawns a fresh `exec-file` process, each process opens
+its own database connection and closes it immediately after. Session variables
+(`SET @a=1;`) do not survive across statements:
 
 ```
-SET @a=1;     → exec-file(进程1) → 连接1 → 执行 → 关闭
-SELECT @a;    → exec-file(进程2) → 连接2 → @a 不存在
+SET @a=1;     → exec-file(process 1) → connection 1 → run → close
+SELECT @a;    → exec-file(process 2) → connection 2 → @a does not exist
 ```
 
-## 设计
+## Design
 
-Rust 新增 `poste session` 子命令 — 一个保持连接的长驻进程。Lua 端按 `connection_url` 维护 session 池，`<CR>` 时按 connection 查找复用。
+The Rust side gains a `poste session` subcommand — a long-lived process that
+holds one connection open. Lua keeps a session pool keyed by `connection_url`
+and reuses a session per connection on `<CR>`.
 
-### Session 池
+### Session pool
 
 ```
 session_conn.pool = {
@@ -28,113 +32,118 @@ session_conn.pool = {
 }
 ```
 
-key 为 `connection_url`（Lua 解析后的完整 URL），<CR> 时按此查找。
+The key is the `connection_url` (the full URL Lua resolves); `<CR>` looks the
+session up by it.
 
-### 查找流程
+### Lookup flow
 
 ```
-按 <CR>
-  → 解析 -- @connection name → resolve_connection_url(name) → conn_url
-  → pool[conn_url] 存在？
-    → 是：复用 session，发送 SQL 到 stdin
-    → 否：jobstart("poste session --connection <url>")，加入 pool
+on <CR>
+  → resolve -- @connection name → resolve_connection_url(name) → conn_url
+  → pool[conn_url] exists?
+    → yes: reuse the session, send the SQL on stdin
+    → no: jobstart("poste session --connection <url>"), add to the pool
 ```
 
-### 生命周期
+### Lifecycle
 
-| 事件 | 行为 |
+| Event | Behavior |
 |------|------|
-| 首次 `<CR>`（某 connection） | 启动 session 进程，加入 pool |
-| 后续 `<CR>`（同 connection） | 复用 session |
-| 不同 connection 的 `<CR>` | 启动新 session（不同进程），两 session 独立 |
-| Buffer 关闭 | 遍历 pool，从 `bufs` 移除该 buffer；若 `bufs` 为空 → 关闭 session，从 pool 删除 |
-| `:PosteDbSessionStop` | 可指定 connection_url 关闭单个，或 `--all` 关闭全部 |
-| 空闲超时（可选） | 可配置 N 秒无请求后自动关闭 |
+| First `<CR>` on a connection | Start the session process, add to pool |
+| Later `<CR>` on the same connection | Reuse the session |
+| `<CR>` on a different connection | Start a new session (separate process); the two sessions are independent |
+| Buffer closed | Walk the pool, drop the buffer from `bufs`; when `bufs` empties → close the session, delete from pool |
+| `:PosteDbSessionStop` | Takes a connection_url to stop one, or `--all` for everything |
+| Idle timeout (optional) | Close automatically after N seconds without a request |
 
-### 共享
+### Sharing
 
-以 connection 为准，跨 buffer 共享。同一 connection_url 的多个 buffer 共享同一个 session，变量在 buffer 间可见（符合真实 MySQL/PostgreSQL 行为）。
+Sharing is per connection, across buffers. Several buffers with the same
+connection_url share one session and see each other's variables (matching real
+MySQL/PostgreSQL behavior).
 
-## Rust 侧: `crates/poste-cli/src/session.rs`
+## Rust side: `crates/poste-cli/src/session.rs`
 
-### 子命令
+### Subcommand
 
 ```
 poste session --connection <url> [--database <db>] [--timeout <sec>] [--max-rows <n>]
 ```
 
-### 协议
+### Protocol
 
-stdin 读 JSON lines，stdout 写 JSON lines（NDJSON）。
+Reads JSON lines from stdin, writes JSON lines to stdout (NDJSON).
 
-**请求格式**（Lua → Rust）：
+**Request shape** (Lua → Rust):
 
 ```json
 {"seq": 1, "sql": "SET @a = 1"}
 {"seq": 2, "sql": "SELECT @a"}
 ```
 
-**响应格式**（Rust → Lua，与 exec-file `result` 事件一致）：
+**Response shape** (Rust → Lua, same as exec-file's `result` events):
 
 ```json
 {"type":"result","seq":1,"status":"ok","sql":"SET @a = 1","row_count":0,"affected_rows":0,"execution_time_ms":1,"columns":[],"rows":[]}
 {"type":"result","seq":2,"status":"ok","sql":"SELECT @a","row_count":1,"affected_rows":null,"execution_time_ms":1,"columns":[{"name":"@a","type":"INT"}],"rows":[[1]]}
 ```
 
-**错误响应**：
+**Error response**:
 
 ```json
 {"type":"result","seq":3,"status":"error","sql":"SELECT * FROM nonexistent","error":"table not found","execution_time_ms":0}
 ```
 
-### 流程
+### Flow
 
 ```
 session::execute()
-  ├─ 1. 连接数据库（pool → acquire，与 exec_file 相同逻辑）
-  ├─ 2. 循环：
-  │    ├─ 读取 stdin 一行
-  │    ├─ 解析 JSON { seq, sql }
-  │    ├─ 执行 SQL（复用同一个 conn）
-  │    ├─ 写 result JSON 到 stdout
-  │    └─ 错误时：写 error result，继续循环（不退出）
-  ├─ 3. stdin EOF → 关闭连接 → 退出（exit 0）
+  ├─ 1. Connect to the database (pool → acquire, same logic as exec_file)
+  ├─ 2. Loop:
+  │    ├─ read one stdin line
+  │    ├─ parse the JSON { seq, sql }
+  │    ├─ run the SQL (same conn reused)
+  │    ├─ write the result JSON to stdout
+  │    └─ on error: write an error result and keep looping (do not exit)
+  ├─ 3. stdin EOF → close the connection → exit (exit 0)
 ```
 
-## Lua 侧: `lua/poste-db/session_conn.lua`
+## Lua side: `lua/poste-db/session_conn.lua`
 
-### 接口
+### Interface
 
 ```lua
 local M = {}
 
--- 启动 session（如果 pool 中已有则直接返回）
+-- Start a session (returns the pooled one when it already exists)
 M.start(conn_url, opts) → session
 
--- 发送 SQL 到 session，返回结果（异步，通过 callback）
+-- Send SQL to the session; the result arrives via callback (async)
 M.execute(session, sql, callbacks)
 
--- 关闭指定 session
+-- Stop one session
 M.stop(conn_url)
 
--- 关闭所有 session
+-- Stop every session
 M.stop_all()
 
--- 关闭与某个 buffer 关联的所有 session（buffer 关闭时调用）
+-- Stop every session tied to one buffer (called on buffer close)
 M.cleanup_buf(bufnr)
 ```
 
-### 集成到 `sql_runner.lua`
+### Wiring into `sql_runner.lua`
 
-`run_sql_request()` 中，在 resolve context 得到 conn_url 后：
+In `run_sql_request()`, after the context resolves to a conn_url:
 
-1. 检查 `session_conn.pool[conn_url]`
-2. 存在 → `session_conn.execute(session, sql, callbacks)`（发到 stdin）
-3. 不存在 → `session_conn.start(conn_url)` → 回退到 `exec_run.run_async`（或等待 session 就绪后发送）
+1. Check `session_conn.pool[conn_url]`
+2. Hit → `session_conn.execute(session, sql, callbacks)` (send on stdin)
+3. Miss → `session_conn.start(conn_url)` → fall back to `exec_run.run_async`
+   (or wait for the session to be ready and then send)
 
-`exec_run.run_async` 保持不变，作为 session 不可用时的回退路径。
+`exec_run.run_async` stays unchanged as the fallback when a session is not
+available.
 
-### Session 进程管理
+### Session process management
 
 ```lua
 local session = {
@@ -151,7 +160,7 @@ local session = {
 }
 ```
 
-发送 SQL：
+Sending SQL:
 
 ```lua
 session.seq = session.seq + 1
@@ -160,7 +169,7 @@ session.pending[seq] = { on_response = ..., on_error = ... }
 vim.fn.chansend(session.job_id, vim.json.encode({ seq = seq, sql = sql }) .. "\n")
 ```
 
-接收响应：
+Receiving responses:
 
 ```lua
 on_stdout = function(_, data)
@@ -183,18 +192,18 @@ on_stdout = function(_, data)
 end
 ```
 
-## 修改文件清单
+## Files touched
 
-| 文件 | 修改内容 |
+| File | Change |
 |------|---------|
-| `crates/poste-cli/src/session.rs` | **新文件**: session 守护进程 |
-| `crates/poste-cli/src/main.rs` | 注册 `Session` 子命令 |
-| `lua/poste-db/session_conn.lua` | **新文件**: session 池管理 + 发送/接收 |
-| `lua/poste-db/sql_runner.lua` | `run_sql_request()` 集成 session 路径 |
-| `lua/poste-db/init.lua` | `setup()` 中注册 `BufUnload` 自动清理 |
+| `crates/poste-cli/src/session.rs` | **New file**: the session daemon |
+| `crates/poste-cli/src/main.rs` | Register the `Session` subcommand |
+| `lua/poste-db/session_conn.lua` | **New file**: pool management + send/receive |
+| `lua/poste-db/sql_runner.lua` | `run_sql_request()` routes to the session path |
+| `lua/poste-db/init.lua` | `setup()` registers the BufUnload cleanup |
 
-## 未来可扩展
+## Possible extensions
 
-- 空闲超时自动关闭
-- `:PosteDbSessionList` 查看所有活跃 session
-- 事务模式 session（`BEGIN` 跨 `<CR>`）
+- Automatic close on idle timeout
+- `:PosteDbSessionList` to show live sessions
+- Transaction-mode sessions (`BEGIN` across `<CR>`)

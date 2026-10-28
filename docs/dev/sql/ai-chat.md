@@ -35,9 +35,9 @@ poste-ai.nvim (generic)          poste-db.nvim (db context)
 
 | Scenario | Flow |
 |----------|------|
-| "查询本月 post 最多的十个 author" | `@my-blog/blog` mention resolves the schema summary → model replies with one ```sql block → `<CR>` on the block executes it → results land in the dataset view |
-| "这条 SQL 对不对？" | Visual-select the statement in a poste_sql buffer, `<leader>aa` — chat opens with `@file(l1-l2)` pre-filled → model reviews it with file content injected |
-| "怎么导出？" | The system prompt documents `:PosteDbExport [fmt] [dest] [path]`, dataset `E`, and other commands — the model answers how-to questions without tool calls |
+| "top ten authors by post count this month" | `@my-blog/blog` mention resolves the schema summary → model replies with one ```sql block → `<CR>` on the block executes it → results land in the dataset view |
+| "is this SQL right?" | Visual-select the statement in a poste_sql buffer, `<leader>aa` — chat opens with `@file(l1-l2)` pre-filled → model reviews it with file content injected |
+| "how do I export?" | The system prompt documents `:PosteDbExport [fmt] [dest] [path]`, dataset `E`, and other commands — the model answers how-to questions without tool calls |
 
 ## Context contract (what poste-ai expects)
 

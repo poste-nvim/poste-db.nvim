@@ -35,7 +35,7 @@ describe("util utf8 helpers", function()
   end)
 
   it("utf8_safe_cut backs the cut off a multibyte character", function()
-    -- 数 = 3 bytes: budget 10 would split the 4th character
+    -- each CJK char is 3 bytes: budget 10 would split the 4th character
     local s = string.rep("\u{6570}", 5)
     assert.equals(string.rep("\u{6570}", 3), util.utf8_safe_cut(s, 10))
   end)
@@ -57,7 +57,7 @@ describe("util ellipsize", function()
   end)
 
   it("cuts in display cells, never mid-glyph, and appends ...", function()
-    -- each 数 is 3 bytes but 2 cells; budget 8 minus the ... reserve leaves
+    -- each glyph is 3 bytes but 2 cells; budget 8 minus the ... reserve leaves
     -- 5 cells = two glyphs, and the old byte-based cut landed mid-glyph
     local out = util.ellipsize("数数数数数", 8)
     assert.equals("数数...", out)

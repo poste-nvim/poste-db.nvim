@@ -133,7 +133,7 @@ function M.reset_active_entry_tabs()
   M.active_tab_idx = 0
 end
 
---- Format milliseconds as `分:秒.毫秒` with 2-digit minutes (e.g. 00:01.234).
+--- Format milliseconds as `MM:SS.mmm` with 2-digit minutes (e.g. 00:01.234).
 --- @param ms number|string|nil integer milliseconds
 --- @return string
 function M.format_elapsed(ms)
@@ -173,7 +173,7 @@ function M.now_wall()
   return { sec = os.time(), nsec = 0 }
 end
 
---- Format a wall timestamp as 时:分:秒.毫秒 (HH:MM:SS.mmm).
+--- Format a wall timestamp as HH:MM:SS.mmm.
 --- @param sec number seconds since epoch
 --- @param nsec number nanoseconds within the second
 --- @return string

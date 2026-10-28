@@ -1,196 +1,290 @@
-# 新增 SQL dialect 支持 — 设计与触点清单
+# Adding a SQL dialect — design and touchpoint checklist
 
-> 修订记录（相对初版）：
-> 1. 优先级重排——按"收益高、贴现有 TCP 驱动架构的先做，引入新传输架构的集中一期，模型不匹配的延后"排序。
-> 2. §二别名机制拍板：走 mariadb 先例（Lua 侧归一化），Rust 零改动；废弃"Rust 侧加 name 映射"方案。
-> 3. 修正事实错误：官方 `clickhouse` crate 是 HTTP-only，不是"HTTP + native TCP"。
-> 4. §3.2 测试计划按传输方式拆分，消除"HTTP 方言 `dialect_for` 返回 Some"与"HTTP 仍返回 None"的自相矛盾。
-> 5. 补全 Lua 触点清单：`SYSTEM_SCHEMAS`、`ident.lua`/`dml.lua` 引用分支、`dialect_icons`、`ai/system_prompt.lua` 方言清单、双端 `to_url()` 同步。
-> 6. 容器方案修正：MSSQL arm64/健康检查、Trino tpcds 需挂 properties 且 tpch 只读、ClickHouse 连接端口语义 pin 为 HTTP 8123。
-> 7. 措辞修正：URL 是"构造"不是"解析"；验收标准的"建库/建表"改为"列库/列表"。
+> Revision notes (against the first draft):
+> 1. Priorities re-ordered — "high-value work that fits the existing TCP
+>    driver architecture first; anything introducing a new transport (HTTP)
+>    concentrated into one phase to amortize the infrastructure; data/connection
+>    model mismatches last, deferrable".
+> 2. §2 alias mechanism settled: follow the mariadb precedent (Lua-side
+>    normalization), zero Rust changes; the "name mapping on the Rust side"
+>    plan is retired.
+> 3. Fact fix: the official `clickhouse` crate is HTTP-only, not "HTTP +
+>    native TCP".
+> 4. §3.2 test plan split by transport, removing the contradiction between
+>    "HTTP dialects make `dialect_for` return Some" and "HTTP still returns
+>    None".
+> 5. Lua touchpoint list completed: `SYSTEM_SCHEMAS`, the `ident.lua`/`dml.lua`
+>    dialect branches, `dialect_icons`, the `ai/system_prompt.lua` dialect
+>    list, and the two-sided `to_url()` sync.
+> 6. Container plan corrections: MSSQL arm64/health check, Trino tpcds needs a
+>    mounted properties file and tpch is read-only, ClickHouse connection port
+>    semantics pinned to HTTP 8123.
+> 7. Wording fixes: the URL is BUILT, not parsed; the acceptance criteria's
+>    "create db/table" became "list databases/tables".
 >
-> **实施状态**：Phase 0（别名）、Phase 1（MSSQL）、Phase 2（HTTP 传输 + ClickHouse，含 Lua/Rust/容器/playground/diag）
-> poste.nvim main 直接演进（原 `../poste-for-db` worktree 流程已废弃）。
+> **Status**: Phase 0 (aliases), Phase 1 (MSSQL), Phase 2 (HTTP transport +
+> ClickHouse, including Lua/Rust/containers/playground/diag) evolve directly on
+> poste.nvim main (the old `../poste-for-db` worktree flow is retired).
 
-## 背景
+## Background
 
-poste-db 目前支持的 dialect：`postgres`（含 `postgresql` 及 PG 系别名）、`mysql`（含 `mariadb` 及 MySQL 系别名）、`sqlite`、`mssql`。
+Dialects poste-db supports today: `postgres` (plus `postgresql` and the PG
+family aliases), `mysql` (plus `mariadb` and the MySQL family aliases),
+`sqlite`, `mssql`.
 
-实现成本分布（触点按现状逐一核对过，完整清单见文末附录）：
+Cost distribution (touchpoints verified against the current tree; full list in
+the appendix at the end):
 
-- **Lua 侧**（poste-db.nvim）：
-  - `constants.lua`：`SUPPORTED_DIALECTS` 白名单 + `SYSTEM_SCHEMAS` + `DIALECT_ALIASES` 归一表 + `URL_SCHEMES`/`dialect_from_url` 嗅探 + `DIALECT_DEFAULT_PORTS`
-  - `connections.lua`：URL 构造（消费 `default_port`，scheme 无关）+ `dialect_icons`
-  - `ident.lua` / `dml.lua`：标识符引用与值转义的方言分支
-  - `completion/data.lua`：`tables_db_flag` 的 schema/database 归类 + 方言关键字
-  - `snippets.lua`：`pick_template` 模板变体
-  - `source_format.lua`：格式化器 `dialect_map`
-  - `ai/system_prompt.lua`：方言清单提示词
-- **Rust 侧**（poste.nvim，直接在 main 改）：
-  - `poste-core` 的 `Protocol` 枚举加变体
-  - `sql_connection.rs` 的 `ConnectionConfig::to_url()`——**与 Lua 的 `resolve_connection_url` 是镜像实现，必须双端同步**
-  - 驱动分发（`sql_executor/`、`exec_file.rs`、`session.rs`、`introspect.rs` 的 scheme/dialect 链）
-  - `sql_dialect.rs` 的 `Dialect` trait 实现（introspection SQL、引号、端口、类型映射）
-- `mariadb` 走 MySQL 线协议，Lua 侧归一化为 `mysql`（`DIALECT_ALIASES` 先例）。
+- **Lua side** (poste-db.nvim):
+  - `constants.lua`: the `SUPPORTED_DIALECTS` allowlist + `SYSTEM_SCHEMAS` +
+    the `DIALECT_ALIASES` normalization map + `URL_SCHEMES`/`dialect_from_url`
+    sniffing + `DIALECT_DEFAULT_PORTS`
+  - `connections.lua`: URL building (consumes `default_port`, scheme-agnostic)
+    + `dialect_icons`
+  - `ident.lua` / `dml.lua`: dialect branches for identifier quoting and value
+    escaping
+  - `completion/data.lua`: `tables_db_flag`'s schema/database classification +
+    dialect keywords
+  - `snippets.lua`: `pick_template` template variants
+  - `source_format.lua`: formatter `dialect_map`
+  - `ai/system_prompt.lua`: the dialect list prompt
+- **Rust side** (poste.nvim, edited directly on main):
+  - a `Protocol` enum variant in `poste-core`
+  - `sql_connection.rs`'s `ConnectionConfig::to_url()` — **a mirror of Lua's
+    `resolve_connection_url`; both sides must move together**
+  - driver dispatch (the scheme/dialect chains in `sql_executor/`,
+    `exec_file.rs`, `session.rs`, `introspect.rs`)
+  - the `Dialect` trait implementation in `sql_dialect.rs` (introspection SQL,
+    quoting, ports, type mapping)
+- `mariadb` speaks the MySQL wire protocol and is normalized to `mysql` on the
+  Lua side (the `DIALECT_ALIASES` precedent).
 
-架构要点：`Dialect` trait 只封装 SQL 方言差异（introspection SQL、引号、端口、类型映射），与传输方式无关。HTTP 是**传输属性**，不是 `dialect_for` 的排除理由——ClickHouse/Trino 这类"SQL over HTTP"的数据库可以有自己的 `Dialect` 实现，同时由传输层路由到 HTTP 执行器；`dialect_for` 对 Redis 等非 SQL 协议仍返回 `None`。
+Architecture note: the `Dialect` trait only encapsulates SQL-dialect
+differences (introspection SQL, quoting, ports, type mapping) and is
+transport-independent. HTTP is a **transport property**, not grounds to
+exclude a dialect from `dialect_for` — SQL-over-HTTP engines like
+ClickHouse/Trino can have their own `Dialect` implementations while the
+transport layer routes them to the HTTP executor; `dialect_for` still returns
+`None` for non-SQL protocols like Redis.
 
-## 一、优先级
+## 1. Priorities
 
-排序原则：**收益高、能贴现有 TCP 驱动架构的先做；引入新传输架构（HTTP）的集中到一期做，摊薄基建成本；数据/连接模型不匹配的最后，可延后。**
+Ordering principle: **high-value work that fits the existing TCP driver
+architecture first; anything introducing a new transport (HTTP) concentrated
+into one phase to amortize the infrastructure; data/connection model mismatches
+last and deferrable.**
 
-| 优先级 | Dialect | 驱动/传输 | 工作量 | 风险 | 说明 |
+| Priority | Dialect | Driver/transport | Effort | Risk | Notes |
 |-------|---------|----------|--------|------|------|
-| 0 | PG/MySQL 兼容系别名 | 复用现有 TCP 驱动 | ≈0 | 无 | ✅ 已落地（§二） |
-| 1 | MSSQL / SQL Server | `tiberius`（纯 Rust TCP） | 中 | 低-中 | ✅ 已落地。容器侧的坑（arm64 模拟、健康检查）见 §四 |
-| 2 | ClickHouse | reqwest 直连 HTTP | 中 | 中 | ✅ 已落地。**实现注记**：官方 `clickhouse` crate 是 SELECT 取向（把 ` FORMAT x` 拼进 SQL、强制 `readonly=1`），无法跑 DDL/DML/临时表/`SET`——改用 reqwest 裸 HTTP（`default_format=JSON`，meta 带列类型），即 poste-exec 首个 HTTP 传输，Trino 直接复用 |
-| 3 | Trino | 复用 reqwest HTTP 传输 | 中 | 中 | 数据湖联邦查询主流；只做 Trino，**Presto 不在范围**（协议已分叉，不做别名） |
-| 4 | DuckDB | `duckdb` crate（链接 libduckdb 原生库） | 高 | 高 | 仅文件模式（见 §四）；链接 libduckdb 构建重，且与服务器连接模型不一致。可延后，延后不阻塞任何验收 |
+| 0 | PG/MySQL compatible family aliases | Reuse existing TCP drivers | ≈0 | none | ✅ landed (§2) |
+| 1 | MSSQL / SQL Server | `tiberius` (pure-Rust TCP) | medium | low-mid | ✅ landed. Container pitfalls (arm64 emulation, health check) in §4 |
+| 2 | ClickHouse | reqwest, straight HTTP | medium | mid | ✅ landed. **Implementation note**: the official `clickhouse` crate is SELECT-oriented (appends ` FORMAT x` to the SQL, forces `readonly=1`) and cannot run DDL/DML/temp tables/`SET` — so we use reqwest raw HTTP (`default_format=JSON`, meta with column types); this is poste-exec's first HTTP transport and Trino reuses it |
+| 3 | Trino | Reuse the reqwest HTTP transport | medium | mid | Mainstream for data-lake federation; Trino only — **Presto is out of scope** (the protocols have diverged; no alias) |
+| 4 | DuckDB | `duckdb` crate (links the native libduckdb) | high | high | File mode only (see §4); linking libduckdb is a heavy build and does not match the server connection model. Deferrable; deferring blocks nothing |
 
-## 二、零/近零成本 dialect（纯别名，机制已落地）
+## 2. Zero/near-zero-cost dialects (pure aliases, mechanism already landed)
 
-**机制：走 mariadb 先例，Lua 侧归一化。** `constants.lua` 的 `DIALECT_ALIASES`（alias → base 方言）+ `connections.lua` 在白名单检查前归一化。**Rust 零 diff**——别名在到达 Rust 之前已经变成 `postgres`/`mysql`。
+**Mechanism: the mariadb precedent — normalize on the Lua side.**
+`constants.lua`'s `DIALECT_ALIASES` (alias → base dialect) +
+`connections.lua` normalizing before the allowlist check. **Zero Rust diff** —
+by the time anything reaches Rust the alias is already `postgres`/`mysql`.
 
-设计后果（接受的 trade-off）：
+Design consequences (accepted trade-offs):
 
-- 图标、completion、AI prompt 一律按 base 方言呈现，别名不引入任何专属分支。每个别名的持续成本 = 一个 map 条目。
-- 展示层的 provider 区分（如 supabase/neon 角标）**不做**，留待有真实需求再加 `provider` 字段。
-- 归一化后 `resolve_connection_url` 自然构造出 `postgres://`/`mysql://`，杜绝"二元 scheme 兜底把别名静默构造成 `mysql://`"的误路由。
+- Icons, completion and the AI prompt all present the BASE dialect; an alias
+  introduces no dedicated branch anywhere. The ongoing cost of an alias = one
+  map entry.
+- No display-level provider distinction (e.g. supabase/neon badges) — add a
+  `provider` field when a real need shows up.
+- After normalization `resolve_connection_url` naturally builds
+  `postgres://`/`mysql://`, closing off the "binary scheme fallback silently
+  builds an alias into `mysql://`" mis-routing.
 
-### PostgreSQL 兼容系（→ postgres）
+### PostgreSQL-compatible family (→ postgres)
 
-cockroachdb、yugabyte、aurora-postgres、neon、supabase、timescaledb（实质是 pg 扩展）
+cockroachdb, yugabyte, aurora-postgres, neon, supabase, timescaledb
+(effectively a pg extension)
 
-### MySQL 兼容系（→ mysql）
+### MySQL-compatible family (→ mysql)
 
-tidb、singlestore、aurora-mysql、vitess、planetscale
+tidb, singlestore, aurora-mysql, vitess, planetscale
 
-## 三、自动化测试
+## 3. Automated tests
 
-新增 dialect 的测试分三层，全部纳入现有 `tests/run.sh` 体系。
+A new dialect's tests come in three layers, all inside the existing
+`tests/run.sh` setup.
 
-### 3.1 Lua 单元测试（无 Docker，随 `tests/run.sh` 运行）
+### 3.1 Lua unit tests (no Docker, run with `tests/run.sh`)
 
-纯 stub 测试，跟随现有 `tests/sql/*_spec.lua` 惯例：
+Pure stub tests following the existing `tests/sql/*_spec.lua` conventions:
 
-| 文件 | 要补的用例 |
+| File | Cases to add |
 |------|-----------|
-| `sql_constants_spec.lua` | `SUPPORTED_DIALECTS`/`is_sql_dialect`；`DIALECT_ALIASES` 归一断言；`dialect_from_url` 各前缀；`default_port`；`SYSTEM_SCHEMAS` 新增条目 |
-| `sql_connections_spec.lua` | **断言构造出的 URL**（代码路径是构造，不解析用户输入的 scheme）：新方言前缀、默认端口正确；别名断言落到 base 协议 URL（防二元兜底误路由） |
-| `sql_ident_spec.lua` + dml | `ident.quote`/`quote_literal`、`dml.lua` 值转义的新方言分支 |
-| `sql_completion_spec.lua` | 方言关键字/内置函数；`tables_db_flag` 归类 |
-| `sql_snippets_spec.lua` | `pick_template` 命中新方言变体 |
-| `sql_source_format_spec.lua` | 各格式器 `dialect_map` 补条目 |
+| `sql_constants_spec.lua` | `SUPPORTED_DIALECTS`/`is_sql_dialect`; `DIALECT_ALIASES` normalization assertions; `dialect_from_url` per prefix; `default_port`; new `SYSTEM_SCHEMAS` entries |
+| `sql_connections_spec.lua` | **Assert the BUILT URL** (the code path builds; it never parses a user-supplied scheme): new prefixes and default ports correct; aliases resolve to the base protocol URL (guards the binary-fallback mis-routing) |
+| `sql_ident_spec.lua` + dml | `ident.quote`/`quote_literal`, `dml.lua` value escaping for the new dialect |
+| `sql_completion_spec.lua` | dialect keywords/builtins; `tables_db_flag` classification |
+| `sql_snippets_spec.lua` | `pick_template` hitting the new dialect's variants |
+| `sql_source_format_spec.lua` | per-formatter `dialect_map` entries |
 
-**`tables_db_flag` 归类**（现状）：postgres/postgresql/sqlite/mssql → `--schema`；mysql/mariadb（及未知）→ `--database`。
+**`tables_db_flag` classification** (current): postgres/postgresql/sqlite/mssql
+→ `--schema`; mysql/mariadb (and unknown) → `--database`.
 
-**`SYSTEM_SCHEMAS`**（`semantic_diagnostics.lua` 在消费）：现含 pg 系 + mysql 系 + `sys` + `guest`；ClickHouse/Trino 落地时加 `system`。
+**`SYSTEM_SCHEMAS`** (consumed by `semantic_diagnostics.lua`): today the pg
+family + mysql family + `sys` + `guest`; add `system` for ClickHouse/Trino.
 
-### 3.2 Rust 单元测试（poste.nvim crate）
+### 3.2 Rust unit tests (poste.nvim crates)
 
-**按传输方式拆分：**
+**Split by transport:**
 
-- **TCP 驱动方言（如 MSSQL）**：在 `crates/poste-exec/src/sql_dialect.rs` 写 `Dialect` impl + 测试模块，镜像现有 `test_postgres_dialect()` / `test_mysql_dialect()` / `test_sqlite_dialect()`，覆盖 trait 全部方法（含 `type_mapping`）；`dialect_for` 断言 Some；Redis 等非 SQL 协议仍 None；introspection SQL 快照断言
-- **SQL over HTTP 方言（ClickHouse/Trino）**：同样在 `sql_dialect.rs` 实现 `Dialect` 并做快照测试；`dialect_for` 返回 Some（Dialect 与传输解耦）；传输分发单测断言路由到 HTTP 执行器
+- **TCP-driver dialects (e.g. MSSQL)**: write the `Dialect` impl + test module
+  in `crates/poste-exec/src/sql_dialect.rs`, mirroring the existing
+  `test_postgres_dialect()` / `test_mysql_dialect()` / `test_sqlite_dialect()`,
+  covering every trait method (including `type_mapping`); `dialect_for` asserts
+  Some; non-SQL protocols like Redis stay None; introspection SQL snapshot
+  assertions
+- **SQL-over-HTTP dialects (ClickHouse/Trino)**: implement `Dialect` in
+  `sql_dialect.rs` with snapshot tests; `dialect_for` returns Some (the
+  dialect is decoupled from transport); the transport-dispatch unit test
+  asserts routing to the HTTP executor
 
-### 3.3 集成测试（需 Docker，gated）
+### 3.3 Integration tests (Docker required, gated)
 
-- `tests/diag/diag_<dialect>.lua`（参照 `diag_sql.lua`/`diag_mssql.lua`）：环境变量 gate（如 `MSSQL_TEST_URL` + `POSTE_BINARY`），未设则 SKIP；连真实容器跑 introspection 全链路 + 特性 SQL
-- Busted 单测必须保持无 Docker 可运行
+- `tests/diag/diag_<dialect>.lua` (modeled on `diag_sql.lua`/`diag_mssql.lua`):
+  environment-variable gated (e.g. `MSSQL_TEST_URL` + `POSTE_BINARY`); SKIP
+  when unset; runs the full introspection chain plus feature SQL against the
+  real container
+- Busted unit tests must stay runnable without Docker
 
-### 3.4 兼容系别名
+### 3.4 Compatible-family aliases
 
-- 只做 Lua 侧测试：`connections.toml` 能写别名、归一化后 URL 落到 `postgres://`/`mysql://`；复用现有容器
+- Lua-side tests only: aliases accepted in `connections.toml`, normalized URLs
+  land on `postgres://`/`mysql://`; reuses existing containers
 
-## 四、Docker container
+## 4. Docker containers
 
-在 `playground/docker-compose.yml` 追加服务（宿主端口避开已用的 15432/13306/13307/11433/18080/18123/19000）：
+Append services to `playground/docker-compose.yml` (host ports avoiding the
+used 15432/13306/13307/11433/18080/18123/19000):
 
-| 服务 | 镜像 | 宿主端口 | 健康检查 |
+| Service | Image | Host port | Health check |
 |------|------|---------|---------|
-| `mssql` ✅ | `mcr.microsoft.com/mssql/server:2022-latest`（**amd64-only**，声明 `platform: linux/amd64`） | `11433:1433` | `/opt/mssql-tools18/bin/sqlcmd ... -C -b`（**必须 `-C`** 信任自签证书） |
-| `clickhouse` | `clickhouse/clickhouse-server:latest` | `18123:8123`（HTTP，**连接层只用这个**）/ `19000:9000`（native，备用） | `wget -qO- http://localhost:8123/ping` 返回 `Ok` |
-| `trino` | `trinodb/trino:latest` | `18080:8080` | `curl -f http://localhost:8080/v1/info` 且 `starting=false` |
-| `duckdb` | 官方 CLI 构建的文件模式（无服务进程） | 无需端口 | 文件模式无探活；HTTP 服务模式**明确不做** |
+| `mssql` ✅ | `mcr.microsoft.com/mssql/server:2022-latest` (**amd64-only**, declare `platform: linux/amd64`) | `11433:1433` | `/opt/mssql-tools18/bin/sqlcmd ... -C -b` (**`-C` is mandatory** to trust the self-signed certificate) |
+| `clickhouse` | `clickhouse/clickhouse-server:latest` | `18123:8123` (HTTP — **the connection layer uses only this**) / `19000:9000` (native, spare) | `wget -qO- http://localhost:8123/ping` returns `Ok` |
+| `trino` | `trinodb/trino:latest` | `18080:8080` | `curl -f http://localhost:8080/v1/info` with `starting=false` |
+| `duckdb` | File mode built by the official CLI (no server process) | no port | File mode has no liveness probe; an HTTP server mode is **explicitly out of scope** |
 
-初始化方式差异与坑：
+Initialization differences and pitfalls:
 
-- **MSSQL**（已踩平，见 `playground/init/mssql/entrypoint.sh`）：无官方 arm64 构建，Apple Silicon 靠 Rosetta/QEMU，启动慢需 `start_period: 120s`；不读 `docker-entrypoint-initdb.d`，自定义 entrypoint 启动 `sqlservr` 后 sqlcmd 灌种子；种子用 GO 分批（sqlcmd 消费），`GENERATE_SERIES` 不能用 `AS s(n)` 列别名（列名固定 `value`），`datetime2` 不支持 `- 整数` 算术；**每次重启重播种子（数据重置），与其它服务不同**
-- **ClickHouse**：原生支持 `/docker-entrypoint-initdb.d/*.sql`。连接语义 pin：`clickhouse://user:pass@host:18123/db` 走 HTTP 8123
-- **Trino**：镜像默认只启用 `tpch`（+system）；**tpcds 需挂 `etc/catalog/tpcds.properties`**；`tpch` 只读，自建核心表进 `memory` catalog（只支持 CTAS、重启即失，需启动后置脚本重建）
-- **DuckDB**：入口脚本用 duckdb CLI 生成种子 `.duckdb`（同 sqlite 的 `test.db` 模式）；URL `duckdb:<path>` 沿 `sqlite:` 前缀先例；Rust 驱动 `duckdb` crate（链接 libduckdb，构建重）
+- **MSSQL** (already flattened — see `playground/init/mssql/entrypoint.sh`):
+  no official arm64 build, Apple Silicon runs it through Rosetta/QEMU, slow
+  start needs `start_period: 120s`; it ignores
+  `docker-entrypoint-initdb.d`, so a custom entrypoint starts `sqlservr` then
+  loads seeds via sqlcmd; seeds use GO batches (sqlcmd consumes them),
+  `GENERATE_SERIES` cannot use an `AS s(n)` column alias (the column name is
+  fixed to `value`), and `datetime2` does not support `- integer` arithmetic;
+  **seeds replay on every restart (data resets), unlike the other services**
+- **ClickHouse**: natively supports `/docker-entrypoint-initdb.d/*.sql`.
+  Connection semantics pinned: `clickhouse://user:pass@host:18123/db` goes
+  over HTTP 8123
+- **Trino**: the image ships only `tpch` (+system) enabled; **tpcds needs
+  `etc/catalog/tpcds.properties` mounted**; `tpch` is read-only, so build the
+  core tables in the `memory` catalog (CTAS only, lost on restart — a
+  post-start script rebuilds them)
+- **DuckDB**: an entrypoint script generates the seed `.duckdb` with the
+  duckdb CLI (same shape as sqlite's `test.db`); the URL `duckdb:<path>`
+  follows the `sqlite:` prefix precedent; the Rust driver is the `duckdb`
+  crate (links libduckdb, heavy build)
 
-## 五、初始化数据
+## 5. Seed data
 
-在 `playground/init/<dialect>/` 放种子脚本，遵守现有约定：单文件 <8KB、手工 3-7 行真实样例 + 批量生成、依赖库无关。
+Seed scripts live in `playground/init/<dialect>/`, following the existing
+conventions: single file <8KB, 3-7 lines of hand-written realistic samples plus
+bulk generation, dependency-library independent.
 
-- 跨引擎核心表（`users`/`orders`/`order_items`）保证同一份查询全容器跑通；Trino 例外：核心表放 `memory` catalog 启动重建，`tpch`/`tpcds` 只读联邦查
-- README 补各库表/行数清单（参照 mssql 小节格式）
+- The cross-engine core tables (`users`/`orders`/`order_items`) keep one query
+  running identically across containers; Trino is the exception: core tables
+  live in the `memory` catalog and are rebuilt at startup, `tpch`/`tpcds` are
+  read-only federation
+- The README gets a per-dialect table/row-count list (same format as the mssql
+  section)
 
-## 六、Playground SQL 脚本
+## 6. Playground SQL scripts
 
-`playground/queries/<dialect>.sql`：头注释列特性 + `-- @connection`/`-- @database` 头。**段落分隔用 `--` 注释，不要用 `###` 行**（exec-file 只剥离独立的 `###` 行）。参照 `mssql.sql`。
+`playground/queries/<dialect>.sql`: a header comment listing the dialect's
+features + `-- @connection`/`-- @database` headers. **Separate sections with
+`--` comments, never `###` lines** (exec-file strips only standalone `###`
+lines). Modeled on `mssql.sql`.
 
-## 验收标准（每步）
+## Acceptance criteria (per step)
 
-1. 新方言可写入 `connections.toml` 并正常连接
-2. 连接后 introspection（列库/列表/列/索引）正常
-3. completion 与 snippets 对新方言生效
-4. `source_format.lua` 映射补齐，格式化不报错
-5. 3.1/3.2 单元测试无 Docker 全绿；3.3 diag 全绿
-6. docker-compose 新增服务健康检查通过，初始化数据就位
-7. playground SQL 脚本完整跑通
-8. 兼容系别名：Rust 零 diff
-9. Lua 触点清单全覆盖（含 `ai/system_prompt.lua`）
-10. 双端 `to_url()` 同步，无静默误路由
+1. The new dialect can be written into `connections.toml` and connects
+2. After connecting, introspection (list databases/tables/columns/indexes)
+   works
+3. Completion and snippets work for the new dialect
+4. `source_format.lua` mapping filled in; formatting runs without error
+5. 3.1/3.2 unit tests green without Docker; 3.3 diag green
+6. The new docker-compose service passes its health check; seed data in place
+7. The playground SQL script runs end to end
+8. Compatible-family aliases: zero Rust diff
+9. Every Lua touchpoint covered (including `ai/system_prompt.lua`)
+10. Both `to_url()` mirrors updated; no silent mis-routing
 
-## 建议实施顺序
+## Suggested order
 
-1. ~~别名铺开~~ ✅
+1. ~~Aliases~~ ✅
 2. ~~MSSQL~~ ✅
-3. **HTTP 传输层 + ClickHouse**（下一步：poste-exec 首个 HTTP 传输在此消化）
-4. Trino（复用 HTTP 传输）
-5. DuckDB（可选，延后）
+3. **HTTP transport + ClickHouse** (next: poste-exec's first HTTP transport)
+4. Trino (reuses the HTTP transport)
+5. DuckDB (optional, deferred)
 
-每步完成标准：3.1/3.2 测试先行并全绿 → docker 服务健康检查 → init 数据就位 → playground 跑通 → diag 全绿 → `ai/system_prompt.lua` 已更新。
+Per-step completion bar: 3.1/3.2 tests written first and green → docker service
+health check passes → init data in place → playground runs → diag green →
+`ai/system_prompt.lua` updated.
 
 ---
 
-## 附录：新增方言触点清单（动手前照单全查）
+## Appendix: new-dialect touchpoint checklist (check every box before touching code)
 
-### Lua 侧（poste-db.nvim）
+### Lua side (poste-db.nvim)
 
-| # | 文件 | 要动什么 |
+| # | File | What to change |
 |---|------|---------|
-| 1 | `constants.lua` | `SUPPORTED_DIALECTS`；别名进 `DIALECT_ALIASES`；系统 catalog 进 `SYSTEM_SCHEMAS`；`URL_SCHEMES` 加前缀；`DIALECT_DEFAULT_PORTS` 加端口 |
-| 2 | `connections.lua` | URL 构造与显示走 `default_port()`（通常零改动）；`dialect_icons` 加图标 |
-| 3 | `ident.lua` | `quote` 标识符引用分支；`quote_literal` 值转义 |
-| 4 | `dml.lua` | 编辑流 DML 生成中的方言分支 |
-| 5 | `completion/data.lua` | `tables_db_flag`（`--schema` vs `--database`）归类 |
-| 6 | `snippets.lua` | `CATEGORIES` 加方言变体（`pick_template` 自动生效） |
-| 7 | `source_format.lua` | sqlfluff / sql-formatter 的 `dialect_map` |
-| 8 | `ai/system_prompt.lua` | 方言清单句 |
-| 9 | specs | `sql_constants` / `sql_connections`（**URL 构造断言，防静默误路由**）/ `sql_ident` / `sql_snippets` / `sql_completion`（tables_db_flag） |
+| 1 | `constants.lua` | `SUPPORTED_DIALECTS`; the alias into `DIALECT_ALIASES`; the system catalog into `SYSTEM_SCHEMAS`; the prefix into `URL_SCHEMES`; the port into `DIALECT_DEFAULT_PORTS` |
+| 2 | `connections.lua` | URL building and display go through `default_port()` (usually zero diff); an icon into `dialect_icons` |
+| 3 | `ident.lua` | `quote` identifier-quoting branch; `quote_literal` value escaping |
+| 4 | `dml.lua` | dialect branches in the edit-flow DML generation |
+| 5 | `completion/data.lua` | `tables_db_flag` (`--schema` vs `--database`) classification |
+| 6 | `snippets.lua` | dialect variants into `CATEGORIES` (`pick_template` picks them up automatically) |
+| 7 | `source_format.lua` | the sqlfluff / sql-formatter `dialect_map` |
+| 8 | `ai/system_prompt.lua` | the dialect-list sentence |
+| 9 | specs | `sql_constants` / `sql_connections` (**URL-building assertions, guards silent mis-routing**) / `sql_ident` / `sql_snippets` / `sql_completion` (tables_db_flag) |
 
-### Rust 侧（poste.nvim main 直接改）
+### Rust side (edit poste.nvim main directly)
 
-| # | 位置 | 要动什么 |
+| # | Location | What to change |
 |---|------|---------|
-| 1 | `poste-core/src/request.rs` | `Protocol` 变体 |
-| 2 | `poste-exec/src/sql_connection.rs` | `to_url()` dialect 分支 + `test_connection` 探活。**与 Lua `resolve_connection_url` 是镜像实现，双端必须同步** |
-| 3 | `poste-cli/src/exec_file.rs` | scheme→protocol 链 + `run_statements` 分发 + `exec_<dialect>` + summary dialect 字符串 |
-| 4 | `poste-cli/src/session.rs` | scheme 链 + `session_<dialect>`（会话语义随驱动而异：temp table/事务，参考 `sql_executor/mssql.rs` 的批量路径注记） |
-| 5 | `poste-cli/src/introspect.rs` | dialect_name 链。**此链静默 fallback 到 postgres——新方言必须显式加分支** |
-| 6 | `poste-exec/src/sql_dialect.rs` | `Dialect` impl + `dialect_for` 分支 + 快照测试（参考 `test_mssql_dialect`） |
-| 7 | `poste-exec/src/sql_executor/{mod.rs,<dialect>.rs}` | 驱动模块 + 分发 match + `make_response` 协议名 |
-| 8 | `poste-exec/src/sql_introspect/{mod.rs,<dialect>.rs}` | introspect 驱动 + 分发（item 形状对齐 `postgres.rs`） |
-| 9 | `poste-exec/src/sql_ddl.rs` | `DdlGenerator` + `ddl_for` 分支 |
-| 10 | `poste-cli/src/connection.rs` | CLI 连接列表 emoji（cosmetic） |
+| 1 | `poste-core/src/request.rs` | the `Protocol` variant |
+| 2 | `poste-exec/src/sql_connection.rs` | `to_url()` dialect branch + the `test_connection` probe. **A mirror of Lua's `resolve_connection_url`; both sides must move together** |
+| 3 | `poste-cli/src/exec_file.rs` | scheme→protocol chain + `run_statements` dispatch + `exec_<dialect>` + the summary dialect string |
+| 4 | `poste-cli/src/session.rs` | scheme chain + `session_<dialect>` (session semantics are driver-specific: temp tables/transactions — see the batch-path notes in `sql_executor/mssql.rs`) |
+| 5 | `poste-cli/src/introspect.rs` | dialect_name chain. **This chain silently falls back to postgres — a new dialect MUST add an explicit branch** |
+| 6 | `poste-exec/src/sql_dialect.rs` | the `Dialect` impl + a `dialect_for` branch + snapshot tests (see `test_mssql_dialect`) |
+| 7 | `poste-exec/src/sql_executor/{mod.rs,<dialect>.rs}` | driver module + dispatch match + `make_response` protocol name |
+| 8 | `poste-exec/src/sql_introspect/{mod.rs,<dialect>.rs}` | introspect driver + dispatch (match the item shape of `postgres.rs`) |
+| 9 | `poste-exec/src/sql_ddl.rs` | `DdlGenerator` + a `ddl_for` branch |
+| 10 | `poste-cli/src/connection.rs` | the connection-list emoji (cosmetic) |
 
-### mssql 实测踩过的坑（新驱动参考）
+### Pitfalls MSSQL already paid for (reference for new drivers)
 
-- **TDS 临时表作用域**：`CREATE TABLE #t` 必须走批量路径（`simple_query`），RPC prepare/execute 作用域退出即丢弃——见 `mssql_execute` 的 `is_ddl_stmt` 路由
-- **MERGE 必须以分号结尾**，而语句切分会剥掉尾分号——执行层补回
-- 事务无需专门 API：BEGIN/COMMIT/ROLLBACK 走批量路径，服务器以 ENVCHANGE 回报描述符
-- 值转换参考 `mssql_value_to_json`（tiberius `try_get` 返回 `Option<T>`，借用型 `&str`/`&[u8]`，数值/日期走 `value.rs` 共享 fallback）
-- HTTP 型方言：`clickhouse` crate 是 HTTP-only（RowBinary over HTTP）；`Dialect` 与传输解耦，参考"背景"一节
+- **TDS temp-table scope**: `CREATE TABLE #t` must go through the batch path
+  (`simple_query`); the RPC prepare/execute scope drops the table when it
+  exits — see `mssql_execute`'s `is_ddl_stmt` routing
+- **MERGE must end with a semicolon**, and statement splitting strips the
+  trailing one — the execution layer adds it back
+- Transactions need no dedicated API: BEGIN/COMMIT/ROLLBACK go through the
+  batch path; the server reports descriptors via ENVCHANGE
+- Value conversion: see `mssql_value_to_json` (tiberius `try_get` returns
+  `Option<T>` with borrowed `&str`/`&[u8]`; numbers/dates share the fallback
+  in `value.rs`)
+- HTTP-type dialects: the `clickhouse` crate is HTTP-only (RowBinary over
+  HTTP); `Dialect` is decoupled from transport — see the Background section

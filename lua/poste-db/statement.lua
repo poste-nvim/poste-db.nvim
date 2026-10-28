@@ -698,7 +698,7 @@ function M.extract_label(buf_lines, stmt_start)
       local name = trimmed:match("^###%s*(.-)%s*$") or ""
       if name == "" then return nil end
       -- util.ellipsize, like the comment branch above: `#name` counts BYTES,
-      -- so a `### 查询用户订单明细…` header was cut mid-character and the
+      -- so a CJK `### <query description>` header was cut mid-character and the
       -- sidebar rendered invalid UTF-8 (and a 40-byte CJK header rendered 13
       -- glyphs where the comment branch kept 40 cells).
       return util.ellipsize(name, LABEL_MAX_CHARS)

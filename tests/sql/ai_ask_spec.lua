@@ -80,7 +80,7 @@ describe("poste-db.ai ask entry points", function()
       pending("poste-ai.nvim not on rtp")
       return
     end
-    -- "x" + 40×蜀 = 121 bytes, so the 57-byte budget lands in the MIDDLE of
+    -- "x" + 40 × U+8700 = 121 bytes, so the 57-byte budget lands in the MIDDLE of
     -- a character: the old byte-based sub(1, 57) emitted a half character
     -- (invalid UTF-8) to the provider
     local long = "x" .. string.rep("蜀", 40)

@@ -37,7 +37,7 @@ local truncate_display = width.truncate_ellipsis
 
 --- Build the sidebar lines: `[i] label  time`, active marked with ▸,
 --- errors prefixed with ✗. The time column shows the wall-clock moment the
---- request executed (时:分:秒.毫秒) and is right-aligned to the window's right
+--- request executed (HH:MM:SS.mmm) and is right-aligned to the window's right
 --- edge (SIDEBAR_WIDTH); the label is truncated so it never overlaps.
 --- Entries are shown newest-first (reverse execution order).
 local function build_lines()
