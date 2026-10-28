@@ -92,8 +92,6 @@ function M.execute_import(table_info, valid_rows, col_map, table_cols, callback)
   local total_imported = 0
   local all_errors = {}
 
-  local src_file = table_info.search_dir .. "/.__poste_import_temp.sql"
-
   local conn_prefix = ""
   local conn_url = nil
   if table_info.connection and table_info.connection ~= "" then
@@ -150,7 +148,6 @@ function M.execute_import(table_info, valid_rows, col_map, table_cols, callback)
     local chunk_start = vim.fn.reltime()
     local exec_run = require("poste-db.exec_run")
     exec_run.run_async(sql_content, {
-      src_file = src_file,
       conn_url = conn_url,
       database = table_info.database,
       mode = "greedy",

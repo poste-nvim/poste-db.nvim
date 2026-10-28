@@ -52,6 +52,15 @@ function M.register()
 end
 
 --- Notify and report absence of poste-ai. Returns true when available.
+--- Load a poste-ai submodule, nil when the installed version predates it.
+--- The plugin contract is silent-skip when poste-ai is absent; a bare
+--- submodule require would turn every ask_* entry into a hard "module not
+--- found" on an OLDER poste-ai instead.
+local function ai_submodule(name)
+  local ok, mod = pcall(require, name)
+  return ok and mod or nil
+end
+
 local function ensure_available()
   if M.available() then return true end
   vim.notify("PosteDb AI chat needs poste-ai.nvim (poste-nvim/poste-ai.nvim) installed.",
@@ -78,10 +87,12 @@ function M.ask_selection()
   -- leave visual mode before opening the chat split
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "x", false)
 
-  local mention = require("poste-ai.chat.mention").range_mention(buf, l1, l2)
+  local mention_mod = ai_submodule("poste-ai.chat.mention")
+  local window = ai_submodule("poste-ai.chat.window")
+  if not mention_mod or not window then return end
+  local mention = mention_mod.range_mention(buf, l1, l2)
   if not mention then return end
   M.open_chat()
-  local window = require("poste-ai.chat.window")
   window.set_input_text(mention .. " ")
   window.focus_input(true)
 end
@@ -128,7 +139,8 @@ function M.ask_last_error()
   -- must not override the failing target
   M.open_chat()
   scope_chat_target(err.connection, err.database)
-  local window = require("poste-ai.chat.window")
+  local window = ai_submodule("poste-ai.chat.window")
+  if not window then return end
   window.set_input_text(text)
   window.focus_input(true)
 end
@@ -186,7 +198,8 @@ function M.ask_resultset()
     text = text .. "\n\nThe query was:\n```sql\n" .. sql .. "\n```"
   end
   M.open_chat()
-  local window = require("poste-ai.chat.window")
+  local window = ai_submodule("poste-ai.chat.window")
+  if not window then return end
   window.set_input_text(text)
   window.focus_input(true)
 end
@@ -231,7 +244,8 @@ function M.ask_node(node)
     return
   end
   M.open_chat()
-  local window = require("poste-ai.chat.window")
+  local window = ai_submodule("poste-ai.chat.window")
+  if not window then return end
   window.set_input_text("@" .. mention .. " ")
   window.focus_input(true)
 end

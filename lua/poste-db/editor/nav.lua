@@ -377,9 +377,13 @@ function M.edit_cell()
   end
 
   -- handlers work in source-row space: that is what edit_state keys and
-  -- apply_cell_edit record
+  -- apply_cell_edit record. is_data_row validates the VISIBLE row against
+  -- meta.row_count; a refresh between render and edit can leave the mapped
+  -- source row outside layout.rows, which used to raise here.
   local src_row = to_source_row(tab, row_idx)
-  local old_val = tab.layout.rows[src_row][col_idx]
+  local row = tab.layout.rows and tab.layout.rows[src_row]
+  if not row then return end
+  local old_val = row[col_idx]
   local handler = cell_editors[M.detect_cell_type(col_meta)]
   handler(src_row, col_idx, col_meta, old_val)
 end

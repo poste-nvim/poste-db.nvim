@@ -400,7 +400,7 @@ end
 --- (or nil on failure). Calls are blocking — for non-interactive/introspection
 --- queries where the caller needs the result inline.
 --- @param sql string
---- @param opts table  same as run_async (src_file, conn_url, database, mode, timeout, max_rows)
+--- @param opts table  same as run_async (conn_url, database, mode, timeout, max_rows)
 local function run_sql(sql, opts)
   opts = opts or {}
   local t0 = vim.uv.now()
@@ -454,7 +454,6 @@ end
 --- Run SQL asynchronously via `exec-file`.
 --- @param sql string SQL content to execute
 --- @param opts table
----   - src_file: string|nil  source buffer path (for temp-file placement/discovery)
 ---   - conn_url: string|nil  resolved connection URL ("--connection")
 ---   - database: string|nil  database override
 ---   - mode: "greedy"|"transaction"

@@ -73,6 +73,14 @@ describe("import.format.parse_csv", function()
     local _, err = fmt.parse_csv("a,a\n1,2")
     assert.matches("Duplicate column 'a' in header", err)
   end)
+
+  it("rejects a case-differing duplicate header name", function()
+    -- The mapper pairs file columns to table columns case-insensitively, so
+    -- `ID,id` passed the exact-case check and BOTH entries landed on the
+    -- same table column with the later file column silently winning.
+    local _, err = fmt.parse_csv("ID,id\n1,2")
+    assert.matches("Duplicate column 'ID' in header", err)
+  end)
 end)
 
 describe("import.format.parse_tsv", function()

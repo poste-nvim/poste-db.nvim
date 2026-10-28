@@ -53,4 +53,26 @@ describe("introspect DDL float", function()
     local _, text = current_float_text()
     assert.truthy(text:find("CREATE TABLE d", 1, true))
   end)
+
+  it("a stale async completion does not overwrite a newer lookup", function()
+    -- show_float REPLACES the previous float, and whichever job finished LAST
+    -- used to win: trigger on table a, then on b before a returns, and a's
+    -- slow answer could repaint over b's. Entry tokens guard the delivery.
+    local token_a = introspect.next_float_token()
+    local token_b = introspect.next_float_token()
+
+    introspect.show_float_if_current(token_b, { "CREATE TABLE b (id int);" }, " ddl: b ", "sql")
+    local _, text_b = current_float_text()
+    assert.truthy(text_b:find("CREATE TABLE b", 1, true), "the current token paints")
+
+    introspect.show_float_if_current(token_a, { "CREATE TABLE a (id int);" }, " ddl: a ", "sql")
+    local _, text = current_float_text()
+    assert.truthy(text:find("CREATE TABLE b", 1, true), "the stale token is dropped")
+    assert.is_falsy(text:find("CREATE TABLE a", 1, true))
+
+    -- A direct show_float (synchronous caller) retires in-flight jobs too.
+    introspect.show_float_if_current(token_a, { "CREATE TABLE x" }, " ddl: x ", "sql")
+    local _, text_x = current_float_text()
+    assert.is_falsy(text_x:find("CREATE TABLE x", 1, true))
+  end)
 end)

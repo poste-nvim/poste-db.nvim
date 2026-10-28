@@ -15,12 +15,16 @@ local function normalize_text(text)
 end
 
 --- Shape scanned rows into `{ columns, rows }`. The first row is the header: a
---- name spelled twice is ambiguous input (the column map would point both file
---- columns at one table column and the last would silently win), and every data
---- row must match the header width or the columns shift under the user. Either
---- way the whole file fails, naming the row that caused it — an import must not
---- quietly load a mis-aligned subset. Shared by the CSV and TSV paths, which
---- differ only in how they scan rows.
+--- name spelled twice is ambiguous input, and every data row must match the
+--- header width or the columns shift under the user. Either way the whole file
+--- fails, naming the row that caused it — an import must not quietly load a
+--- mis-aligned subset. Shared by the CSV and TSV paths, which differ only in
+--- how they scan rows.
+---
+--- The duplicate check is CASE-INSENSITIVE, matching how the column mapper
+--- pairs file columns to table columns (it compares lowercased): `ID,id`
+--- used to pass this gate and both entries landed on the same table column
+--- with the later file column silently winning.
 --- @param rows string[][]
 --- @return table|nil result  { columns, rows } on success
 --- @return string|nil err  reason the file was rejected
@@ -29,10 +33,13 @@ local function to_table(rows)
   local header = rows[1]
   local seen = {}
   for _, name in ipairs(header) do
-    if seen[name] then
-      return nil, ("Duplicate column '%s' in header"):format(name)
+    local key = name:lower()
+    if seen[key] then
+      -- The value is the FIRST spelling; the message names what the file
+      -- actually says, not the lowercased comparison key.
+      return nil, ("Duplicate column '%s' in header"):format(seen[key])
     end
-    seen[name] = true
+    seen[key] = name
   end
   local num_cols = #header
   local data_rows = {}

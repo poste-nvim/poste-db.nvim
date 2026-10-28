@@ -140,12 +140,14 @@ function M.resolve(ref, cb)
     local header = ("### Database `%s/%s` (%s)\nTables (%d):\n"):format(conn, db, dialect, #tables)
 
     if #tables > MAX_TABLES_FOR_COLUMNS then
-      local md = header
+      -- table.concat, not repeated concatenation: a database with thousands
+      -- of tables copied the growing string once per table, every chat turn.
+      local parts = {}
       for _, t in ipairs(tables) do
-        md = md .. "- " .. t.name .. "\n"
+        parts[#parts + 1] = "- " .. t.name .. "\n"
       end
-      md = md .. "(column details available on request — ask for a specific table)\n"
-      cb(md, nil)
+      parts[#parts + 1] = "(column details available on request — ask for a specific table)\n"
+      cb(header .. table.concat(parts), nil)
       return
     end
 
@@ -158,8 +160,7 @@ function M.resolve(ref, cb)
         lines[idx] = M.table_line(t.name, t.comment, columns)
         remaining = remaining - 1
         if remaining <= 0 then
-          local md = header
-          for _, l in ipairs(lines) do md = md .. l .. "\n" end
+          local md = header .. table.concat(lines, "\n") .. "\n"
           if #md > MAX_OUTPUT_CHARS then
             md = require("poste-db.util").utf8_safe_cut(md, MAX_OUTPUT_CHARS)
               .. "\n… (schema truncated)"

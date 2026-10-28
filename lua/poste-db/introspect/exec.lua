@@ -25,11 +25,19 @@ function M.run_json_items_job(args, opts)
     }))
   end
 
+  -- cli.run_async buffers stdout, so a SUCCESSFUL run with NO output delivers
+  -- `{ "" }` — ensure_job_data strips it to `{}` and the parse path used to
+  -- return before anything happened: no empty_message notify, no journal, no
+  -- on_items — the DDL/column float never appeared with zero feedback.
+  -- on_exit remembers whether the parse path ran and settles the empty case.
+  local saw_parse = false
+
   cli.run_async(args, {
     on_stdout = function(data)
       data = util.ensure_job_data(data)
       if #data == 0 then return end
 
+      saw_parse = true
       local output = table.concat(data, "\n")
       vim.schedule(function()
         local parsed = job.decode_json_table(output, opts.failure_message or "Failed to parse response")
@@ -66,6 +74,15 @@ function M.run_json_items_job(args, opts)
         local err_text = table.concat(stderr_lines, "\n")
         journal_once("error", err_text ~= "" and err_text
           or (opts.exit_kind or "Introspection") .. " exit code " .. tostring(code))
+      elseif not saw_parse then
+        -- Exit 0 with nothing on stdout: same empty-result treatment as a
+        -- decoded-but-empty payload.
+        vim.schedule(function()
+          if opts.empty_message then
+            vim.notify(opts.empty_message, vim.log.levels.WARN, { title = opts.title or const.PLUGIN_TITLE })
+          end
+        end)
+        journal_once("success", nil)
       end
     end,
   })

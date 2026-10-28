@@ -78,7 +78,14 @@ local function build_pk_query(dialect, table_name, db)
     end
     return sql
   elseif dialect == "postgres" then
-    local schema = "public"
+    -- table_name may arrive schema-qualified (`main.users` — export.lua
+    -- documents the shape): pinning table_schema = 'public' made a
+    -- non-public table's PK/default fallback silently return nothing.
+    local schema, bare = table_name:match("^([%w_]+)%.([%w_]+)$")
+    if not schema then
+      schema, bare = "public", table_name
+    end
+    safe_table = bare:gsub("'", "''")
     return string.format(template, safe_table, safe_table, schema:gsub("'", "''"))
   elseif dialect == "sqlite" then
     return string.format(template, safe_table)
@@ -106,20 +113,12 @@ end
 -- Query execution helpers
 ---------------------------------------------------------------------------
 
-local function resolve_src_file(tab)
-  local src_file = tab.src_file or ""
-  if src_file ~= "" then return src_file end
-  local ok, buf_name = pcall(vim.api.nvim_buf_get_name, 0)
-  if ok and buf_name and buf_name ~= "" and not buf_name:match("^poste://") then
-    return buf_name
-  end
-  return vim.fn.tempname() .. ".sql"
-end
-
-local function run_introspection_query(query, connection, database, src_file)
+-- NB: no src_file is threaded into exec_run — it ignores opts.src_file
+-- entirely (write_temp_file makes its own tempname), so this used to ship a
+-- phantom filename that showed up nowhere.
+local function run_introspection_query(query, connection, database)
   local exec_run = require("poste-db.exec_run")
   local opts = {
-    src_file = src_file,
     database = database,
     mode = "greedy",
     log_source = "introspect",
@@ -277,7 +276,6 @@ function M.ensure_primary_key(tab)
     db = layout.connection:match("/([^/?]+)$")
   end
 
-  local src_file = resolve_src_file(tab)
   local pk_query = build_pk_query(dialect, table_name, db)
   if not pk_query then
     pk_cache[cache_key] = true
@@ -286,14 +284,14 @@ function M.ensure_primary_key(tab)
 
   local log = require("poste-db.log")
   log.debug(string.format("PK introspection: table=%s query=%s conn=%s db=%s", table_name, pk_query, log.redact_url(connection), database))
-  local body = run_introspection_query(pk_query, connection, database, src_file)
+  local body = run_introspection_query(pk_query, connection, database)
   if body and body.results then
     parse_pk_results(body, layout, dialect)
   end
 
   local enum_query = build_enum_query(dialect, table_name, db)
   if enum_query then
-    local enum_body = run_introspection_query(enum_query, connection, database, src_file)
+    local enum_body = run_introspection_query(enum_query, connection, database)
     if enum_body and enum_body.results then
       parse_enum_results(enum_body, layout, dialect)
     end

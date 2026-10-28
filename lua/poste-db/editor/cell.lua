@@ -343,15 +343,6 @@ function M.has_pending_changes(es)
 end
 
 --- Get a summary of pending changes for display.
-function M.get_edit_summary(es)
-  if not es then return { updates = 0, inserts = 0, deletes = 0 } end
-  local ups = 0
-  for _ in pairs(es.modified_cells) do ups = ups + 1 end
-  local dels = 0
-  for _ in pairs(es.deleted_rows) do dels = dels + 1 end
-  return { updates = ups, inserts = #es.added_rows, deletes = dels }
-end
-
 --- Count pending changes (for display).
 function M.count_pending_changes(es)
   if not es or not es.dirty then return { modified = 0, deleted = 0, added = 0 } end

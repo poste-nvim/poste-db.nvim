@@ -21,6 +21,30 @@ local const = require("poste-db.constants")
 local M = {}
 local show_float_win, show_float_buf = nil, nil
 
+-- Introspection results arrive from async jobs, and show_float REPLACES the
+-- previous float: whichever job finished last used to win, so a slow stale
+-- answer could overwrite a fresh lookup. Every entry captures a token at
+-- start; the async completion shows only while it is still current, and a
+-- direct (synchronous) show_float bumps the epoch to retire in-flight jobs.
+local float_epoch = 0
+
+function M.next_float_token()
+  float_epoch = float_epoch + 1
+  return float_epoch
+end
+
+function M.show_float_if_current(token, lines, title, ft)
+  if token ~= float_epoch then return end
+  M.show_float(lines, title, ft)
+end
+
+--- The guarded callback handed down the async chain for a token.
+local function guarded_show(token)
+  return function(lines, title, ft)
+    M.show_float_if_current(token, lines, title, ft)
+  end
+end
+
 --- Wipe the tracked DDL/info float (and its buffer) so repeated look-ups neither
 --- stack windows nor leak one preview buffer per call.
 local function close_show_float()
@@ -42,6 +66,7 @@ end
 --- @param title string
 --- @param ft string|nil  filetype (default "sql")
 function M.show_float(lines, title, ft)
+  float_epoch = float_epoch + 1
   if not lines or #lines == 0 then
     vim.notify("No content to display", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return
@@ -96,7 +121,8 @@ function M.show_table_ddl()
       vim.notify("No connection context for database '" .. db_name .. "'", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
       return
     end
-    table_helper.show_database_info(conn, db_name, M.show_float)
+    local token = M.next_float_token()
+    table_helper.show_database_info(conn, db_name, guarded_show(token))
     return
   end
 
@@ -107,7 +133,8 @@ function M.show_table_ddl()
       vim.notify("Connection '" .. conn_name .. "' not found in connections.toml", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
       return
     end
-    ui.show_connection(conn_cfg, conn_name, M.show_float)
+    local token = M.next_float_token()
+    ui.show_connection(conn_cfg, conn_name, guarded_show(token))
     return
   end
 
@@ -134,6 +161,8 @@ function M.show_table_ddl()
   local all_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   local end_col = util.scan_word_end(line_text, cursor[2])
+
+  local token = M.next_float_token()
 
   local function detect_target_at(slice_end_col, resolve_after_dot_col)
     local payload = detect.build_detect_payload(all_lines, line_num, slice_end_col)
@@ -183,7 +212,7 @@ function M.show_table_ddl()
     local detected_target = detect_target_at(end_col + 1 + #after_dot_col, after_dot_col)
     local action = target_resolver.resolve_detected_action(detected_target, db, cword)
     if action and action.kind == "column" and action.parent_table then
-      column.show_column_info(conn, action.db or db, action.parent_table, action.column_name, action.parent_schema, M.show_float)
+      column.show_column_info(conn, action.db or db, action.parent_table, action.column_name, action.parent_schema, guarded_show(token))
       return
     end
   end
@@ -193,11 +222,11 @@ function M.show_table_ddl()
   local action = target_resolver.resolve_detected_action(detected_target, db, cword)
   if action then
     if action.kind == "list_tables" and action.db then
-      table_helper.show_database_tables(conn, action.db, M.show_float)
+      table_helper.show_database_tables(conn, action.db, guarded_show(token))
       return
     end
     if action.kind == "column" and action.parent_table then
-      column.show_column_info(conn, action.db or db, action.parent_table, action.column_name, action.parent_schema, M.show_float)
+      column.show_column_info(conn, action.db or db, action.parent_table, action.column_name, action.parent_schema, guarded_show(token))
       return
     end
     if action.kind == "ddl" and action.table_name then
@@ -207,7 +236,7 @@ function M.show_table_ddl()
   end
 
   -- Fallback: show DDL (table mode)
-  table_helper.show_table_ddl(conn, db, cword, M.show_float)
+  table_helper.show_table_ddl(conn, db, cword, guarded_show(token))
 end
 
 return M

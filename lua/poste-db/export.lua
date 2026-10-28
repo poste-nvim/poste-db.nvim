@@ -488,7 +488,6 @@ function P.browse_path(format_value)
 end
 
 function P.destination_picker(format_value)
-  local _ = P
   local data_result, info = get_current_data()
   if not data_result then return end
   local dir = get_default_dir()
