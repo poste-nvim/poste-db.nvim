@@ -113,6 +113,11 @@ function M.build(path, comment, multi_select, width)
 end
 
 --- Refresh the statusline on the window that owns `browser_buf`, if any.
+--- CursorMoved calls this per keystroke; when the built text is unchanged
+--- (cursor moved within one node's rows) nothing is re-set and no redraw
+--- is forced.
+local _last_text = nil
+
 function M.update(browser_buf, path, comment, multi_select)
   if not browser_buf or not vim.api.nvim_buf_is_valid(browser_buf) then return end
 
@@ -127,6 +132,10 @@ function M.update(browser_buf, path, comment, multi_select)
         width = vim.api.nvim_win_get_width(win)
       end
       local text = M.build(path, comment, multi_select, width)
+      if text == _last_text then
+        return
+      end
+      _last_text = text
       pcall(vim.api.nvim_set_option_value, "statusline", text, { win = win })
     end
   end

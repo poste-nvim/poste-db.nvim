@@ -49,12 +49,26 @@ function M.setup()
       sql_syntax.highlight_digit_prefix_fragments(args.buf)
       sql_syntax.highlight_known_error_constructs(args.buf)
       local buf_group = vim.api.nvim_create_augroup("PosteDbDirectiveHL_" .. args.buf, { clear = true })
+      -- Per-buffer debounce for the two full tree-sitter sweeps: every
+      -- keystroke used to re-walk the whole tree twice. Directive highlighting
+      -- is the immediate feedback for the connection/database line being
+      -- typed (and only walks lines until the first ###), so it stays
+      -- synchronous; a dead buffer's pending timer just drops out.
+      local hl_timer = nil
       vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
         group = buf_group, buffer = args.buf,
         callback = function()
           sql_syntax.highlight_directive_comments(args.buf)
-          sql_syntax.highlight_digit_prefix_fragments(args.buf)
-          sql_syntax.highlight_known_error_constructs(args.buf)
+          if hl_timer then
+            hl_timer:stop()
+            hl_timer:close()
+          end
+          hl_timer = vim.defer_fn(function()
+            hl_timer = nil
+            if not vim.api.nvim_buf_is_valid(args.buf) then return end
+            sql_syntax.highlight_digit_prefix_fragments(args.buf)
+            sql_syntax.highlight_known_error_constructs(args.buf)
+          end, 150)
         end,
       })
     end,

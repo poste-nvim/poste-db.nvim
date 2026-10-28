@@ -207,6 +207,8 @@ end
 --- The schema cache key for a context: `<connection>/<database>`.
 --- `ctx` lets a caller that already walked the buffer reuse it — resolving the
 --- context is a full buffer scan, so `conn_key()` on its own is the second one.
+--- Every ensure_* fetch delivers the ctx it resolved with as the callback's
+--- LAST argument; consume that instead of calling conn_key() bare.
 function M.conn_key(ctx)
   ctx = ctx or M.resolve_current_context()
   if ctx and ctx.connection then
@@ -341,15 +343,18 @@ function M.ensure_tables(callback)
   local ctx = M.resolve_current_context()
   local key = M.conn_key(ctx)
   if not key or not ctx or not ctx.connection then
-    callback()
+    callback(ctx)
     return
   end
 
-  if cache[key] and #cache[key].tables > 0 then callback(); return end
+  if cache[key] and #cache[key].tables > 0 then callback(ctx); return end
 
   local fkey = "tables:" .. key
   if fetching[fkey] then
-    queue_cb(fkey, callback)
+    -- Deliver the ctx this call resolved with: the queued callback used to
+    -- run bare and every consumer that needs the cache key resolved the whole
+    -- buffer context again (conn_key() is a full-buffer scan when un-cached).
+    queue_cb(fkey, function() callback(ctx) end)
     return
   end
 
@@ -393,16 +398,16 @@ function M.ensure_tables_for_db(db_name, callback)
   local ctx = M.resolve_current_context()
   local key = M.conn_key(ctx)
   if not key or not ctx or not ctx.connection then
-    callback()
+    callback(ctx)
     return
   end
 
   local db_cache_key = key .. "/db:" .. db_name
-  if cache[db_cache_key] and #cache[db_cache_key].tables > 0 then callback(); return end
+  if cache[db_cache_key] and #cache[db_cache_key].tables > 0 then callback(ctx); return end
 
   local fkey = "tables-db:" .. db_cache_key
   if fetching[fkey] then
-    queue_cb(fkey, callback)
+    queue_cb(fkey, function() callback(ctx) end)
     return
   end
 
@@ -439,15 +444,17 @@ end
 
 function M.ensure_databases(callback)
   local ctx = M.resolve_current_context()
-  if not ctx or not ctx.connection then callback({}); return end
+  if not ctx or not ctx.connection then callback({}, ctx); return end
 
   local conn_key_str = ctx.connection
   local cache_key = conn_key_str .. "/__databases__"
-  if cache[cache_key] then callback(cache[cache_key]); return end
+  if cache[cache_key] then callback(cache[cache_key], ctx); return end
 
   local fkey = "dbs:" .. conn_key_str
   if fetching[fkey] then
-    queue_cb(fkey, callback)
+    -- The flush value IS the names list (fail value is {}); re-reading the
+    -- cache here would hand nil to the callback on a failed fetch.
+    queue_cb(fkey, function(names) callback(names, ctx) end)
     return
   end
 
@@ -497,7 +504,7 @@ function M.ensure_columns(tbl, schema, callback)
     if compat.opt("debug") then
       sql_state.log("INFO", "DEBUG: ensure_columns - NO CONNECTION, returning")
     end
-    callback()
+    callback(ctx)
     return
   end
 
@@ -506,7 +513,7 @@ function M.ensure_columns(tbl, schema, callback)
       sql_state.log("INFO", string.format("DEBUG: cache hit for %s, %d columns",
         cache_tbl_key, #cache[key].columns[cache_tbl_key]))
     end
-    callback()
+    callback(ctx)
     return
   end
 
@@ -516,7 +523,7 @@ function M.ensure_columns(tbl, schema, callback)
     if compat.opt("debug") then
       sql_state.log("INFO", string.format("DEBUG: already fetching %s, queuing callback", cache_tbl_key))
     end
-    queue_cb(fkey, callback)
+    queue_cb(fkey, function() callback(ctx) end)
     return
   end
 

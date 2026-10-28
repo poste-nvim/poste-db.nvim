@@ -244,8 +244,12 @@ function M.format_text(text, opts)
 
   -- Try each formatter in order until one succeeds.
   -- Uses nested conditionals instead of goto (Lua 5.1/LuaJIT compatibility).
+  -- The wait is synchronous on the main loop: the first candidate gets the
+  -- full budget, every FALLBACK gets a short one — an installed-but-broken
+  -- formatter chain used to stack up to 10s per candidate before the user
+  -- saw anything.
   local last_err
-  for _, formatter in ipairs(candidates) do
+  for i, formatter in ipairs(candidates) do
     local fmt = FORMATTERS[formatter]
     if not fmt then
       last_err = string.format("Unknown formatter: %s", formatter)
@@ -257,7 +261,7 @@ function M.format_text(text, opts)
 
       local ok_sys, sys_obj = pcall(vim.system, { cmd, unpack(args) }, {
         stdin = text,
-        timeout = 10000,
+        timeout = i == 1 and 10000 or 3000,
       })
       if not ok_sys then
         last_err = string.format("Failed to start %s", cmd)

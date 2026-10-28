@@ -133,8 +133,8 @@ local function handle_dot_column(bufnr, line_before, cursor_line, ctx_data, rust
   local _, alias_map, schema_map = ctx.get_tables_and_alias(rust_ctx)
   local real_tbl = alias_map[ctx_data] or ctx_data
   local schema = rust_ctx and rust_ctx.ctx_schema or schema_map[real_tbl]
-  data.ensure_columns(real_tbl, schema, function()
-    local key = data.conn_key()
+  data.ensure_columns(real_tbl, schema, function(fetch_ctx)
+    local key = data.conn_key(fetch_ctx)
     local cache = data.get_cache()
     local cache_tbl_key = schema and (schema .. "." .. real_tbl) or real_tbl
     local cols = cache[key] and cache[key].columns[cache_tbl_key] or {}
@@ -145,8 +145,8 @@ end
 local function handle_schema_table(line_before, ctx_data, dialect, rust_ctx, callback)
   local schema_name = ctx_data
   local tbl_prefix = typed_prefix(rust_ctx, line_before)
-  data.ensure_tables_for_db(schema_name, function()
-    local key = data.conn_key()
+  data.ensure_tables_for_db(schema_name, function(fetch_ctx)
+    local key = data.conn_key(fetch_ctx)
     local db_cache_key = key .. "/db:" .. schema_name
     local cache = data.get_cache()
     local tbls = cache[db_cache_key] and cache[db_cache_key].tables or {}
@@ -194,8 +194,8 @@ local function handle_table(prefix, dialect, callback)
     end
   end
 
-  data.ensure_tables(function()
-    local key = data.conn_key()
+  data.ensure_tables(function(fetch_ctx)
+    local key = data.conn_key(fetch_ctx)
     local cache = data.get_cache()
     for _, t in ipairs(cache[key] and cache[key].tables or {}) do
       table.insert(all_items, { label = t, kind = 7, insertText = t, documentation = "table: " .. t })
@@ -256,8 +256,8 @@ local function handle_column(bufnr, line_before, cursor_line, prefix, dialect, r
     flush_items(callback, items)
   end
   for _, tbl_info in ipairs(real_tbls) do
-    data.ensure_columns(tbl_info.name, tbl_info.schema, function()
-      local key = data.conn_key()
+    data.ensure_columns(tbl_info.name, tbl_info.schema, function(fetch_ctx)
+      local key = data.conn_key(fetch_ctx)
       local cache = data.get_cache()
       local cache_tbl_key = tbl_info.schema and (tbl_info.schema .. "." .. tbl_info.name) or tbl_info.name
       local cols = cache[key] and cache[key].columns[cache_tbl_key] or {}
@@ -293,8 +293,8 @@ local function handle_insert_column(line_before, prefix, ctx_data, rust_ctx, cal
   for col in inside:gmatch("([%w_]+)") do
     seen[col:lower()] = true
   end
-  data.ensure_columns(tbl, schema, function()
-    local key = data.conn_key()
+  data.ensure_columns(tbl, schema, function(fetch_ctx)
+    local key = data.conn_key(fetch_ctx)
     local cache = data.get_cache()
     local all = cache[key] and cache[key].columns[cache_tbl_key] or {}
     local result = {}
@@ -381,8 +381,8 @@ function M.dispatch(opts, ctx_type, ctx_data, rust_ctx, callback)
   end
 
   if compat.opt("legacy_completion") == true then
-    data.ensure_tables(function()
-      local key = data.conn_key()
+    data.ensure_tables(function(fetch_ctx)
+      local key = data.conn_key(fetch_ctx)
       local cache = data.get_cache()
       local tbls = cache[key] and cache[key].tables or {}
       local items = ctx.kw_items(prefix, dialect)

@@ -45,9 +45,35 @@ end
 --- it cannot clear the level above it — `constants.directive_value`.
 --- @param buf number Buffer handle (default: current buffer)
 --- @return table context { connection = string|nil, database = string|nil }
+--- Resolve the buffer-position part of the context: file-level directives
+--- (before the first ###) then the cursor's ### block (directives + USE).
+--- Pure in the buffer content: the runtime fallbacks live in
+--- resolve_full_context, not here.
+---
+--- Full-buffer scan (get_lines + two linear walks), and per-update callers
+--- like semantic_diagnostics resolve it once per statement — so the result
+--- is cached per buffer|changedtick|line. Cache hits return a fresh copy:
+--- callers may mutate the returned table. Bulk-evicted past a bound; a dead
+--- buffer's keys simply never hit again.
+--- @param buf number Buffer handle (default: current buffer)
+--- @param limit_line number|nil Line to resolve at (default: cursor)
+--- @return table context { connection = string|nil, database = string|nil }
+local _resolve_cache = {}
+local _resolve_cache_n = 0
+local _RESOLVE_CACHE_MAX = 64
+
 function M.resolve_context(buf, limit_line)
   buf = buf or vim.api.nvim_get_current_buf()
   local cursor_line = limit_line or vim.fn.line(".")
+
+  local ok_tick, tick = pcall(vim.api.nvim_buf_get_changedtick, buf)
+  local cache_key = ok_tick and (buf .. "|" .. tick .. "|" .. cursor_line) or nil
+  if cache_key then
+    local hit = _resolve_cache[cache_key]
+    if hit then
+      return { connection = hit.connection, database = hit.database }
+    end
+  end
 
   -- Phase 1: Scan file header (before first ###) for global defaults
   local connection = nil
@@ -83,7 +109,16 @@ function M.resolve_context(buf, limit_line)
     block_depth = lex.block_comment_depth_after(line, block_depth)
   end
 
-  return { connection = connection, database = database }
+  local result = { connection = connection, database = database }
+  if cache_key then
+    _resolve_cache[cache_key] = result
+    _resolve_cache_n = _resolve_cache_n + 1
+    if _resolve_cache_n > _RESOLVE_CACHE_MAX then
+      _resolve_cache = {}
+      _resolve_cache_n = 0
+    end
+  end
+  return { connection = result.connection, database = result.database }
 end
 
 --- Resolve the full context chain: buffer scan → connections.toml default.
