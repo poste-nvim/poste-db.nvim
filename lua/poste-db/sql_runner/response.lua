@@ -126,7 +126,10 @@ function M.handle(deps, parsed)
           deps.entry.error = true
           state.last_error = {
             message = err_text,
-            sql = statement.get_stmt_sql(deps.buf_lines, deps.stmt_lines, i, deps.visual_sel_end or #deps.buf_lines) or deps.buf_content,
+            -- Same max_end fallback as the success branch below: without it a
+            -- multi-line statement's error context would run to buffer end.
+            sql = statement.get_stmt_sql(deps.buf_lines, deps.stmt_lines, i,
+              deps.visual_sel_end or deps.stmt_end or #deps.buf_lines) or deps.buf_content,
             connection = parsed.connection,
             database = parsed.database,
             at = os.time(),

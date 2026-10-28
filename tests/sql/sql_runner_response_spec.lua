@@ -217,6 +217,36 @@ describe("sql_runner response.handle multi result", function()
     assert.is_true(deps.entry.error)
     assert.equals(verdict.UNEXPLAINED_FAILURE, state_stub.last_error.message)
   end)
+
+  it("bounds last_error.sql with stmt_end, not buffer end", function()
+    -- The success branch passes `visual_sel_end or stmt_end or #buf_lines` as
+    -- get_stmt_sql's max_end; the failure branch used to skip `stmt_end`, so a
+    -- non-visual multi-statement run's error context (what the AI "ask about
+    -- this error" action sends) grew to the end of the buffer.
+    local seen_max_end
+    local stmt_stub = package.loaded["poste-db.statement"]
+    local real_get = stmt_stub.get_stmt_sql
+    stmt_stub.get_stmt_sql = function(_, _, _, max_end)
+      seen_max_end = max_end
+      return "SELECT 1"
+    end
+    local deps = make_deps({
+      stmt_lines = { 1, 4 },
+      buf_lines = { "SELECT 1", "", "", "SELECT 2", "", "", "", "", "tail" },
+      stmt_end = 4,
+      visual_sel_end = nil,
+    })
+    response.handle(deps, single({
+      has_error = true,
+      results = {
+        { failed = true },
+        { row_count = 1, columns = { { name = "x" } }, execution_time_ms = 2 },
+      },
+    }))
+    stmt_stub.get_stmt_sql = real_get
+    assert.equals(4, seen_max_end,
+      "failed statement's sql context must stop at stmt_end, not #buf_lines (9)")
+  end)
 end)
 
 describe("sql_runner response.handle_error", function()
