@@ -79,6 +79,16 @@ describe("statement extract_table_name", function()
       "select * from logs where msg = 'it''s a join'"))
   end)
 
+  it("'join' inside an identifier does not count as a JOIN", function()
+    -- only the character BEFORE each "JOIN" was checked, so a column list
+    -- spelling JOIN inside identifiers counted two JOINs and returned nil
+    assert.equals("users", statement.extract_table_name(
+      "select joined_at, join_date from users"))
+    -- a real JOIN plus identifier hits still extracts the FROM table
+    assert.equals("users", statement.extract_table_name(
+      "select joined_at from users join accounts on accounts.user_id = users.id"))
+  end)
+
   it("strips backtick quotes", function()
     assert.equals("users", statement.extract_table_name("select * from `users`"))
   end)

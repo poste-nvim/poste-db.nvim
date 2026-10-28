@@ -139,10 +139,16 @@ function M.run_introspect(conn_name, introspect_type, schema, table_name, databa
         parsed_result = nil
       end
       local err_text = table.concat(stderr_buf, "\n")
-      journal(parsed_result and "success" or "error",
-        parsed_result and nil
-        or (err_text ~= "" and err_text)
-        or (code ~= 0 and ("exit code " .. tostring(code)) or "no valid response"))
+      -- The and-or chain this replaces recorded an error message on SUCCESS
+      -- rows too: with a result parsed but stderr non-empty, `parsed_result
+      -- and nil` fell through to err_text — a success row carrying an error.
+      if parsed_result then
+        journal("success", nil)
+      else
+        journal("error",
+          (err_text ~= "" and err_text)
+          or (code ~= 0 and ("exit code " .. tostring(code)) or "no valid response"))
+      end
       vim.schedule(function()
         callback(parsed_result)
       end)

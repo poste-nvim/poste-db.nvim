@@ -95,6 +95,24 @@ describe("db_browser run_introspect journaling", function()
     flush()
   end)
 
+  it("journals success with no error even when stderr carried output", function()
+    -- The and-or chain this guards recorded stderr text on SUCCESS rows:
+    -- `parsed_result and nil` is falsy, so the next arm won whenever a
+    -- driver printed a warning to stderr alongside a valid result.
+    local called = false
+    browser_async.run_introspect("pg-dev", "tables", nil, nil, "app", function() called = true end)
+    async_opts.on_stderr({ "some driver warning" })
+    async_opts.on_data({ vim.json.encode({ items = { { name = "users" } } }) })
+    async_opts.on_exit(0)
+    vim.wait(500, function() return called end)
+
+    local entries = read_entries()
+    assert.equals(1, #entries)
+    assert.equals("success", entries[1].status)
+    assert.is_nil(entries[1].error, "a successful run must not journal stderr as its error")
+    flush()
+  end)
+
   it("journals a connection timeout (on_error) as an error entry", function()
     local cb_result = "unset"
     browser_async.run_introspect("pg-dev", "tables", nil, nil, "app", function(r) cb_result = r end)

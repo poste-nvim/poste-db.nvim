@@ -603,7 +603,13 @@ function M.extract_table_name(sql)
     local pos = upper:find("JOIN", idx, true)
     if not pos then break end
     local before = upper:sub(pos - 1, pos - 1)
-    if before == "" or before == " " or before == "\n" or before == "\t" then
+    local after = upper:sub(pos + 4, pos + 4)
+    -- Both edges must be non-word: only the left edge was checked, so a
+    -- column list like `SELECT joined_at, join_date FROM users` counted two
+    -- JOINs and the function gave up ("result n" instead of the table name).
+    local boundary_before = before == "" or before == " " or before == "\n" or before == "\t"
+    local boundary_after = after == "" or after:match("[%w_]") == nil
+    if boundary_before and boundary_after then
       join_count = join_count + 1
     end
     idx = pos + 4

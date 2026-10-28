@@ -173,6 +173,11 @@ function M.run_ddl_and_refresh(sql, conn_name, context, opts)
     end,
     on_error = function(message)
       vim.notify(opts.fail_prefix .. " failed: " .. message, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
+      -- refresh_subtree already cleared the target's children and set loading:
+      -- without a re-fetch here a transport failure (binary gone, spawn
+      -- refused — reported once via on_error) leaves the node stuck showing
+      -- the loading marker with no children until a manual refresh.
+      M.refresh_subtree(opts.target_node, context, opts.node_type)
     end,
   })
 

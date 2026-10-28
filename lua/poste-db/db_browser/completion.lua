@@ -44,8 +44,9 @@ local types = {
 local function filter_types(keyword, dialect)
   local list = types[dialect] or types.postgres
   local lowered = keyword:lower()
-  local Kind = adapter.completion_item_kind
-  local kind = Kind.TypeParameter
+  -- completion_item_kind is a function; binding it and indexing the binding
+  -- raised "attempt to index a function value" on every completion request.
+  local kind = adapter.completion_item_kind("TypeParameter")
 
   local items = {}
   local exact = {}

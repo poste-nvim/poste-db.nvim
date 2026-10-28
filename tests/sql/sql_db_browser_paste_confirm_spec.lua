@@ -9,10 +9,10 @@ describe("db_browser paste confirm", function()
 
   --- Open the confirm dialog and return its buffer (the new buffer that has
   --- the y/n/q keymaps — the backdrop float has none).
-  local function open_confirm(on_confirm, on_cancel)
+  local function open_confirm(on_confirm, on_cancel, use_plan)
     local before = {}
     for _, b in ipairs(vim.api.nvim_list_bufs()) do before[b] = true end
-    copy_progress.show_paste_confirm(source, target, plan, nil, on_confirm, on_cancel)
+    copy_progress.show_paste_confirm(source, target, use_plan or plan, nil, on_confirm, on_cancel)
     for _, b in ipairs(vim.api.nvim_list_bufs()) do
       if not before[b] and vim.fn.maparg("q", "n", false, true) ~= "" then
         -- maparg is buffer-local sensitive only via the current buffer; check
@@ -57,5 +57,31 @@ describe("db_browser paste confirm", function()
       if km.lhs == "n" then km.callback() end
     end
     assert.equals(1, cancelled, "n must cancel exactly once (close+answer must not stack)")
+  end)
+
+  it("lists exactly 8 plan items without an 'and 0 more' line", function()
+    -- The tail guard was `i >= 8`, which still fired after the eighth item
+    -- had been fully listed: an exactly-8 plan gained "... and 0 more".
+    local eight = {}
+    for i = 1, 8 do
+      eight[i] = { kind = "table", orig = "t" .. i, final = "t" .. i }
+    end
+    local buf, q_cb = open_confirm(function() end, function() end, eight)
+    local joined = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+    q_cb()
+    assert.truthy(joined:find("t8", 1, true), "the eighth item is listed")
+    assert.falsy(joined:find("and 0 more", 1, true),
+      "an exactly-8 plan has no tail to summarize")
+  end)
+
+  it("summarizes the tail beyond 8 items as 'and N more'", function()
+    local nine = {}
+    for i = 1, 9 do
+      nine[i] = { kind = "table", orig = "t" .. i, final = "t" .. i }
+    end
+    local buf, q_cb = open_confirm(function() end, function() end, nine)
+    local joined = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+    q_cb()
+    assert.truthy(joined:find("and 1 more", 1, true))
   end)
 end)

@@ -101,4 +101,15 @@ describe("db_browser paste target resolution", function()
     db.meta.dialect = nil
     assert.equals("postgres", t.resolve_paste_target(table_, entry("table", "postgres")).dialect)
   end)
+
+  it("a table under a sqlite connection takes the TARGET connection's dialect", function()
+    -- Neither a table node nor (absent) target_db carries meta.dialect, so the
+    -- chain fell through to entry.dialect — the SOURCE's dialect — and a
+    -- postgres yank pasted onto sqlite passed copy.lua's dialect-mismatch
+    -- guard while running postgres catalog/DDL SQL against the sqlite
+    -- connection. The walk-up's connection node must win before the yank.
+    local conn, table_ = sqlite_chain()
+    local target = t.resolve_paste_target(table_, entry("table", "postgres"))
+    assert.equals("sqlite", target.dialect)
+  end)
 end)

@@ -100,7 +100,7 @@ function M.show_paste_confirm(source, target, plan, sizes, on_confirm, on_cancel
       label = label .. string.rep(" ", math.max(1, 34 - #label)) .. "(" .. format_bytes(b) .. ")"
     end
     table.insert(lines, label)
-    if i >= 8 then
+    if i >= 8 and #plan > 8 then
       table.insert(lines, "    ... and " .. (#plan - 8) .. " more")
       break
     end

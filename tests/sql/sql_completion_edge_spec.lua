@@ -114,4 +114,12 @@ describe("directive completion", function()
     assert.same({ "blog", "shop" }, labels(directives("-- @database")))
     assert.same({ "blog" }, labels(directives("-- @database b")))
   end)
+
+  it("does not fire for a word that merely starts with the directive", function()
+    -- The branch check had no boundary after the directive word, so a typo
+    -- like `-- @connectionX` offered every connection for a directive that
+    -- does not exist.
+    assert.same({}, labels(directives("-- @connectionX")))
+    assert.same({}, labels(directives("-- @databaseX")))
+  end)
 end)

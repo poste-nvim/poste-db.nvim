@@ -262,8 +262,13 @@ local function resolve_paste_target(node, entry)
     conn = (target_db and target_db.meta and target_db.meta.connection)
       or conn_node.name,
     db = target_db and (target_db.name or (target_db.meta and target_db.meta.database)) or nil,
+    -- The paste TARGET's dialect decides the catalog/DDL SQL: only the
+    -- connection/database nodes carry meta.dialect, so a table node under a
+    -- sqlite connection fell through to entry.dialect — the SOURCE's dialect —
+    -- and postgres-flavored SQL ran against sqlite.
     dialect = (node.meta and node.meta.dialect)
       or (target_db and target_db.meta and target_db.meta.dialect)
+      or (conn_node and conn_node.meta and conn_node.meta.dialect)
       or entry.dialect,
   }
 end

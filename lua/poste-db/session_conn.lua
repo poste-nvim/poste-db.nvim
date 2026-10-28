@@ -309,9 +309,13 @@ local function on_session_stdout(session, chunks)
       end
     else
       -- No newline found. Try to parse the remaining buffer as a complete JSON
-      -- object (in case Neovim stripped the newline).
+      -- object (in case Neovim stripped the newline). The decode only runs
+      -- when the tail could actually be one (`}` at its end, modulo trailing
+      -- whitespace): a multi-MB result event with session_max_rows = 0
+      -- arrives in small chunks, and decoding the whole growing tail on
+      -- every chunk was O(n²) of main-loop JSON parsing.
       local remaining = session.buffer:sub(pos)
-      if remaining ~= "" then
+      if remaining ~= "" and remaining:match("}%s*$") then
         local ok, event = pcall(vim.json.decode, remaining)
         if ok and type(event) == "table" and event.type == "result" then
           process_event(session, event)
@@ -327,7 +331,8 @@ local function on_session_stdout(session, chunks)
           session.buffer = remaining
         end
       else
-        session.buffer = ""
+        -- Incomplete data (or no tail), keep the buffer for the next chunk
+        session.buffer = remaining
       end
       break
     end

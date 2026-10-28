@@ -1,7 +1,8 @@
 --- SQL completion context dispatch helpers.
 ---
---- Extracts the large ctx_type switch from completion.lua so the orchestrator
---- can stay focused on context detection and result deduplication.
+--- Extracts the large ctx_type switch from completion/init.lua so the
+--- orchestrator can stay focused on context detection and result
+--- deduplication.
 local data = require("poste-db.completion.data")
 local ctx = require("poste-db.completion.ctx")
 local const = require("poste-db.constants")
@@ -27,7 +28,11 @@ local function typed_prefix(rust_ctx, line_before)
 end
 
 function M.handle_directives(line_before, callback)
-  if line_before:match(const.DIRECTIVE_PREFIX_PATTERN .. const.DIRECTIVE_CONNECTION) then
+  -- The directive word must end here (whitespace or end of line): unanchored,
+  -- a typo like `-- @connectionX` matched the prefix, found no name after it
+  -- and offered every connection for a directive that does not exist.
+  local conn_branch = const.DIRECTIVE_PREFIX_PATTERN .. const.DIRECTIVE_CONNECTION
+  if line_before:match(conn_branch .. "%s") or line_before:match(conn_branch .. "$") then
     -- The `%s+(%S*)$` form is the only one that can yield a prefix: matching
     -- the bare `@connection$` has no capture, so match() returns the whole
     -- match — the directive word itself became the filter and no connection
@@ -39,7 +44,8 @@ function M.handle_directives(line_before, callback)
     return true
   end
 
-  if line_before:match(const.DIRECTIVE_PREFIX_PATTERN .. const.DIRECTIVE_DATABASE) then
+  local db_branch = const.DIRECTIVE_PREFIX_PATTERN .. const.DIRECTIVE_DATABASE
+  if line_before:match(db_branch .. "%s") or line_before:match(db_branch .. "$") then
     local db_prefix = line_before:match("@" .. const.DIRECTIVE_DATABASE .. "%s+(%S*)$") or ""
     data.ensure_databases(function(names)
       if #names == 0 then
