@@ -86,11 +86,14 @@ function M.update(bufnr)
   local s, e = nil, nil
   local search_pos = 1
   while true do
+    -- text_offset is 0-based while find() is 1-based: the match starting AT
+    -- the cursor is ns2 == text_offset + 1, and the old `ns2 > text_offset`
+    -- boundary excluded exactly that case.
     local ns2, ne = full_text:find("[Ii][Nn][Ss][Ee][Rr][Tt]%s+[Ii][Nn][Tt][Oo]%s+`[^`]+`%s*%(", search_pos)
-    if not ns2 or ns2 > text_offset then
+    if not ns2 or ns2 > text_offset + 1 then
       ns2, ne = full_text:find("[Ii][Nn][Ss][Ee][Rr][Tt]%s+[Ii][Nn][Tt][Oo]%s+[%w_]+%s*%(", search_pos)
     end
-    if not ns2 or ns2 > text_offset then break end
+    if not ns2 or ns2 > text_offset + 1 then break end
     s, e = ns2, ne
     search_pos = ne + 1
   end

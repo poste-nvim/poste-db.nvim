@@ -263,6 +263,19 @@ end
 
 --- Render the currently active tab (D.T()) into the dataset window.
 --- No guards, no state saving — callers decide what to switch away from.
+local _last_winbar_text = nil
+
+--- Set the dataset winbar, skipping the option write when the text is
+--- unchanged: the render pipeline builds it twice (finalize_rendered_page,
+--- then render_dataset), and nvim_set_option_value on winbar is not free.
+local function set_dataset_winbar(text)
+  if text == _last_winbar_text then return end
+  _last_winbar_text = text
+  if D.dataset_window and vim.api.nvim_win_is_valid(D.dataset_window) then
+    pcall(vim.api.nvim_set_option_value, "winbar", text or "", { win = D.dataset_window })
+  end
+end
+
 local function render_active_tab()
   local tab = D.T()
   if not tab then return end
@@ -296,10 +309,7 @@ local function render_active_tab()
     require("poste-db.buffer.header").update()
   end
 
-  local winbar_text = require("poste-db.buffer.nav").build_status_winbar(meta)
-  if D.dataset_window and vim.api.nvim_win_is_valid(D.dataset_window) then
-    pcall(vim.api.nvim_set_option_value, "winbar", winbar_text or "", { win = D.dataset_window })
-  end
+  set_dataset_winbar(require("poste-db.buffer.nav").build_status_winbar(meta))
 
   require("poste-db.buffer.search").apply_search_highlights()
 end
@@ -343,6 +353,26 @@ end
 --- panel for entries with no result tabs). Blocks on dirty edits, matching
 --- tab-switch semantics.
 --- @param idx number 1-based history index
+--- Blank the dataset panel (nothing left to show): empty body, reset winbar,
+--- drop search/cell extmarks. Shared by switch_history_entry (entry with no
+--- result tabs) and delete_history_entry (last entry removed) — the delete
+--- path used to keep the stale winbar advertising "N rows · P:x/y" over a
+--- blank panel.
+local function blank_dataset_panel()
+  require("poste-db.buffer.header").close()
+  if D.dataset_buffer and vim.api.nvim_buf_is_valid(D.dataset_buffer) then
+    pcall(require("poste-db.buffer.search").apply_search_highlights)
+    for _, ns_name in ipairs({ "poste_db_dataset_cell", "poste_db_dataset_cursorline" }) do
+      vim.api.nvim_buf_clear_namespace(D.dataset_buffer,
+        vim.api.nvim_create_namespace(ns_name), 0, -1)
+    end
+    vim.api.nvim_set_option_value("modifiable", true, { buf = D.dataset_buffer })
+    vim.api.nvim_buf_set_lines(D.dataset_buffer, 0, -1, false, { "" })
+    vim.api.nvim_set_option_value("modifiable", false, { buf = D.dataset_buffer })
+  end
+  set_dataset_winbar(require("poste-db.buffer.nav").build_status_winbar(nil))
+end
+
 function M.switch_history_entry(idx)
   local current = D.T()
   if current and current.edit_state and current.edit_state.dirty then
@@ -359,16 +389,7 @@ function M.switch_history_entry(idx)
     render_active_tab()
   else
     -- Entry with no result tabs (empty/error request): blank the panel
-    require("poste-db.buffer.header").close()
-    if D.dataset_buffer and vim.api.nvim_buf_is_valid(D.dataset_buffer) then
-      vim.api.nvim_set_option_value("modifiable", true, { buf = D.dataset_buffer })
-      vim.api.nvim_buf_set_lines(D.dataset_buffer, 0, -1, false, { "" })
-      vim.api.nvim_set_option_value("modifiable", false, { buf = D.dataset_buffer })
-    end
-    local winbar_text = require("poste-db.buffer.nav").build_status_winbar(nil)
-    if D.dataset_window and vim.api.nvim_win_is_valid(D.dataset_window) then
-      pcall(vim.api.nvim_set_option_value, "winbar", winbar_text or "", { win = D.dataset_window })
-    end
+    blank_dataset_panel()
   end
   require("poste-db.buffer.history").refresh()
 end
@@ -401,12 +422,7 @@ function M.delete_history_entry(idx)
   D.delete_entry(idx)
   if n == 1 then
     -- history now empty: blank the panel
-    require("poste-db.buffer.header").close()
-    if D.dataset_buffer and vim.api.nvim_buf_is_valid(D.dataset_buffer) then
-      vim.api.nvim_set_option_value("modifiable", true, { buf = D.dataset_buffer })
-      vim.api.nvim_buf_set_lines(D.dataset_buffer, 0, -1, false, { "" })
-      vim.api.nvim_set_option_value("modifiable", false, { buf = D.dataset_buffer })
-    end
+    blank_dataset_panel()
   elseif was_active then
     M.switch_history_entry(math.min(idx, D.history_count()))
   end
@@ -434,10 +450,7 @@ local function finalize_rendered_page(tab, padded, meta)
     sql_highlights.apply_edit_highlights(buf, tab)
   end
 
-  local winbar_text = require("poste-db.buffer.nav").build_status_winbar(meta)
-  if D.dataset_window and vim.api.nvim_win_is_valid(D.dataset_window) then
-    pcall(vim.api.nvim_set_option_value, "winbar", winbar_text or "", { win = D.dataset_window })
-  end
+  set_dataset_winbar(require("poste-db.buffer.nav").build_status_winbar(meta))
 
   require("poste-db.buffer.search").apply_search_highlights()
 end
@@ -734,21 +747,9 @@ function M.clear_panel()
   -- Keep the active history entry's tabs; only blank the visible panel so
   -- results can stream in. (Tab tables are reset by the request starter /
   -- render_dataset via D.reset_active_entry_tabs().)
-  if D.dataset_window and vim.api.nvim_win_is_valid(D.dataset_window) then
-    local all_wins = vim.api.nvim_tabpage_list_wins(0)
-    for _, win in ipairs(all_wins) do
-      if win ~= D.dataset_window then
-        local ok, wconfig = pcall(vim.api.nvim_win_get_config, win)
-        if ok and wconfig.relative == "win" and wconfig.win == D.dataset_window then
-          local wbuf = vim.api.nvim_win_get_buf(win)
-          -- keep the request-history sidebar open across executions
-          if not (vim.api.nvim_buf_is_valid(wbuf) and vim.bo[wbuf].filetype == "poste_history") then
-            pcall(vim.api.nvim_win_close, win, true)
-          end
-        end
-      end
-    end
-  end
+  -- header.close() sweeps the anchored floats (keeping the request-history
+  -- sidebar open across executions) and closes the header float; the inline
+  -- copy of the same sweep this used to run first was dead weight.
   require("poste-db.buffer.header").close()
   if D.dataset_buffer and vim.api.nvim_buf_is_valid(D.dataset_buffer) then
     vim.api.nvim_set_option_value("modifiable", true, { buf = D.dataset_buffer })
@@ -774,17 +775,11 @@ function M.close()
     pcall(vim.api.nvim_del_autocmd, D.winclose_autocmd_id)
     D.winclose_autocmd_id = nil
   end
+  -- No keep_history on teardown: the history sidebar belongs to the dataset
+  -- window and goes with it.
+  require("poste-db.buffer.header").close_anchored_windows(false)
   require("poste-db.buffer.header").close()
   if D.dataset_window and vim.api.nvim_win_is_valid(D.dataset_window) then
-    local all_wins = vim.api.nvim_tabpage_list_wins(0)
-    for _, win in ipairs(all_wins) do
-      if win ~= D.dataset_window then
-        local ok, wconfig = pcall(vim.api.nvim_win_get_config, win)
-        if ok and wconfig.relative == "win" and wconfig.win == D.dataset_window then
-          pcall(vim.api.nvim_win_close, win, true)
-        end
-      end
-    end
     vim.api.nvim_win_close(D.dataset_window, true)
     D.dataset_window = nil
   end

@@ -104,8 +104,9 @@ function M.update_dataset_statusline(meta)
   if meta and meta.connection then
     vim.b[buf].poste_db_conn = meta.connection
   end
+  -- update_dataset_sql_statusline already forces the redraw when its text
+  -- changed; the extra one here ran on every render for nothing.
   M.update_dataset_sql_statusline()
-  vim.cmd("redrawstatus")
 end
 
 function M.build_status_left(meta, tab)
@@ -134,7 +135,17 @@ function M.build_status_left(meta, tab)
 
   if tab and tab.filter_active and tab.filter_col_name then
     local fv = tab.filter_val
-    local fvs = (fv == nil or fv == vim.NIL) and "NULL" or tostring(fv)
+    -- Same reading as search.lua's search_text_of: a decoded JSONB value is a
+    -- table, and tostring rendered "table: 0x…" into the winbar.
+    local fvs
+    if fv == nil or fv == vim.NIL then
+      fvs = "NULL"
+    elseif type(fv) == "table" then
+      local ok, encoded = pcall(vim.json.encode, fv)
+      fvs = ok and encoded or vim.inspect(fv)
+    else
+      fvs = tostring(fv)
+    end
     -- Column names and filter values come from the data, so a `%` in them must
     -- not reach the statusline as a format item.
     left = left .. string.format("  %sfilter: %s=%s%s",
@@ -237,11 +248,18 @@ end
 --- Set the dataset window's statusline to a SQL preview of the active history
 --- entry (or its given entry). Called on render and on every history switch.
 --- @param entry table|nil overrides D.active_entry()
+local _last_sql_statusline = nil
+
 function M.update_dataset_sql_statusline(entry)
   local win = D.dataset_window
   if not win or not vim.api.nvim_win_is_valid(win) then return end
   local sql = (entry or D.active_entry() or {}).sql
   local text = M.build_sql_statusline(sql, vim.api.nvim_win_get_width(win))
+  -- render_dataset finalizes the page, then rebuilds the winbar again, and
+  -- both paths land here: skip the option write and the forced redraw when
+  -- the built text is unchanged (window width is part of the text).
+  if text == _last_sql_statusline then return end
+  _last_sql_statusline = text
   pcall(vim.api.nvim_set_option_value, "statusline", text, { win = win })
   vim.cmd("redrawstatus")
 end

@@ -68,10 +68,20 @@ function M.normalize_rendered_page(tab, lines, meta)
 
     table.remove(clean, meta.header_line + 1)
     table.remove(clean, meta.header_line)
-    if meta.header_line > 1 then table.remove(clean, meta.header_line - 1) end
+    -- The shift must equal the number of lines actually removed: both
+    -- renderers emit a top border today (header_line == 2, three lines go),
+    -- but the guard implies header_line == 1 was considered reachable — with
+    -- it, only two lines go and a flat -3 walked the indexes over the bottom
+    -- border, so its removal below deleted the last data row instead.
+    local removed = 3
+    if meta.header_line > 1 then
+      table.remove(clean, meta.header_line - 1)
+    else
+      removed = 2
+    end
     meta.header_line = nil
-    meta.data_start_line = meta.data_start_line - 3
-    meta.data_end_line = meta.data_end_line - 3
+    meta.data_start_line = meta.data_start_line - removed
+    meta.data_end_line = meta.data_end_line - removed
     table.remove(clean, meta.data_end_line + 1)
   end
 

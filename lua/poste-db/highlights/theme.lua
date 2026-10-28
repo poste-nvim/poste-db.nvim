@@ -32,7 +32,8 @@ function M.setup()
   link_if_empty("PosteDbDatasetNumber", "Number")
   link_if_empty("PosteDbDatasetBool", "Boolean")
   link_if_empty("PosteDbDatasetNull", "Comment")
-  link_if_empty("PosteDbDatasetSearchMatch", "Search")
+  -- NB: no link for PosteDbDatasetSearchMatch here — the full definition
+  -- below always overwrites it (the link used to sit here as dead setup).
   link_if_empty("PosteDbDatasetSearchCurrent", "IncSearch")
   link_if_empty("PosteDbDatasetRowNum", "LineNr")
   link_if_empty("PosteDbDatasetCellSelected", "IncSearch")

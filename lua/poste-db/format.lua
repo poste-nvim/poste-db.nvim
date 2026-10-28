@@ -714,7 +714,7 @@ function M.render_page(layout, page, page_size)
   for i, col in ipairs(columns) do
     header_cells[i + 1] = col.name
   end
-  local header_line_str, header_col_starts = data_row(header_cells, col_widths, {})
+  local header_line_str = data_row(header_cells, col_widths, {})
   lines[line_num] = header_line_str
   local header_line = line_num
 
@@ -766,7 +766,6 @@ function M.render_page(layout, page, page_size)
     table_name = layout.table_name,
     col_starts = row_col_starts,
     row_sources = row_sources,
-    header_col_starts = header_col_starts,
   }
 
   return lines, meta
@@ -809,7 +808,7 @@ function M.render_view(layout, view_indices, page, page_size, opts)
   for i, col in ipairs(columns) do
     header_cells[i + 1] = col.name
   end
-  local header_line_str, header_col_starts = data_row(header_cells, col_widths, {})
+  local header_line_str = data_row(header_cells, col_widths, {})
   lines[line_num] = header_line_str
   local header_line = line_num
 
@@ -867,7 +866,6 @@ function M.render_view(layout, view_indices, page, page_size, opts)
     col_starts = row_col_starts,
     row_sources = row_sources,
     row_numbers = row_numbers,
-    header_col_starts = header_col_starts,
   }
 
   return lines, meta

@@ -94,10 +94,10 @@ function M.pretty_print(val)
   return s, "text"
 end
 
-function M.clipboard_text(val)
-  if val == nil or val == vim.NIL then
-    return ""
-  elseif type(val) == "table" then
+--- The text a non-NULL cell value renders/copies as — ONE reading for every
+--- yank path (they used to be hand-rolled twice with drifting semantics).
+local function scalar_text_of(val)
+  if type(val) == "table" then
     local ok, encoded = pcall(vim.json.encode, val)
     return ok and encoded or vim.inspect(val)
   elseif type(val) == "number" then
@@ -105,9 +105,13 @@ function M.clipboard_text(val)
       return string.format("%.0f", val)
     end
     return tostring(val)
-  else
-    return tostring(val)
   end
+  return tostring(val)
+end
+
+function M.clipboard_text(val)
+  if val == nil or val == vim.NIL then return "" end
+  return scalar_text_of(val)
 end
 
 function M.yank_preview_text(val)
@@ -135,19 +139,13 @@ function M.collect_column_values(tab, col)
   for i = 1, order and #order or #res.rows do
     local row = order and res.rows[order[i]] or res.rows[i]
     local v = row[col]
+    -- A column yank spells an empty cell NULL (a single-cell copy spells it
+    -- with the empty string); everything else goes through the shared scalar
+    -- reading.
     if v == nil or v == vim.NIL then
       values[#values + 1] = "NULL"
-    elseif type(v) == "table" then
-      local ok, encoded = pcall(vim.json.encode, v)
-      values[#values + 1] = ok and encoded or vim.inspect(v)
-    elseif type(v) == "number" then
-      if v == math.floor(v) then
-        values[#values + 1] = string.format("%.0f", v)
-      else
-        values[#values + 1] = tostring(v)
-      end
     else
-      values[#values + 1] = tostring(v)
+      values[#values + 1] = scalar_text_of(v)
     end
   end
 

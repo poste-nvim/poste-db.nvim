@@ -33,6 +33,17 @@ local function get_ctx_color(conn_name)
   if not ok then return nil end
 
   local config = connections.get_connection_config(conn_name)
+  if not config and type(conn_name) == "string" and conn_name:find("://", 1, true) then
+    -- Dataset buffers carry the URL the binary echoed, never the section
+    -- name (nav_ui's own comment): get_connection_config indexes the parsed
+    -- TOML by name, so the per-connection color silently never applied there.
+    -- name_for_url maps the URL back (tunnel-aware).
+    local ok_name, name = pcall(connections.name_for_url, conn_name)
+    if ok_name and name then
+      conn_name = name
+      config = connections.get_connection_config(conn_name)
+    end
+  end
   if not config then return nil end
 
   -- Type-gated like every other connections.toml field the display paths
@@ -130,7 +141,11 @@ local function wire_mini_statusline()
         -- other plugins (e.g. poste-redis.nvim) may own `content.active` and
         -- drop poste-db's per-group highlight, but `%#…#` markup inside the
         -- string survives any layout.
-        local conn_name = ctx:match("^(.-)[/]") or ctx
+        -- b:poste_db_conn first: dataset buffers carry a URL there and their
+        -- context string ("conn  🗄 db  ⭡ table") has no `/` to split on, so
+        -- the slash-parse handed the whole decorated string to the lookup.
+        local conn_name = vim.b.poste_db_conn
+          or ctx:match("^(.-)[/]") or ctx
         local hl_name = get_ctx_color(conn_name)
         if hl_name then
           return "%#" .. hl_name .. "# " .. escape_statusline(ctx) .. " "

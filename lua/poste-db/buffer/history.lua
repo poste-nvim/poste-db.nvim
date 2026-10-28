@@ -25,7 +25,8 @@ local update_sql_statusline  -- forward declaration (refresh ⇢ update_sql_stat
 
 local width = require("poste-db.width")
 
---- Display width (CJK/emoji-aware) — `vim.fn.strdisplaywidth`.
+--- Display width through width.lua (nvim-grid oracle; see LEARNINGS #16 —
+--- raw strdisplaywidth folds Indic Mc marks to 0).
 local function display_width(s)
   return width.display_width(s or "")
 end

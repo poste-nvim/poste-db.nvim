@@ -20,7 +20,10 @@ local function find_cell_range_by_starts(col_starts, col)
   return { ext_start = cell.ext_start, ext_end = cell.ext_end, cursor_col = cell.ext_start }
 end
 
-local function find_cell_range_scan(line, col)
+--- The one `│`-seam scanner behind both single-cell and multi-cell lookups.
+--- find_cell_range_scan and find_cell_ranges_fallback used to be two copies
+--- of it that had to stay byte-identical or the two entry points disagreed.
+local function scan_seps(line)
   if not line or line == "" then return nil end
   local sep = "│"
   local sep_len = #sep
@@ -32,8 +35,17 @@ local function find_cell_range_scan(line, col)
     seps[#seps + 1] = pos
     pos = pos + sep_len
   end
-  if col > #seps - 1 then return nil end
+  return seps
+end
+
+local function range_at(seps, col)
   return { ext_start = seps[col] + 2, ext_end = seps[col + 1] - 1, cursor_col = seps[col] + 2 }
+end
+
+local function find_cell_range_scan(line, col)
+  local seps = scan_seps(line)
+  if not seps or col > #seps - 1 then return nil end
+  return range_at(seps, col)
 end
 
 function M.find_cell_range(line, col, col_starts)
@@ -59,24 +71,11 @@ function M.find_cell_ranges(line, target_col, last_col, col_starts)
 end
 
 function M.find_cell_ranges_fallback(line, target_col, last_col)
-  if not line or line == "" then return nil end
-  local sep = "│"
-  local sep_len = #sep
-  local seps = {}
-  local pos = 1
-  while true do
-    pos = line:find(sep, pos, true)
-    if not pos then break end
-    seps[#seps + 1] = pos
-    pos = pos + sep_len
-  end
-  if target_col > #seps - 1 then return nil end
-  local function range_for(col)
-    return { ext_start = seps[col] + 2, ext_end = seps[col + 1] - 1, cursor_col = seps[col] + 2 }
-  end
-  local result = { target = range_for(target_col) }
+  local seps = scan_seps(line)
+  if not seps or target_col > #seps - 1 then return nil end
+  local result = { target = range_at(seps, target_col) }
   if last_col and last_col <= #seps - 1 then
-    result.last = range_for(last_col)
+    result.last = range_at(seps, last_col)
   end
   return result
 end
@@ -87,7 +86,10 @@ function M.apply_dataset_highlights(buf, lines, meta)
   if not meta or meta.type ~= "resultset" then
     if meta and meta.type == "error" then
       for i, line in ipairs(lines) do
-        if line:match("^%s*ERROR") then
+        -- format_error renders the header as "  ✗ SQL Error" and per-statement
+        -- failures as "  ERROR: …"; the pattern used to match only the latter,
+        -- so the common failed-query page got no red tint at all.
+        if line:match("^%s*ERROR") or line:match("^%s*✗") then
           vim.api.nvim_buf_set_extmark(buf, ns, i - 1, 0, {
             end_row = i - 1,
             end_col = #line,

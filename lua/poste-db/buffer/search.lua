@@ -338,7 +338,11 @@ end
 function M.prev_search_match()
   local tab = D.T()
   if not tab or not tab.search_matches or #tab.search_matches == 0 then return end
-  local idx = ((tab.search_idx - 2 + #tab.search_matches) % #tab.search_matches) + 1
+  -- search_idx is 1-based and 0 only while nothing is selected: from 0 the
+  -- wrap lands on the LAST match, not one short of it.
+  local cur = tab.search_idx
+  if cur < 1 then cur = #tab.search_matches + 1 end
+  local idx = ((cur - 2 + #tab.search_matches) % #tab.search_matches) + 1
   jump_to_search_match(idx)
 end
 
@@ -465,7 +469,8 @@ update_winbar = function()
     pcall(vim.api.nvim_set_option_value, "winbar", text or "", { win = D.dataset_window })
   end
 end
-M.update_winbar = update_winbar
+-- The local `update_winbar` above is the only consumer; no export — an
+-- identical export on this file used to be dead weight next to page.lua's.
 
 M._test = {
   match_span = match_span,

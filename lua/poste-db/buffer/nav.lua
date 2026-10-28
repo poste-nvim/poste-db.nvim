@@ -106,8 +106,10 @@ end
 function M.goto_last_row()
   local tab = D.T()
   if not tab or not tab.meta then return end
-  local last = tab.meta.row_count or 1
-  focus_cell(tab, last, sql_state.cell.col, false)
+  -- Same guard move_cell applies: an empty resultset has no rows to focus,
+  -- and `row_count or 1` let a 0 fall through to a border-row line index.
+  if (tab.meta.row_count or 0) == 0 then return end
+  focus_cell(tab, tab.meta.row_count, sql_state.cell.col, false)
 end
 
 function M.position_cursor(row, col)
@@ -284,9 +286,6 @@ end
 
 M.toggle_raw_mode = raw_mode.toggle
 
-function M.goto_header()
-  M.goto_first_row()
-end
 M._test = {
   build_header_index = header.build_header_index,
   slice_header_to_win = header.slice_header_to_win,

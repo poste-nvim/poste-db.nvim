@@ -23,12 +23,6 @@ function M.get_resultset_data_tab()
   return tab
 end
 
-function M.get_dataset_window()
-  if not D.dataset_window or not vim.api.nvim_win_is_valid(D.dataset_window) then
-    return nil
-  end
-  return D.dataset_window
-end
 
 function M.is_dirty(tab)
   return tab and tab.edit_state and tab.edit_state.dirty or false

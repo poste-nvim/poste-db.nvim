@@ -3,12 +3,7 @@ local D = require("poste-db.dataset")
 local C = require("poste-db.constants")
 local sql_state = require("poste-db.state")
 
-local nav_ui = require("poste-db.buffer.nav_ui")
 local M = {}
-
-function M.goto_header()
-  require("poste-db.buffer.nav").goto_first_row()
-end
 
 --- Refresh buffer content from the tab's layout.
 function M.refresh_page()
@@ -128,19 +123,15 @@ end
 function M.toggle_pagination()
   local tab = D.T()
   if not tab then return end
+  -- Same dirty-edit block every other pagination entry point applies:
+  -- re-rendering from the unedited layout can move the row being edited
+  -- off-page (the edit highlights simply skip it, silently).
+  if block_if_dirty() then return end
   tab.pagination_enabled = not tab.pagination_enabled
   M.refresh_page()
   local status = tab.pagination_enabled and ("Page " .. tab.page .. "/" .. tab.num_pages) or "All"
   vim.notify(string.format("Pagination: %s", status),
     vim.log.levels.INFO, { title = C.TITLE })
-end
-
-function M.update_winbar()
-  if not D.dataset_window or not vim.api.nvim_win_is_valid(D.dataset_window) then return end
-  local meta = D.T() and D.T().meta
-  if not meta then return end
-  local text = nav_ui.build_status_winbar(meta, D.T(), #D.tabs, D.active_tab_idx)
-  pcall(vim.api.nvim_set_option_value, "winbar", text or "", { win = D.dataset_window })
 end
 
 return M

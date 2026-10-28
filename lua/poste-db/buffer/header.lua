@@ -5,6 +5,7 @@ local D = require("poste-db.dataset")
 local sql_state = require("poste-db.state")
 
 local util = require("poste-db.util")
+local width = require("poste-db.width")
 local float_window = require("poste-db.float_window")
 
 local M = {}
@@ -31,9 +32,11 @@ function M.build_header_index(line)
       local b = line:byte(byte_idx)
       char_bytes = util.utf8_char_bytes(b)
       if byte_idx + char_bytes - 1 > #line then char_bytes = #line - byte_idx + 1 end
-      char_width = char_bytes == 1 and 1
-        or vim.fn.strdisplaywidth(line:sub(byte_idx, byte_idx + char_bytes - 1))
-      if char_width == 0 then char_width = 1 end
+      -- The SAME width oracle the data cells use (width.lua): raw
+      -- strdisplaywidth folded Indic Mc marks to 0 in every width mode, and
+      -- the manual 0→1 bump then misaligned the float against the grid the
+      -- data rows were padded to.
+      char_width = width.display_width(line:sub(byte_idx, byte_idx + char_bytes - 1))
       is_sep = false
     end
     index[#index + 1] = { bs=byte_idx, be=byte_idx+char_bytes-1,
@@ -79,25 +82,34 @@ function M.slice_header_to_win(leftcol, win_width, padded_header, index)
   return table.concat(parts)
 end
 
---- Close the header float and any other window anchored to the dataset
---- window, then reset the slice cache. The request-history sidebar
---- (filetype `poste_history`) is intentionally kept open.
-function M.close()
+--- Close every window anchored to the dataset window. `keep_history` keeps
+--- the request-history sidebar (filetype `poste_history`) open — the
+--- clear-panel and pre-render sweeps want that; a full teardown does not.
+--- The sweep used to be hand-copied three times.
+function M.close_anchored_windows(keep_history)
   local win = D.dataset_window
   if win and vim.api.nvim_win_is_valid(win) then
-    local all_wins = vim.api.nvim_tabpage_list_wins(0)
-    for _, w in ipairs(all_wins) do
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       if w ~= win then
         local ok, config = pcall(vim.api.nvim_win_get_config, w)
         if ok and config.relative == "win" and config.win == win then
           local wbuf = vim.api.nvim_win_get_buf(w)
-          if not (vim.api.nvim_buf_is_valid(wbuf) and vim.bo[wbuf].filetype == "poste_history") then
+          local is_history = vim.api.nvim_buf_is_valid(wbuf)
+            and vim.bo[wbuf].filetype == "poste_history"
+          if not (keep_history and is_history) then
             pcall(vim.api.nvim_win_close, w, true)
           end
         end
       end
     end
   end
+end
+
+--- Close the header float and any other window anchored to the dataset
+--- window, then reset the slice cache. The request-history sidebar
+--- (filetype `poste_history`) is intentionally kept open.
+function M.close()
+  M.close_anchored_windows(true)
   if float_win and vim.api.nvim_win_is_valid(float_win) then
     pcall(vim.api.nvim_win_close, float_win, true)
   end
