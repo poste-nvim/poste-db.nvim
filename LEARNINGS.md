@@ -372,7 +372,19 @@ require 前，先 grep 那个模块的 spec 找 `stub_module`/`package.loaded`�
 再逐个别名 grep `别名.x`。猜别名名等于只搜了符号空间的一个子集；
 harness 里"Grep both shapes"的 local alias 一指，落地动作就是这一步。
 
+## 24. 提交信息里的反引号会被 shell 当命令替换吞掉
+
+**发生了什么**：2026-10-28 检视会话用 `git commit -m "..."` 写提交信息，
+信息里的 `` `visual_sel_end or #buf_lines` `` 这类代码引用被 zsh 当命令
+替换执行——报 "command not found"，且**提交照样成功**，只是信息里那几
+个反引号包裹的片段被静默删成空串（`git log` 逐字比对才发现）。三个
+提交的信息都残了。
+
+**约束**：提交信息含反引号（或 `$`、`!`）时，不要内联 `-m`。把信息写
+进临时文件用 `git commit -F <file>`；或者提交后必须
+`git log -1 --format=%B` 逐字核对，而不是只看命令退出码。
+
 ---
 
-*Latest: 2026-10-24 审查会话（#23 从 require 行推别名）。
+*Latest: 2026-10-28 检视会话（#24 提交信息反引号）。
 新增条目时保持同一格式：发生了什么（带 file:line）→ 约束（可执行的检查动作）。*

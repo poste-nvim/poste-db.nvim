@@ -36,6 +36,7 @@ see `.opencode/skills/sql-architecture-harness/SKILL.md` for the house rules
 | `statement.lua` | Statement boundary detection (Rust binary → tree-sitter → fallback) |
 | `ts_stmt.lua` | Tree-sitter statement/query extraction |
 | `context.lua` / `lex.lua` | Cursor context resolution; comment/string lexing |
+| `dialect.lua` | The ONE dialect resolution chain (### header → connection config → `g:poste_db_dialect` → filetype); diagnostics/syntax/source_format all delegate |
 | `explain.lua` | `EXPLAIN` the statement under the cursor (dialect plan form → dataset panel) |
 | `source_format.lua` | SQL source formatter for poste_sql buffers (multi-backend: external formatters or built-in) |
 | `semantic_diagnostics.lua` | Tree-sitter reference extraction + unknown-object validation (fetches schema via introspect jobs) |
