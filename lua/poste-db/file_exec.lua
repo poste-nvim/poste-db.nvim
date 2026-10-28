@@ -14,7 +14,6 @@ local S = {
   cancelled = false,
   n_succeeded = 0,
   n_failed = 0,
-  total_rows = 0,
   total_affected = 0,
   total = 0,
   results = {},
@@ -231,11 +230,16 @@ local function build_cmd(filepath, opts)
     "--max-rows", tostring(opts.max_rows or 1000),
     "--json",
   }
-  if opts.conn_url and opts.conn_url ~= "" then
-    table.insert(cmd, "--connection"); table.insert(cmd, opts.conn_url)
+  -- Only a name that names something goes on the command line. Mirrors
+  -- exec_run.build_cmd: `vim.NIL` (a decoded JSON null) is truthy and would
+  -- be handed to jobstart as a userdata — see util.named.
+  local conn_url = util.named(opts.conn_url)
+  local database = util.named(opts.database)
+  if conn_url then
+    table.insert(cmd, "--connection"); table.insert(cmd, conn_url)
   end
-  if opts.database and opts.database ~= "" then
-    table.insert(cmd, "--database"); table.insert(cmd, opts.database)
+  if database then
+    table.insert(cmd, "--database"); table.insert(cmd, database)
   end
   return cmd
 end
@@ -279,8 +283,9 @@ local function handle_line(line)
 
   local event_type = event.type
   if event_type == "progress" then
-    S.current_sql = event.sql
-    S.total = event.total
+    -- Keep the previous total when an event omits it: a raw nil would raise
+    -- inside string.format in the per-statement error notify below.
+    S.total = tonumber(event.total) or S.total
     render_progress()
 
   elseif event_type == "result" then
@@ -294,7 +299,6 @@ local function handle_line(line)
 
     if status == "ok" then
       S.n_succeeded = S.n_succeeded + 1
-      S.total_rows = S.total_rows + row_count
       table.insert(S.results, {
         status = "ok",
         seq = seq,
@@ -324,14 +328,12 @@ local function handle_line(line)
     render_progress()
 
   elseif event_type == "summary" then
-    S.total = event.total
+    S.total = tonumber(event.total) or S.total
     S.n_succeeded = event.succeeded or S.n_succeeded
     S.n_failed = event.failed or S.n_failed
-    S.total_rows = event.total_rows or S.total_rows
     S.total_affected = event.total_affected or S.total_affected
     S.rolled_back = event.rolled_back or false
     S.is_running = false
-    S.current_sql = nil
     S.summary_seen = true
     journal_file_summary()
     render_progress()
@@ -345,8 +347,11 @@ function M.run(opts)
     return
   end
   local filepath = opts.filepath
-  local conn = opts.conn
-  local db = opts.database
+  -- vim.NIL (a decoded JSON null) is truthy: normalize both here so neither
+  -- the progress dialog's `.. S.db`, the sql_log record nor the argv builder
+  -- ever sees a userdata.
+  local conn = util.named(opts.conn)
+  local db = util.named(opts.database)
   local mode = opts.mode or "greedy"
   local timeout = opts.timeout or 30
   local max_rows = opts.max_rows or 1000
@@ -362,7 +367,6 @@ function M.run(opts)
   S.summary_seen = false
   S.n_succeeded = 0
   S.n_failed = 0
-  S.total_rows = 0
   S.total_affected = 0
   S.total = 0
   S.results = {}
@@ -372,7 +376,6 @@ function M.run(opts)
   S.db = db
   S.mode = mode
   S.rolled_back = false
-  S.current_sql = nil
   S.stmt_counts = { create = 0, alter = 0, drop = 0, insert = 0, update = 0, delete = 0, select = 0, other = 0 }
 
   create_progress_win()
@@ -380,7 +383,7 @@ function M.run(opts)
 
   local binary = state.find_poste_binary()
   if not binary then
-    vim.notify("Poste binary not found", vim.log.levels.ERROR)
+    vim.notify("Poste binary not found", vim.log.levels.ERROR, { title = constants.PLUGIN_TITLE })
     S.is_running = false
     render_progress()
     require("poste-db.sql_log").record({

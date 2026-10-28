@@ -117,6 +117,20 @@ describe("file_exec", function()
       }, captured.cmd)
     end)
 
+    it("drops a vim.NIL database from the argv instead of jobstart-ing a userdata", function()
+      -- A browser node whose meta.database is a JSON null decodes to vim.NIL:
+      -- truthy and ~= "", so the raw check used to put it on the command line
+      -- and jobstart soft-failed on the userdata. Same armor as exec_run.
+      local fe = fresh()
+      fe.run({ filepath = "/tmp/x.sql", conn = "playground", database = vim.NIL })
+
+      assert.is_table(captured.cmd)
+      for i, arg in ipairs(captured.cmd) do
+        assert.not_equals("--database", arg,
+          "vim.NIL database must not produce a --database flag (index " .. i .. ")")
+      end
+    end)
+
     it("falls back to the file's @connection directive", function()
       vim.fn.readfile = function()
         return { "SELECT 1;", "-- @connection directive_conn" }
