@@ -51,9 +51,46 @@ describe("toml.parse", function()
     assert.equals("\\new", wal.mode)
   end)
 
-  it("keeps unknown escapes verbatim", function()
-    local res = toml.parse('v = "a\\qb"')
-    assert.equals("a\\qb", res.v)
+  it("rejects unknown escape sequences instead of storing them verbatim", function()
+    -- TOML makes an unknown escape an error. The old reading stored `a\qb`
+    -- verbatim, and `\uXXXX` — the TOML spelling for non-ASCII — was stored
+    -- raw too, so a password written that way silently differed from the
+    -- real one. The behavior change is deliberate: fail closed.
+    local res, err = toml.parse('v = "a\\qb"')
+    assert.is_nil(res)
+    assert.truthy(err)
+  end)
+
+  it("decodes \\uXXXX and \\UXXXXXXXX escapes", function()
+    local res = toml.parse('v = "\\u0041\\U0001F600"')
+    assert.equals("A" .. vim.fn.nr2char(0x1F600), res.v)
+  end)
+
+  it("rejects a malformed \\u escape", function()
+    local res, err = toml.parse('v = "\\u00"')
+    assert.is_nil(res)
+    assert.truthy(err)
+  end)
+
+  it("rejects garbage after a string's real closing quote", function()
+    -- `"a" "b"` passed the last-byte check and stored `a" "b`; `"a\"` ended
+    -- on its escaped quote and stored `a\`.
+    local res1, err1 = toml.parse('v = "a" "b"')
+    assert.is_nil(res1)
+    assert.truthy(err1)
+    local res2, err2 = toml.parse('v = "a\\"')
+    assert.is_nil(res2)
+    assert.truthy(err2)
+    local res3, err3 = toml.parse("v = 'a' 'b'")
+    assert.is_nil(res3)
+    assert.truthy(err3)
+  end)
+
+  it("rejects a bare value carrying whitespace", function()
+    -- `k = 1 2` used to store the string "1 2".
+    local res, err = toml.parse("k = 1 2")
+    assert.is_nil(res)
+    assert.truthy(err)
   end)
 
   it("treats a backslash in a literal string as a plain character", function()

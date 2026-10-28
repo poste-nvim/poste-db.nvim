@@ -127,7 +127,9 @@ describe("exec_run journaling", function()
     assert.equals(1, #entries)
     assert.equals("error", entries[1].status)
     assert.truthy(entries[1].error)
-    assert.truthy(entries[1].error:find("without an error message", 1, true))
+    -- Same sentence as verdict.UNEXPLAINED_FAILURE (panel, AI action, journal
+    -- — the journal used to carry a third, drifting wording of its own).
+    assert.truthy(entries[1].error:find("without a message", 1, true))
     flush()
   end)
 

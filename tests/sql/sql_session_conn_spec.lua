@@ -239,6 +239,18 @@ describe("session_conn build_response", function()
     assert.is_nil(resp.results[1].failed)
     assert.equals("affected", vim.json.decode(resp.body).type)
   end)
+
+  it("a read whose driver reports affected_rows still arrives as a resultset", function()
+    -- The old single-path rule (`aff == nil`) ignored columns entirely, so a
+    -- SELECT with a numeric affected_rows typed "affected" HERE while the
+    -- sequence aggregator and exec_run typed the same event "resultset".
+    -- The shared verdict.carries_resultset rule lets columns decide first.
+    local resp = build({ seq = 1, status = "ok", affected_rows = 0, row_count = 2,
+      columns = { { name = "x" } }, rows = { { 1 }, { 2 } }, execution_time_ms = 1 }, session)
+    assert.equals(0, resp.results[1].affected_rows)
+    assert.equals("resultset", vim.json.decode(resp.body).type)
+    assert.equals(2, vim.json.decode(resp.body).total_rows)
+  end)
 end)
 
 describe("session_conn on_sql_error gets the normalized error text", function()

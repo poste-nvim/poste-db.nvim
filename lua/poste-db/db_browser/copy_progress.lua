@@ -228,8 +228,13 @@ function M.show_paste_progress(source, target, jobs, on_close)
     dlg:close()
   end
 
-  for _, j in ipairs(jobs) do
-    results[j.label] = { status = "pending", row_count = "", elapsed = "" }
+  -- Keyed by the job's position, not its label: a postgres trigger legally
+  -- shares its table's name, and two same-label jobs used to read/write one
+  -- results slot (rows showed one job's status under both names). The label
+  -- stays the DISPLAY text; `errors` below stays label-keyed on purpose —
+  -- same-name items merging into one summary line is acceptable.
+  for i in ipairs(jobs) do
+    results[i] = { status = "pending", row_count = "", elapsed = "" }
   end
 
   local function set_spinner_frame(frame)
@@ -254,8 +259,8 @@ function M.show_paste_progress(source, target, jobs, on_close)
     table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = #bar_line, hl_group = "PosteDbCopyProgress" })
     table.insert(lines, "")
 
-    for _, j in ipairs(jobs) do
-      local r = results[j.label]
+    for i, j in ipairs(jobs) do
+      local r = results[i]
       local shown = j.label .. (j.tag or "")
       if r.status == "done" then
         local line = "  ✓ " .. shown
@@ -306,8 +311,8 @@ function M.show_paste_progress(source, target, jobs, on_close)
 
   local function any_copying()
     local active = false
-    for _, j in ipairs(jobs) do
-      if results[j.label] and results[j.label].status == "copying" then
+    for i in ipairs(jobs) do
+      if results[i] and results[i].status == "copying" then
         active = true
         break
       end
@@ -315,8 +320,10 @@ function M.show_paste_progress(source, target, jobs, on_close)
     return active
   end
 
-  local function advance(label, status, row_count, elapsed, err_msg)
-    results[label] = { status = status, row_count = row_count or "", elapsed = elapsed or "" }
+  -- `idx` is the job's position in `jobs`, not its label (see results above).
+  local function advance(idx, status, row_count, elapsed, err_msg)
+    results[idx] = { status = status, row_count = row_count or "", elapsed = elapsed or "" }
+    local label = jobs[idx] and jobs[idx].label
     if status == "done" then
       completed = completed + 1
     elseif status == "error" then
@@ -347,7 +354,7 @@ function M.show_paste_progress(source, target, jobs, on_close)
       end
       local j = jobs[idx]
 
-      results[j.label] = { status = "copying", row_count = "", elapsed = "" }
+      results[idx] = { status = "copying", row_count = "", elapsed = "" }
       if not spinner_timer then
         -- Animate the copying spinner while any item is in flight.
         spinner_timer = uv.new_timer()
@@ -366,9 +373,9 @@ function M.show_paste_progress(source, target, jobs, on_close)
 
       j.work(function(ok, row_count, elapsed, err)
         if ok then
-          advance(j.label, "done", row_count, elapsed)
+          advance(idx, "done", row_count, elapsed)
         else
-          advance(j.label, "error", nil, nil, err)
+          advance(idx, "error", nil, nil, err)
         end
         process_next()
       end)

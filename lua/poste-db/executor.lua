@@ -42,18 +42,7 @@ function M.execute(opts)
     database = database,
   })
   if base then
-    base.sql = sql
-    local user_on_response, user_on_error = on_response, on_error
-    on_response = function(parsed)
-      -- Binary-reported execution time when available, wall clock otherwise.
-      local elapsed = tonumber(parsed and parsed.latency_ms) or (vim.uv.now() - t0)
-      sql_log.result(base, parsed, elapsed)
-      if user_on_response then user_on_response(parsed) end
-    end
-    on_error = function(message, parsed)
-      sql_log.fail(base, message, vim.uv.now() - t0)
-      if user_on_error then user_on_error(message, parsed) end
-    end
+    on_response, on_error = sql_log.wrap_callbacks(base, t0, sql, on_response, on_error)
   end
 
   local fallback_used = false

@@ -43,4 +43,20 @@ function M.classify(result)
   return true, raw or M.UNEXPLAINED_FAILURE
 end
 
+--- Does one clean result carry a resultset? One rule for every transport
+--- builder (exec_run, session_conn single and sequence): the binary contract
+--- (schema.md) says a SELECT always ships columns, so columns or rows decide
+--- BEFORE the affected count — a driver reporting affected_rows for a read
+--- must not demote the envelope to "affected"/Query OK. Callers layer their
+--- own tiebreaks on top (exec_run also treats query-shaped SQL as a
+--- resultset for results that carry none of the three).
+--- @param result table|nil one entry of a response's `results`
+--- @return boolean
+function M.carries_resultset(result)
+  if type(result) ~= "table" then return false end
+  return result.affected_rows == nil
+    or (tonumber(result.row_count) or 0) > 0
+    or #(result.columns or {}) > 0
+end
+
 return M

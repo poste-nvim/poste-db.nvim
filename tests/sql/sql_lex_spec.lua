@@ -126,6 +126,15 @@ describe("lex.block_comment_depth_after", function()
     assert.equals(0, lex.block_comment_depth_after("rest */ SELECT", 1))
   end)
 
+  it("does NOT nest, matching is_comment_or_string and blank_regions", function()
+    -- The three readers must agree on the same text: depth_after used to
+    -- nest while the other two closed at the first `*/`, so `/* /* */ */`
+    -- was "still in comment" here and plain code there. postgres alone
+    -- nests block comments; single-level is the conservative shared rule.
+    assert.equals(0, lex.block_comment_depth_after("/* /* nested */ still */ tail", 0))
+    assert.equals(1, lex.block_comment_depth_after("/* /* two opens", 0))
+  end)
+
   it("carries depth across lines so a scanner can skip a whole region", function()
     local depth = 0
     depth = lex.block_comment_depth_after("/* start", depth)

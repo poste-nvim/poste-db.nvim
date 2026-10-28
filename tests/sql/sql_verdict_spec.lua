@@ -74,3 +74,26 @@ describe("verdict.classify", function()
     assert.equals(verdict.UNEXPLAINED_FAILURE, text)
   end)
 end)
+
+describe("verdict.carries_resultset", function()
+  local carries = verdict.carries_resultset
+
+  it("says a result with no affected count is a resultset", function()
+    assert.is_true(carries({}))
+    assert.is_true(carries({ row_count = 0, columns = {} }))
+  end)
+
+  it("columns or rows decide before the affected count", function()
+    -- schema.md: a SELECT always ships columns; a driver reporting
+    -- affected_rows for a read must not demote the envelope to "affected".
+    assert.is_true(carries({ affected_rows = 0, columns = { { name = "x" } } }))
+    assert.is_true(carries({ affected_rows = 3, row_count = 2 }))
+    assert.is_false(carries({ affected_rows = 3 }))
+    assert.is_false(carries({ affected_rows = 3, row_count = 0, columns = {} }))
+  end)
+
+  it("is false for a non-table", function()
+    assert.is_false(carries(nil))
+    assert.is_false(carries("x"))
+  end)
+end)

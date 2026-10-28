@@ -11,7 +11,11 @@ local dml_guard = require("poste-db.dml_guard")
 
 local M = {}
 
-local _timer = nil
+-- One pending timer PER buffer: a single shared `_timer` let buffer B's
+-- keystroke cancel buffer A's scheduled diagnostic run (its debounce fired
+-- only on the next A event, self-healing but lossy). Dead buffers' timers
+-- drop out on the validity check.
+local _timers = {}
 local DEBOUNCE_MS = 300
 local ns = vim.api.nvim_create_namespace("poste_db_diagnostics")
 local ns_hl = vim.api.nvim_create_namespace("poste_db_diagnostics_highlight")
@@ -78,12 +82,13 @@ end
 --- Debounced update.
 --- @param buf number
 function M.debounced_update(buf)
-  if _timer then
-    _timer:stop()
-    _timer:close()
+  local pending = _timers[buf]
+  if pending then
+    pending:stop()
+    pending:close()
   end
-  _timer = vim.defer_fn(function()
-    _timer = nil
+  _timers[buf] = vim.defer_fn(function()
+    _timers[buf] = nil
     if not vim.api.nvim_buf_is_valid(buf) then return end
     M.update_diagnostics(buf)
   end, DEBOUNCE_MS)

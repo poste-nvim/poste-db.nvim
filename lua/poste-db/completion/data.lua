@@ -309,6 +309,13 @@ end
 --- flush(value) exactly once to run the queued callbacks. A fetch still
 --- pending at exit time (empty stdout or non-zero exit) is flushed with
 --- `exit_default` instead of hanging forever.
+---
+--- A WATCHDOG bounds the whole fetch: a `poste introspect` that hangs
+--- (blocked TCP, dead machine) never reaches on_exit, and `fetching[key]`
+--- staying true meant every later callback queued forever — completion for
+--- that connection wedged until restart. 15s matches db_browser/async.
+local INTROSPECT_TIMEOUT_MS = 15000
+
 local function start_introspect_job(key, args, on_items, exit_default)
   local epoch = cache_epoch
   -- jobstart raises E475 when the binary vanished between find_binary and
@@ -332,7 +339,14 @@ local function start_introspect_job(key, args, on_items, exit_default)
   })
   if not ok_job or job <= 0 then
     flush_scheduled(key, exit_default)
+    return
   end
+  vim.defer_fn(function()
+    if fetching[key] then
+      pcall(vim.fn.jobstop, job)
+      flush_scheduled(key, exit_default)
+    end
+  end, INTROSPECT_TIMEOUT_MS)
 end
 
 ---------------------------------------------------------------------------

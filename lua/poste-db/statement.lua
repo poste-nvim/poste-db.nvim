@@ -303,6 +303,12 @@ function M.extract_stmt_at_cursor(buf_lines, cursor_line, buf)
           stmt_end = i
           break
         end
+        -- Same ### bound as the fallback scan below: the re-end must not
+        -- cross into the next block.
+        if i > stmt_start and const.is_section_marker(buf_lines[i] or "") then
+          stmt_end = i - 1
+          break
+        end
       end
     end
   else
@@ -347,6 +353,14 @@ function M.extract_stmt_at_cursor(buf_lines, cursor_line, buf)
     for i = cursor_line, #buf_lines do
       if (blanked_lines[i] or ""):match(";") then
         stmt_end = i
+        break
+      end
+      -- A following ### block bounds the statement: the backward scan stops
+      -- at markers but this forward scan ran to buffer end, so block A's
+      -- unterminated statement swallowed block B — the synthetic block got
+      -- TWO markers and the Rust exec ran B's statement too.
+      if i > cursor_line and const.is_section_marker(buf_lines[i] or "") then
+        stmt_end = i - 1
         break
       end
     end

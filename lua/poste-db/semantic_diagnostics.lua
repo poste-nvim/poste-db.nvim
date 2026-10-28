@@ -18,6 +18,10 @@ local M = {}
 local ns = vim.api.nvim_create_namespace("poste_db_semantic_diagnostics")
 local ns_hl = vim.api.nvim_create_namespace("poste_db_semantic_highlight")
 local _pending_checks = {}
+-- Bumped by M.invalidate: an introspect fetch in flight when a DDL ran must
+-- not land its stale table/column list back into _schema_cache after the
+-- invalidation (the fetch was started against the pre-DDL schema).
+local _schema_epoch = 0
 local _updating = false
 local _schema_cache = {}
 
@@ -194,28 +198,31 @@ local function extract_references_from_node(stmt_node, buf)
     table.insert(columns, { name = name, table = tbl, lnum = lnum, col = col, end_lnum = end_lnum, end_col = end_col })
   end
 
-  local function walk(node, context_stack)
+  local function walk(node, context_stack, seen)
     context_stack = context_stack or {}
+    seen = seen or {}
     if node == nil then return end
+    if seen[node:id()] then return end
+    seen[node:id()] = true
     local nt = node:type()
 
     if nt == "from" then
       table.insert(context_stack, "from")
-      for c in node:iter_children() do walk(c, context_stack) end
+      for c in node:iter_children() do walk(c, context_stack, seen) end
       table.remove(context_stack)
       return
     end
 
     if nt == "join" then
       table.insert(context_stack, "join")
-      for c in node:iter_children() do walk(c, context_stack) end
+      for c in node:iter_children() do walk(c, context_stack, seen) end
       table.remove(context_stack)
       return
     end
 
     if nt == "insert" then
       table.insert(context_stack, "insert")
-      for c in node:iter_children() do walk(c, context_stack) end
+      for c in node:iter_children() do walk(c, context_stack, seen) end
       table.remove(context_stack)
       return
     end
@@ -227,13 +234,16 @@ local function extract_references_from_node(stmt_node, buf)
     -- reference beside it is still read as a table, not as a column.
     -- Restricted to an ERROR parent: a complete statement always has its
     -- container node, and re-walking its children from here would duplicate
-    -- every reference it holds.
+    -- every reference it holds. Two DML keywords inside ONE ERROR parent
+    -- (the ; between two statements deleted mid-edit) would re-enter each
+    -- other from here forever — the per-walk `seen` set stops that; a
+    -- tree-sitter tree never legitimately revisits a node.
     if nt == "keyword_update" or nt == "keyword_insert" or nt == "keyword_delete" then
       local parent = node:parent()
       if parent and parent:type() == "ERROR" then
         table.insert(context_stack, nt:sub(#"keyword_" + 1))
         for c in parent:iter_children() do
-          if c:id() ~= node:id() then walk(c, context_stack) end
+          if c:id() ~= node:id() then walk(c, context_stack, seen) end
         end
         table.remove(context_stack)
         return
@@ -242,14 +252,14 @@ local function extract_references_from_node(stmt_node, buf)
 
     if nt == "update" then
       table.insert(context_stack, "update")
-      for c in node:iter_children() do walk(c, context_stack) end
+      for c in node:iter_children() do walk(c, context_stack, seen) end
       table.remove(context_stack)
       return
     end
 
     if nt == "delete" then
       table.insert(context_stack, "delete")
-      for c in node:iter_children() do walk(c, context_stack) end
+      for c in node:iter_children() do walk(c, context_stack, seen) end
       table.remove(context_stack)
       return
     end
@@ -325,7 +335,7 @@ local function extract_references_from_node(stmt_node, buf)
           break
         end
       end
-      for c in node:iter_children() do walk(c, context_stack) end
+      for c in node:iter_children() do walk(c, context_stack, seen) end
       return
     end
 
@@ -342,7 +352,7 @@ local function extract_references_from_node(stmt_node, buf)
             end
           end
         end
-        walk(c, context_stack)
+        walk(c, context_stack, seen)
       end
       return
     end
@@ -385,11 +395,11 @@ local function extract_references_from_node(stmt_node, buf)
     end
 
     for c in node:iter_children() do
-      walk(c, context_stack)
+      walk(c, context_stack, seen)
     end
   end
 
-  walk(stmt_node)
+  walk(stmt_node, nil, nil)
   return { tables = tables, columns = columns, alias_map = alias_map, from_tables = from_tables, select_aliases = select_aliases, ctes = cte_names }
 end
 
@@ -485,6 +495,17 @@ local function run_introspect(args, store, callback)
     settle(false)
   elseif type(job) ~= "number" or job <= 0 then
     settle(false)
+  else
+    -- Watchdog: a hung `poste introspect` (blocked TCP) never reaches
+    -- on_exit, and `settle` never firing left _pending_checks[buf] set —
+    -- that buffer's semantic checks muted until restart. 15s matches the
+    -- completion fetch scaffold.
+    vim.defer_fn(function()
+      if not settled then
+        pcall(vim.fn.jobstop, job)
+        settle(false)
+      end
+    end, 15000)
   end
 end
 
@@ -502,7 +523,11 @@ local function fetch_tables(buf, conn, db, callback)
   local args = { binary, "introspect", "--connection-url", url,
     "--type", "tables", "--database", db }
 
+  -- The epoch is read at fetch START; an invalidate() (DDL ran) between the
+  -- start and this callback discards the stale list instead of re-caching it.
+  local epoch = _schema_epoch
   run_introspect(args, function(items)
+    if epoch ~= _schema_epoch then return end
     _schema_cache[cache_key] = _schema_cache[cache_key] or { tables = {}, columns = {} }
     _schema_cache[cache_key].tables = vim.tbl_map(function(i) return i.name end, items)
   end, callback)
@@ -521,7 +546,10 @@ local function fetch_columns(buf, conn, db, tbl, callback)
   local args = { binary, "introspect", "--connection-url", url,
     "--type", "columns", "--table", tbl, "--database", db }
 
+  -- Same epoch read as fetch_tables: discard a list fetched pre-invalidate.
+  local epoch = _schema_epoch
   run_introspect(args, function(items)
+    if epoch ~= _schema_epoch then return end
     _schema_cache[cache_key] = _schema_cache[cache_key] or { tables = {}, columns = {} }
     _schema_cache[cache_key].columns[tbl:lower()] = vim.tbl_map(function(i) return i.name end, items)
   end, callback)
@@ -542,6 +570,7 @@ end
 --- @param conn string|nil connection name
 --- @param db string|nil database name
 function M.invalidate(conn, db)
+  _schema_epoch = _schema_epoch + 1
   if not conn or conn == "" then
     _schema_cache = {}
     return

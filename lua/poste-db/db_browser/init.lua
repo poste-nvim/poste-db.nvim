@@ -62,17 +62,50 @@ local function update_statusline()
   statusline.update(browser_buf, path, comment, multi_select)
 end
 
+--- Drop multi-select entries whose node tables no longer hang off the
+--- current tree. Every child refetch REPLACES node.children with fresh
+--- tables, so after a refresh the old selected nodes were invisible (the
+--- marker check is by identity) while the winbar count and the `p`/`D`
+--- keymaps still iterated the stale set. Selections are pruned against
+--- reachability from root_nodes; an emptied selection leaves the mode itself
+--- alone so the user can exit it deliberately.
+local function prune_multi_select()
+  if not multi_select.active then return end
+  local live = {}
+  local function mark(node)
+    if node == nil then return end
+    live[node] = true
+    for _, c in ipairs(node.children or {}) do mark(c) end
+  end
+  for _, root in ipairs(root_nodes or {}) do mark(root) end
+  for node in pairs(multi_select.selected) do
+    if not live[node] then multi_select.selected[node] = nil end
+  end
+end
+
+--- The render context every tree paint goes through. `update_statusline` rides
+--- along so util.render_tree (used by refresh_subtree from the paste/drop
+--- paths) repaints the statusline exactly like this module's own renders do.
+local function render_context()
+  return {
+    browser_buf = browser_buf,
+    line_to_node = line_to_node,
+    root_nodes = root_nodes,
+    conn_label = sql_state.db_browser.connection or "No connection",
+    multi_select = multi_select,
+    update_statusline = update_statusline,
+  }
+end
+
 local function render_tree()
   if not browser_buf or not vim.api.nvim_buf_is_valid(browser_buf) then return end
-  local conn_label = sql_state.db_browser.connection or "No connection"
-  local new_map = tree.render_tree(browser_buf, line_to_node, root_nodes, conn_label, multi_select)
+  prune_multi_select()
   -- Synced in place, never reassigned: `make_context` hands this same table to
   -- actions, and the search state keeps one across an async jump. Reassigning
   -- the local left every earlier context holding the previous table, so a
   -- render triggered through a stored context updated a map no keymap reads and
   -- the live one kept lines pointing at nodes that were no longer on screen.
-  util.set_line_map(line_to_node, new_map)
-  update_statusline()
+  util.render_tree(render_context())
 end
 
 local function exit_multi_select()
@@ -149,6 +182,14 @@ local function get_search_dir()
 end
 M.get_search_dir = get_search_dir
 
+--- Invalidate `node` and refetch its children in place — the one
+--- paste/clone/drop on_complete refresh. util.refresh_subtree walks up to the
+--- node's own type (the node itself here), so callers hand it the exact node
+--- they mean. (actions.refresh_node is the by-line sibling of this.)
+local function refresh_tree_node(node)
+  util.refresh_subtree(node, render_context(), node.node_type, get_search_dir())
+end
+
 local function start_copy(buf_line)
   if not multi_select.active or not next(multi_select.selected) then
     notify.info("No tables selected. Use <Tab> to select tables first.")
@@ -169,17 +210,8 @@ local function start_copy(buf_line)
   local source_conn_name = multi_select.source_db.meta and multi_select.source_db.meta.connection
   local target_conn_name = target_db.meta and target_db.meta.connection
 
-  local function get_dialect(conn_name)
-    for _, root in ipairs(root_nodes) do
-      if root.name == conn_name then
-        return root.meta and root.meta.dialect or "postgres"
-      end
-    end
-    return "postgres"
-  end
-
-  local src_dialect = get_dialect(source_conn_name)
-  local tgt_dialect = get_dialect(target_conn_name)
+  local src_dialect = util.connection_dialect(source_conn_name, root_nodes)
+  local tgt_dialect = util.connection_dialect(target_conn_name, root_nodes)
 
   if src_dialect ~= tgt_dialect then
     vim.notify(string.format(
@@ -202,16 +234,7 @@ local function start_copy(buf_line)
   }, table_names, function()
     exit_multi_select()
     if target_db then
-      target_db.children = nil
-      target_db.expanded = false
-      target_db.loading = true
-      render_tree()
-      async.fetch_children(target_db, function()
-        target_db.expanded = true
-        vim.schedule(function()
-          render_tree()
-        end)
-      end, get_search_dir())
+      refresh_tree_node(target_db)
     end
   end)
 end
@@ -402,17 +425,11 @@ local function setup_browser_buffer()
     vim.keymap.set("n", k, function()
       local node = tree.get_node_at_line(line_to_node, vim.fn.line("."))
       if not node then return end
-      -- Resolve root-level dialect for nodes that may not carry it.
-      local root_dialect = nil
-      for _, root in ipairs(root_nodes) do
-        if root.name == node.name and root.node_type == "connection" then
-          root_dialect = root.meta and root.meta.dialect; break
-        end
-        if root.name == (node.meta and node.meta.connection) then
-          root_dialect = root.meta and root.meta.dialect; break
-        end
-      end
-      local entry = yank.from_node(node, root_dialect)
+      -- util.get_dialect resolves node meta → its connection's root → default;
+      -- the inline two-condition root walk this replaced also matched a TABLE
+      -- whose name happened to equal a connection's name and took that root's
+      -- dialect.
+      local entry = yank.from_node(node, util.get_dialect(node, root_nodes))
       if entry then
         yank.set(entry)
         -- Persistent statusline indicator (not a one-shot notify, which would
@@ -470,14 +487,7 @@ local function setup_browser_buffer()
             yank.clear()
             update_statusline()
             -- Refresh the connection to surface the new database.
-            clone_conn.children = nil
-            clone_conn.expanded = false
-            clone_conn.loading = true
-            render_tree()
-            async.fetch_children(clone_conn, function()
-              clone_conn.expanded = true
-              vim.schedule(render_tree)
-            end, get_search_dir())
+            refresh_tree_node(clone_conn)
           end,
         })
         return
@@ -496,26 +506,12 @@ local function setup_browser_buffer()
               update_statusline()
               -- Refresh target node display.
               if target_db then
-                target_db.children = nil
-                target_db.expanded = false
-                target_db.loading = true
-                render_tree()
-                async.fetch_children(target_db, function()
-                  target_db.expanded = true
-                  vim.schedule(render_tree)
-                end, get_search_dir())
+                refresh_tree_node(target_db)
               elseif is_sqlite_conn_target then
                 -- Refresh the connection node (sqlite).
                 for _, root in ipairs(root_nodes) do
                   if root.name == target_conn then
-                    root.children = nil
-                    root.expanded = false
-                    root.loading = true
-                    render_tree()
-                    async.fetch_children(root, function()
-                      root.expanded = true
-                      vim.schedule(render_tree)
-                    end, get_search_dir())
+                    refresh_tree_node(root)
                     break
                   end
                 end
@@ -534,25 +530,11 @@ local function setup_browser_buffer()
             yank.clear()
             update_statusline()
             if target_db then
-              target_db.children = nil
-              target_db.expanded = false
-              target_db.loading = true
-              render_tree()
-              async.fetch_children(target_db, function()
-                target_db.expanded = true
-                vim.schedule(render_tree)
-              end, get_search_dir())
+              refresh_tree_node(target_db)
             elseif is_sqlite_conn_target then
               for _, root in ipairs(root_nodes) do
                 if root.name == target_conn then
-                  root.children = nil
-                  root.expanded = false
-                  root.loading = true
-                  render_tree()
-                  async.fetch_children(root, function()
-                    root.expanded = true
-                    vim.schedule(render_tree)
-                  end, get_search_dir())
+                  refresh_tree_node(root)
                   break
                 end
               end
@@ -591,19 +573,13 @@ local function setup_browser_buffer()
   table_ops.register_keymaps(browser_buf, function()
     local buf_line = vim.fn.line(".")
     local idx = buf_line - HEADER_LINES
-    local node = nil
-    for i = idx, 1, -1 do
-      local n = line_to_node[i]
-      if n and n.node_type == "table" then node = n; break end
-      if n and (n.node_type == "database" or n.node_type == "schema" or n.node_type == "connection") then break end
-    end
+    local node = util.find_table_node(line_to_node, idx)
     if not node then return nil end
-    local dialect = "postgres"
-    for _, root in ipairs(root_nodes) do
-      if root.name == (node.meta and node.meta.connection) then
-        dialect = root.meta and root.meta.dialect or dialect; break end
-    end
-    return { table_name = node.name, dialect = dialect, source_buf = source_buf }
+    return {
+      table_name = node.name,
+      dialect = util.get_dialect(node, root_nodes),
+      source_buf = source_buf,
+    }
   end)
 
   -- Keep the statusline's connection/db/schema context in sync with the cursor.
@@ -928,19 +904,7 @@ function M.refresh_by_conn(conn_name, db_name)
   local node = find_refresh_node(root_nodes, conn_name, db_name)
   if not node then return end
 
-  node.children = nil
-  node.expanded = false
-  node.loading = true
-  -- The shared render path, not a private copy of it: this used to call
-  -- tree.render_tree directly and reassign the map, which skipped the
-  -- statusline update and detached every context already handed to an action.
-  render_tree()
-
-  local search_dir = M.get_search_dir()
-  async.fetch_children(node, function()
-    node.expanded = true
-    vim.schedule(render_tree)
-  end, search_dir)
+  refresh_tree_node(node)
 end
 
 function M.toggle()

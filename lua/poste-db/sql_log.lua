@@ -21,6 +21,9 @@
 
 local const = require("poste-db.constants")
 local log = require("poste-db.log")
+-- Dependency-free, so this cannot cycle even though every transport requires
+-- this module.
+local verdict = require("poste-db.verdict")
 
 local M = {}
 
@@ -29,10 +32,6 @@ local _log_write_count = 0
 
 local MAX_ERROR_LEN = 500
 
---- `exec_run` counts a statement as failed from the result event's `status`,
---- which the binary can set without ever filling in `error`. The journal line
---- still has to say why it is red, or a reader of `<leader>l` has to guess.
-local UNEXPLAINED_FAILURE = "reported as a failed statement without an error message"
 
 --- Where the journal lives. The one place that knows: the writer
 --- (`M.append`), `M.clear` and the `<leader>l` viewer all read the journal
@@ -162,7 +161,9 @@ function M.result(base, resp, elapsed_ms)
     for _, r in ipairs(resp.results or {}) do
       if r.error and r.error ~= "" then first_err = tostring(r.error) break end
     end
-    if not first_err then first_err = UNEXPLAINED_FAILURE end
+    -- Same sentence the panel and the AI action show for this shape: the
+    -- journal used to carry a third, drifting wording of its own.
+    if not first_err then first_err = verdict.UNEXPLAINED_FAILURE end
   end
   M.record(vim.tbl_extend("force", base, {
     status = status,
@@ -181,6 +182,31 @@ function M.fail(base, message, elapsed_ms)
     elapsed_ms = elapsed_ms,
     error_msg = message,
   }))
+end
+
+--- Wrap the user's response/error callbacks so a transport logs exactly one
+--- journal entry per request: `M.result` on a response (binary-reported
+--- latency when present, wall clock otherwise), `M.fail` on a transport
+--- error. `executor.lua` (whose entry the session and exec-file fallbacks
+--- share) and `exec_run.lua` carried byte-identical copies of this seam.
+--- @param base table|nil journal base; nil = journaling off, callbacks pass through
+--- @param t0 number wall-clock start (vim.uv.now())
+--- @param sql string|nil statement text, stamped on the base when it lacks one
+--- @param on_response function|nil
+--- @param on_error function|nil
+--- @return function|nil wrapped_on_response
+--- @return function|nil wrapped_on_error
+function M.wrap_callbacks(base, t0, sql, on_response, on_error)
+  if not base then return on_response, on_error end
+  if not base.sql and sql then base.sql = sql end
+  return function(parsed)
+    local elapsed = tonumber(parsed and parsed.latency_ms) or (vim.uv.now() - t0)
+    M.result(base, parsed, elapsed)
+    if on_response then on_response(parsed) end
+  end, function(message, extra)
+    M.fail(base, message, vim.uv.now() - t0)
+    if on_error then on_error(message, extra) end
+  end
 end
 
 --- Journal fields for a raw `poste <subcommand>` job (introspect listings,

@@ -281,18 +281,20 @@ local function build_response(events, conn, shown_db)
     end
   end
 
-  -- Match legacy classification: a resultset if any result is a query (has
-  -- columns, or returned rows, or no affected_rows), else an affected-rows
-  -- response. Keying off column presence (not just affected_rows == nil)
-  -- guards against a driver/binary reporting affected_rows as 0 for a SELECT,
-  -- which would otherwise be misclassified as an affected/Query OK response.
+  -- Match legacy classification: a resultset if any result is a query (the
+  -- shared verdict.carries_resultset rule: no affected count, or any
+  -- columns/rows), else an affected-rows response. Keying off column presence
+  -- (not just affected_rows == nil) guards against a driver/binary reporting
+  -- affected_rows as 0 for a SELECT, which would otherwise be misclassified
+  -- as an affected/Query OK response. The SQL-shape tiebreak below is this
+  -- transport's extra: a result carrying none of the three still counts as a
+  -- query when the statement reads like one.
   -- NB: errors were already counted when their event arrived above; this pass
   -- only decides resultset-vs-affected, it must not re-increment `failed`.
   local is_query = false
   for _, r in ipairs(results) do
     if not r.error and not r.failed
-      and (r.affected_rows == nil or (r.row_count or 0) > 0 or #(r.columns or {}) > 0
-        or is_query_sql(r.sql or "")) then
+      and (verdict.carries_resultset(r) or is_query_sql(r.sql or "")) then
       is_query = true
     end
     total_rows = total_rows + (r.row_count or 0)
@@ -477,22 +479,11 @@ local function run_async(sql, opts, callbacks)
 
   local t0 = vim.uv.now()
   local base = journal_base(sql, opts)
-  if base then
-    --- Journal, then deliver. Transport failures (binary missing, job start
-    --- failure, non-zero exit without a summary) arrive via on_error; SQL
-    --- failures arrive as a normal response with has_error.
-    local user_on_response, user_on_error = on_response, on_error
-    on_response = function(resp)
-      -- Binary-reported execution time when available, wall clock otherwise.
-      local elapsed = tonumber(resp and resp.latency_ms) or (vim.uv.now() - t0)
-      sql_log.result(base, resp, elapsed)
-      if user_on_response then user_on_response(resp) end
-    end
-    on_error = function(message, stderr)
-      sql_log.fail(base, message, vim.uv.now() - t0)
-      if user_on_error then user_on_error(message, stderr) end
-    end
-  end
+  -- Journal, then deliver, via the shared sql_log seam (this file and
+  -- executor.lua carried byte-identical wrappers). Transport failures (binary
+  -- missing, job start failure, non-zero exit without a summary) arrive via
+  -- on_error; SQL failures arrive as a normal response with has_error.
+  on_response, on_error = sql_log.wrap_callbacks(base, t0, sql, on_response, on_error)
 
   -- Lone USE statement: handled locally (exec-file skips USE).
   local use_db = detect_use(sql)

@@ -127,6 +127,14 @@ end
 --- one must not switch the database). Strings and `--` line comments are
 --- respected, so markers inside them don't count; depth saturates at 0
 --- because a stray `*/` must not go negative.
+---
+--- SINGLE-LEVEL on purpose: `is_comment_or_string` and `blank_regions` close
+--- at the first `*/` no matter how many `/*` opened, and this reader used to
+--- nest while they did not — the three scanners disagreed on the same text
+--- (`/* /* */ */` was "still in comment" here, plain code there). postgres
+--- alone nests block comments; treating `/*` at depth 1 as text is the
+--- conservative rule every consumer shares. If nesting ever becomes
+--- dialect-aware, all three readers move together.
 function M.block_comment_depth_after(line, depth)
   depth = depth or 0
   local i, in_string, string_char = 1, false, nil
@@ -147,7 +155,7 @@ function M.block_comment_depth_after(line, depth)
     elseif ch == "-" and line:sub(i + 1, i + 1) == "-" then
       break -- line comment: nothing later on the line counts
     elseif ch == "/" and line:sub(i + 1, i + 1) == "*" then
-      depth = depth + 1
+      if depth == 0 then depth = 1 end
       i = i + 2
     elseif ch == "*" and line:sub(i + 1, i + 1) == "/" then
       depth = math.max(0, depth - 1)

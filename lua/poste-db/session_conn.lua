@@ -97,20 +97,17 @@ end
 -- One wire response aggregating a sequence's per-statement results, shaped
 -- like `build_response` so the consumers (sql_runner's SET-prelude filter,
 -- dataset rendering, journaling) see the same body either way. `sql` on each
--- result comes from the event. Query classification here: a clean result is
--- a query when it carries no affected count, or any columns/rows. This is
--- NOT the rule exec_run.build_response applies (it also classifies
--- query-shaped SQL as a resultset); the two transports see different event
--- shapes, and only the binary contract (schema.md: a SELECT always ships
--- columns) says what the shared rule should be — revisit there first.
+-- result comes from the event. Query classification is the shared
+-- verdict.carries_resultset rule (no affected count, or any columns/rows);
+-- exec_run layers a SQL-shape tiebreak on top that this transport does not
+-- need — session events always carry columns for a read.
 local function build_sequence_response(session, results)
   local failed = 0
   local total_rows, total_affected, total_ms = 0, 0, 0
   local is_query = false
   for _, r in ipairs(results) do
     if r.failed then failed = failed + 1 end
-    if not r.error and not r.failed
-      and (r.affected_rows == nil or (r.row_count or 0) > 0 or #(r.columns or {}) > 0) then
+    if not r.error and not r.failed and verdict.carries_resultset(r) then
       is_query = true
     end
     total_rows = total_rows + (r.row_count or 0)
@@ -214,13 +211,6 @@ end
 local function build_response(event, session)
   local has_err = event.status ~= "ok"
   local aff = util.affected_rows(event.affected_rows)
-  -- A rejected statement is never a resultset, even when it carries neither an
-  -- affected count nor columns: typed as a query it reached the dataset panel as
-  -- "(no results)", which is how a session-routed failure used to look like an
-  -- empty answer instead of the `ERROR: …` line `exec_run` produces for the same
-  -- event. `exec_run` keeps the same rule through `not r.failed` in its own
-  -- classification loop.
-  local is_query = aff == nil and not has_err
   local results = { {
     columns = event.columns or {},
     rows = event.rows or {},
@@ -228,6 +218,15 @@ local function build_response(event, session)
     affected_rows = aff,
     execution_time_ms = tonumber(event.execution_time_ms) or 0,
   } }
+  -- Shared classification (verdict.carries_resultset): a clean result is a
+  -- resultset when it has no affected count or any columns/rows. The old
+  -- `aff == nil` rule ignored columns entirely, so a read whose driver
+  -- reported affected_rows arrived as "affected"/Query OK here while the
+  -- sequence path and exec_run typed the same event as a resultset. A
+  -- rejected statement is never a resultset, even when it carries neither an
+  -- affected count nor columns: typed as a query it reached the dataset panel
+  -- as "(no results)" instead of the `ERROR: …` line.
+  local is_query = not has_err and verdict.carries_resultset(results[1])
   if has_err then
     -- The session names its failures, so the fallback is a real string rather
     -- than an empty one: `event.error` can still be JSON null (`vim.NIL`, truthy

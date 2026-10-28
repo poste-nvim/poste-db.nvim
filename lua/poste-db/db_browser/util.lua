@@ -16,6 +16,20 @@ function M.get_dialect(node, root_nodes)
   return "postgres"
 end
 
+--- Dialect of the connection named `conn_name` in the current tree, falling
+--- back to "postgres". The ONE walk-roots-by-name lookup; start_copy and the
+--- yank keymap used to carry private copies (one of which matched a TABLE
+--- whose name happened to equal a connection's name and took the wrong
+--- root's dialect).
+function M.connection_dialect(conn_name, root_nodes)
+  for _, root in ipairs(root_nodes or {}) do
+    if root.name == conn_name then
+      return root.meta and root.meta.dialect or "postgres"
+    end
+  end
+  return "postgres"
+end
+
 function M.get_connection(node)
   if node.node_type == "connection" then return node.name end
   return node.meta and node.meta.connection or sql_state.db_browser.connection
@@ -49,6 +63,9 @@ function M.set_line_map(line_to_node, new_map)
 end
 
 --- Re-render the browser tree from `context` and sync the line map.
+--- `context.update_statusline`, when the caller provides it, repaints the
+--- statusline after every render so refresh_subtree's intermediate paints
+--- stay as truthful as the caller's own.
 function M.render_tree(context)
   local tree = require("poste-db.db_browser.tree")
   -- multi_select must ride along: without it the ▣ markers vanish while the
@@ -56,6 +73,7 @@ function M.render_tree(context)
   local new_map = tree.render_tree(context.browser_buf, context.line_to_node,
     context.root_nodes, context.conn_label, context.multi_select)
   M.set_line_map(context.line_to_node, new_map)
+  if context.update_statusline then context.update_statusline() end
 end
 
 --- Human-readable byte size ("12.3 kB", "4.00 MB", ...). Non-numbers pass

@@ -57,12 +57,42 @@ local BASIC_ESCAPES = {
   ['"'] = '"', ["\\"] = "\\", n = "\n", t = "\t", r = "\r", b = "\b", f = "\f",
 }
 
+--- Decode a TOML basic-string body: (decoded, nil) or (nil, reason).
+--- Two fail-open shapes this replaces: an unknown single-char escape passed
+--- through literally (`\d` stayed a backslash + d; TOML makes it an error),
+--- and `\uXXXX`/`\UXXXXXXXX` — the TOML spellings for non-ASCII — were
+--- stored raw, so a password written that way silently differed from the
+--- real one.
 local function unescape_basic(s)
-  -- single pass: sequential gsubs re-process what earlier ones produced
-  -- ("D:\\tables\\notes" — the \t of \tables must stay backslash + t)
-  return (s:gsub("\\(.)", function(c)
-    return BASIC_ESCAPES[c] or ("\\" .. c)
-  end))
+  local out = {}
+  local i = 1
+  while i <= #s do
+    local ch = s:sub(i, i)
+    if ch ~= "\\" then
+      out[#out + 1] = ch
+      i = i + 1
+    else
+      local c = s:sub(i + 1, i + 1)
+      local esc = BASIC_ESCAPES[c]
+      if esc then
+        out[#out + 1] = esc
+        i = i + 2
+      elseif c == "u" or c == "U" then
+        local width = c == "u" and 4 or 8
+        local hex = s:sub(i + 2, i + 1 + width)
+        local code = tonumber(hex, 16)
+        if not code or #hex ~= width
+          or code > 0x10FFFF or (code >= 0xD800 and code <= 0xDFFF) then
+          return nil, "Invalid string escape sequence"
+        end
+        out[#out + 1] = vim.fn.nr2char(code)
+        i = i + 2 + width
+      else
+        return nil, "Invalid string escape sequence"
+      end
+    end
+  end
+  return table.concat(out)
 end
 
 --- First `=` outside any quote, or nil. The split must ignore a quoted key's
@@ -251,16 +281,40 @@ parse_value = function(v)
   -- NB: the error must not quote the value — connections.toml values are
   -- frequently secrets, and the message goes to the log file.
   if v:sub(1, 1) == '"' then
-    if v:sub(-1, -1) ~= '"' then return nil, "Unclosed double-quoted string" end
-    return unescape_basic(v:sub(2, -2))
+    -- Walk to the REAL closing quote (a `\"` is data, so `"a\"` ends without
+    -- one and the last-byte check used to accept it), then require the rest
+    -- empty: `"a" "b"` used to pass the same check and store `a" "b`.
+    local i = 2
+    while i <= #v do
+      local c = v:sub(i, i)
+      if c == "\\" then
+        i = i + 2
+      elseif c == '"' then
+        if i ~= #v then
+          return nil, "Invalid double-quoted string (trailing garbage)"
+        end
+        local decoded, uerr = unescape_basic(v:sub(2, i - 1))
+        if not decoded then return nil, uerr end
+        return decoded
+      else
+        i = i + 1
+      end
+    end
+    return nil, "Unclosed double-quoted string"
   end
   if v:sub(1, 1) == "'" then
-    if v:sub(-1, -1) ~= "'" then return nil, "Unclosed single-quoted string" end
-    return v:sub(2, -2)
+    -- Literal strings have no escapes: the first `'` closes.
+    local close = v:find("'", 2, true)
+    if not close then return nil, "Unclosed single-quoted string" end
+    if close ~= #v then return nil, "Invalid single-quoted string (trailing garbage)" end
+    return v:sub(2, close - 1)
   end
   if v:sub(1, 1) == "[" or v:sub(1, 1) == "{" then
     return parse_container(v)
   end
+  -- A bare word carrying whitespace (`k = 1 2`) is not a TOML value; it used
+  -- to be stored verbatim as the string "1 2".
+  if v:find("%s") then return nil, "Invalid value" end
   return v
 end
 
@@ -307,8 +361,13 @@ function M.parse(content)
           if tail ~= "" and tail:sub(1, 1) ~= "#" then
             return nil, "Invalid table header: " .. line
           end
-          name = q == '"' and unescape_basic(trimmed:sub(3, close_q - 1))
-            or trimmed:sub(3, close_q - 1)
+          if q == '"' then
+            local decoded, uerr = unescape_basic(trimmed:sub(3, close_q - 1))
+            if not decoded then return nil, uerr end
+            name = decoded
+          else
+            name = trimmed:sub(3, close_q - 1)
+          end
       else
         local close = trimmed:find("]", 2)
         if not close then
@@ -323,7 +382,13 @@ function M.parse(content)
         if #name >= 2 then
           local nq = name:sub(1, 1)
           if (nq == '"' or nq == "'") and name:sub(-1, -1) == nq then
-            name = nq == '"' and unescape_basic(name:sub(2, -2)) or name:sub(2, -2)
+            if nq == '"' then
+              local decoded, uerr = unescape_basic(name:sub(2, -2))
+              if not decoded then return nil, uerr end
+              name = decoded
+            else
+              name = name:sub(2, -2)
+            end
           end
         end
         -- Anything after the closing bracket must be empty or a comment:
@@ -387,7 +452,13 @@ function M.parse(content)
           close_q = i <= #key and i or nil
         end
         if close_q == #key then
-          key = q == '"' and unescape_basic(key:sub(2, -2)) or key:sub(2, -2)
+          if q == '"' then
+            local decoded, uerr = unescape_basic(key:sub(2, -2))
+            if not decoded then return nil, uerr end
+            key = decoded
+          else
+            key = key:sub(2, -2)
+          end
           single_quoted_name = true
         end
       end
