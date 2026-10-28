@@ -160,7 +160,7 @@ function M.expand_or_child(buf_line, context)
       util.render_tree(context)
     else
       -- Same directory as every other fetch: the search dir decides which
-      -- connections.json the CLI picks up, and cwd is only its fallback.
+      -- connections.toml the CLI picks up, and cwd is only its fallback.
       util.refresh_subtree(node, context, node.node_type, get_search_dir(context.source_buf))
     end
   else

@@ -53,19 +53,6 @@ local DATA_TYPES = {
   "BOOLEAN", "BOOL", "BLOB", "BYTEA", "JSON", "JSONB", "UUID",
 }
 
-local TABLE_CTX = {
-  from = true, join = true, update = true, into = true, table = true,
-}
-
-local COLUMN_CTX = {
-  where = true, set = true, on = true, having = true, select = true,
-  ["and"] = true, ["or"] = true, ["not"] = true,
-  by = true,  -- ORDER BY, GROUP BY
-  ["after"] = true,  -- ALTER TABLE ... ADD/MODIFY COLUMN col AFTER col_name
-  ["="] = true, [">"] = true, ["<"] = true, [">="] = true, ["<="] = true,
-  ["!="] = true, ["<>"] = true,
-}
-
 --- Fallback-only SQL function list.
 --- Rust `functions.rs` is the authoritative source. This list is only used
 --- when the Rust binary is unavailable (`vim.g.poste_db_legacy_completion = true`).
@@ -172,8 +159,6 @@ M.KEYWORDS = KEYWORDS
 M.DIALECT_KEYWORDS = DIALECT_KEYWORDS
 M.DATA_TYPES = DATA_TYPES
 M.SQL_FUNCTIONS = SQL_FUNCTIONS
-M.TABLE_CTX = TABLE_CTX
-M.COLUMN_CTX = COLUMN_CTX
 
 ---------------------------------------------------------------------------
 -- Cache  { [key] = { tables=[], columns={[tbl]=[]} } }

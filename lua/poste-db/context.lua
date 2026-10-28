@@ -86,8 +86,8 @@ function M.resolve_context(buf, limit_line)
   return { connection = connection, database = database }
 end
 
---- Resolve the full context chain: buffer scan → connections.json default.
---- Priority: block-level > USE > file-level > runtime connection > connections.json default
+--- Resolve the full context chain: buffer scan → connections.toml default.
+--- Priority: block-level > USE > file-level > runtime connection > connections.toml default
 --- Does NOT fall back to state.context.database — context is position-determined.
 --- @param buf number Buffer handle (default: current buffer)
 --- @return table context { connection = string|nil, database = string|nil }
@@ -100,7 +100,7 @@ function M.resolve_full_context(buf, limit_line)
   local state_sql = state
   local conn = ctx.connection or (state_sql and state_sql.context and state_sql.context.connection)
 
-  -- Database: buffer scan → connections.json default
+  -- Database: buffer scan → connections.toml default
   local db = ctx.database
   if not db and conn then
     local connections = require("poste-db.connections")
@@ -148,7 +148,7 @@ function M.get_status_text()
 end
 
 --- Get status text for cursor position in a SQL buffer.
---- Resolves context at cursor line: @connection → @database/USE → connections.json default.
+--- Resolves context at cursor line: @connection → @database/USE → connections.toml default.
 --- @param buf number|nil Buffer handle (default: current buffer)
 --- @return string Status text like "[my-blog/inventory]" or ""
 function M.get_cursor_status_text(buf)

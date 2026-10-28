@@ -207,7 +207,7 @@ function M.commit_edits()
   local connection = tab.layout and tab.layout._conn_name or state.context.connection or ""
   local table_name = tab.layout and tab.layout.table_name or ""
 
-  -- Resolve database: layout._database → layout.database → context → connections.json default
+  -- Resolve database: layout._database → layout.database → context → connections.toml default
   local database = ""
   if tab.layout then
     local layout_db = tab.layout._database or tab.layout.database

@@ -2,15 +2,6 @@ local cli = require("poste-db.cli")
 
 local M = {}
 
-function M.epoch()
-  local value = 0
-  return {
-    get = function() return value end,
-    bump = function() value = value + 1; return value end,
-    is_current = function(n) return n == value end,
-  }
-end
-
 function M.run(args, opts)
   opts = opts or {}
   local timeout = opts.timeout or 15000

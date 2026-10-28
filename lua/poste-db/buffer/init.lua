@@ -652,7 +652,7 @@ function M.render_dataset(lines, meta, opts)
       tab.original_sql = opts.original_sql
     end
 
-    -- Store source file path for PK introspection (poste needs a real file for connections.json discovery)
+    -- Store source file path for PK introspection (poste needs a real file for connections.toml discovery)
     if opts.src_file then
       tab.src_file = opts.src_file
     end

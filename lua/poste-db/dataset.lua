@@ -189,10 +189,6 @@ function M.format_wallclock(sec, nsec)
   return string.format("%02d:%02d:%02d.%03d", t.hour, t.min, t.sec, ms)
 end
 
-function M.tab_count()
-  return #M.tabs
-end
-
 function M.T()
   return M.tabs[M.active_tab_idx]
 end

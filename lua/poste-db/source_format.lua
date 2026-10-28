@@ -9,7 +9,11 @@
 --- Auto-detects available formatters and provides:
 ---   - M.format()        — format buffer or selection
 ---   - M.format_text()   — format a SQL string
----   - conform.nvim integration — register poste_sql/poste_sqlite filetypes
+---
+--- Optional opt-in integrations (nothing in setup() wires them; call from
+--- your config if wanted): M.setup_lazyvim() hooks LazyVim's <leader>cf,
+--- M.setup_conform() registers the poste_sql filetypes with conform.nvim,
+--- M.auto_format_on_save() formats on BufWritePre.
 
 local config = require("poste-db.config")
 
@@ -23,7 +27,6 @@ local FORMATTERS = {
   sqlfluff = {
     name = "sqlfluff",
     bin = "sqlfluff",
-    detect_cmd = "sqlfluff --version 2>/dev/null",
     args = { "format", "--dialect", "__DIALECT__", "-" },
     pipe_stdin = true,
     supports_dialect = true,
@@ -46,7 +49,6 @@ local FORMATTERS = {
   pg_format = {
     name = "pg_format",
     bin = "pg_format",
-    detect_cmd = "pg_format --version 2>/dev/null",
     args = { "-" },
     pipe_stdin = true,
     supports_dialect = false,
@@ -54,7 +56,6 @@ local FORMATTERS = {
   sqlfmt = {
     name = "sqlfmt",
     bin = "sqlfmt",
-    detect_cmd = "sqlfmt --version 2>/dev/null",
     args = {},
     pipe_stdin = true,
     supports_dialect = false,
@@ -62,7 +63,6 @@ local FORMATTERS = {
   ["sql-formatter"] = {
     name = "sql-formatter",
     bin = "sql-formatter",
-    detect_cmd = "sql-formatter --version 2>/dev/null",
     args = { "--language", "__DIALECT__" },
     pipe_stdin = true,
     supports_dialect = true,

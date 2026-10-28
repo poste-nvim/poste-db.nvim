@@ -212,9 +212,4 @@ function M.cli_fields(args, source)
   }
 end
 
---- Test hook: number of entries written since load.
-function M._write_count()
-  return _log_write_count
-end
-
 return M

@@ -97,8 +97,12 @@ end
 -- One wire response aggregating a sequence's per-statement results, shaped
 -- like `build_response` so the consumers (sql_runner's SET-prelude filter,
 -- dataset rendering, journaling) see the same body either way. `sql` on each
--- result comes from the event; classification mirrors exec_run.build_response
--- (an affected count alone does not make it a non-query).
+-- result comes from the event. Query classification here: a clean result is
+-- a query when it carries no affected count, or any columns/rows. This is
+-- NOT the rule exec_run.build_response applies (it also classifies
+-- query-shaped SQL as a resultset); the two transports see different event
+-- shapes, and only the binary contract (schema.md: a SELECT always ships
+-- columns) says what the shared rule should be — revisit there first.
 local function build_sequence_response(session, results)
   local failed = 0
   local total_rows, total_affected, total_ms = 0, 0, 0

@@ -10,7 +10,6 @@
 ---   show(opts)                 — force-show completion menu
 ---   is_menu_open() → bool      — check if menu is visible
 ---   get_config()               — access blink.cmp config safely
----   get_enabled_providers()    — list active provider IDs
 ---   get_source_lib()           — access blink.cmp sources.lib for advanced use
 
 local M = {}
@@ -62,13 +61,6 @@ function M.register_filetype(ft, source_name)
   local b = blink()
   if not b then return end
   b.add_filetype_source(ft, source_name)
-end
-
---- Get enabled provider IDs for completion mode.
-function M.get_enabled_providers()
-  local src = blink_sources()
-  if not src then return {} end
-  return src.get_enabled_provider_ids("insert") or {}
 end
 
 --- Show the completion menu.

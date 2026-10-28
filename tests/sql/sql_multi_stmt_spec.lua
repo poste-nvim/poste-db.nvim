@@ -114,7 +114,7 @@ describe("find_stmt_lines", function()
 end)
 
 describe("find_stmt_lines — edge cases and known bugs", function()
-  it("semicolon in single-quoted string — still uses ; heuristic, TS handles this via try_ts_stmt_ranges", function()
+  it("semicolon in single-quoted string — still uses ; heuristic", function()
     -- BUG: find_stmt_lines uses `line:match(";")` which matches ANY semicolon
     -- on the line, including inside string literals.
     local lines = {

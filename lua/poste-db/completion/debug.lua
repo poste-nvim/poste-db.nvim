@@ -118,10 +118,6 @@ end
 
 local M = {}
 
-function M.is_enabled()
-  return _enabled
-end
-
 function M.toggle()
   _enabled = not _enabled
   if _enabled then

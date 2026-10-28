@@ -16,7 +16,8 @@ local M = {}
 
 -- Cache last context detect result to avoid re-spawning the binary
 -- when the SQL text + offset + dialect haven't changed.
--- Keyed by bufnr|changedtick|offset|dialect for automatic invalidation.
+-- Keyed by bufnr|changedtick|cursor_line|line_before|dialect (see cache_key)
+-- for automatic invalidation.
 local _ctx_cache = {}
 
 ---------------------------------------------------------------------------

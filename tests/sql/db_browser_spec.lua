@@ -603,7 +603,7 @@ describe("db_browser public API", function()
   end)
 
   it("navigate_to requires valid connection", function()
-    -- In headless mode with no connections.json, should not crash
+    -- In headless mode with no connections.toml, should not crash
     -- Just verify the function exists and accepts args
     assert.has_no.errors(function()
       db_browser.navigate_to("nonexistent", "mydb")

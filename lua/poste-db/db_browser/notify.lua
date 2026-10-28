@@ -7,7 +7,6 @@
 --- failures remain visible in the message area.
 
 local flash = require("poste-db.db_browser.flash")
-local const = require("poste-db.constants")
 
 local M = {}
 
@@ -23,10 +22,8 @@ function M.warn(msg)
   flash.flash(msg, 3)
 end
 
---- Genuine failures stay blocking (message area, needs ENTER to dismiss).
----@param msg string
-function M.error(msg)
-  vim.notify(msg, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
-end
+-- Failures are notified directly with vim.notify(..., ERROR, { title =
+-- PLUGIN_TITLE }) at every call site — no facade. Keep it that way until a
+-- real M.error with callers lands; the one this file used to carry had none.
 
 return M

@@ -7,7 +7,7 @@
 --- rest of the SQL plugin consumes (`resp.body` decodes to
 --- `{ type, results, has_error, ... }`).
 ---
---- Depends on poste.nvim shared infra: `poste.cli`, `poste.state`.
+--- Depends on the vendored shared infra: `poste-db.cli`, `poste-db.state`.
 
 local cli = require("poste-db.cli")
 local state = require("poste-db.state")
