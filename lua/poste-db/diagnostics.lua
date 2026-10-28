@@ -4,12 +4,10 @@
 --- Also runs semantic diagnostics (table/column existence checks).
 
 local ts_stmt = require("poste-db.ts_stmt")
-local context = require("poste-db.context")
-local connections = require("poste-db.connections")
-local sql_state = require("poste-db.state")
+-- dialect.lua captures the context/connections stubs these specs install, so
+-- it must load while they are in package.loaded (see sql_diagnostics_spec).
+local dialect = require("poste-db.dialect")
 local dml_guard = require("poste-db.dml_guard")
-
-local compat = require("poste-db.compat")
 
 local M = {}
 
@@ -19,43 +17,12 @@ local ns = vim.api.nvim_create_namespace("poste_db_diagnostics")
 local ns_hl = vim.api.nvim_create_namespace("poste_db_diagnostics_highlight")
 
 --- Resolve the connection dialect for a buffer (lowercase), or nil.
---- Checks: ### dialect header → connection config → g:poste_db_dialect → filetype.
+--- The single implementation lives in dialect.lua — this was one of three
+--- drifting copies.
 --- @param buf number  buffer handle
 --- @return string|nil
 local function get_dialect(buf)
-  -- Check ### dialect header in the buffer
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, math.min(20, vim.api.nvim_buf_line_count(buf)), false)
-  for _, line in ipairs(lines) do
-    local d = line:match("^### dialect%s+(%S+)")
-    if d then return d:lower() end
-  end
-
-  -- Resolve from connection config
-  local ctx = context.resolve_context(buf)
-  local conn = ctx.connection
-  if not conn then
-    conn = sql_state and sql_state.context and sql_state.context.connection
-  end
-  if conn then
-    local cfg = connections.get_connection_config(conn)
-    if cfg and cfg.dialect and cfg.dialect ~= "" then
-      return cfg.dialect:lower()
-    end
-  end
-
-  -- Fallback to global dialect option
-  local global_dialect = compat.opt("dialect")
-  if global_dialect and global_dialect ~= "" then
-    return global_dialect:lower()
-  end
-
-  -- Fallback based on filetype
-  local ft = vim.bo[buf].filetype
-  if ft == "poste_sqlite" then
-    return "sqlite"
-  end
-
-  return nil
+  return dialect.dialect_for_buf(buf)
 end
 
 --- Convert Tree-sitter ERROR nodes to vim.diagnostic entries (0-based).

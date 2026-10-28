@@ -17,7 +17,6 @@
 
 local config = require("poste-db.config")
 
-local sql_state = require("poste-db.state")
 local const = require("poste-db.constants")
 
 local M = {}
@@ -193,46 +192,17 @@ function M.list_available()
 end
 
 --- Resolve the dialect for the current buffer.
---- Checks ### dialect header, then connection config, then filetype.
+--- Delegates to dialect.lua — this was a drifting fork of diagnostics.lua's
+--- get_dialect that dropped the g:poste_db_dialect fallback, so formatters
+--- ignored the user's global dialect while diagnostics honored it.
 --- @param bufnr number|nil Buffer handle (0 = current)
 --- @return string Dialect name (lowercase)
 function M.resolve_dialect(bufnr)
   bufnr = bufnr or 0
   if bufnr == 0 then bufnr = vim.api.nvim_get_current_buf() end
-
-  -- Check the ### block directive for dialect override
-  local nlines = vim.api.nvim_buf_line_count(bufnr)
-  local max_scan = math.min(20, nlines)
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, max_scan, false)
-  for _, line in ipairs(lines) do
-    local d = line:match("^### dialect%s+(%S+)")
-    if d then return d:lower() end
-  end
-
-  -- Resolve dialect from the connection config
-  local ok, ctx = pcall(require, "poste-db.context")
-  if ok then
-    local resolved = ctx.resolve_context(bufnr)
-    local conn = resolved.connection
-    if not conn then
-      conn = sql_state and sql_state.context and sql_state.context.connection
-    end
-    if conn then
-      local connections = require("poste-db.connections")
-      local cfg = connections.get_connection_config(conn)
-      if cfg and cfg.dialect and cfg.dialect ~= "" then
-        return cfg.dialect:lower()
-      end
-    end
-  end
-
-  -- Fallback based on filetype
-  local ft = vim.bo[bufnr].filetype
-  if ft == "poste_sqlite" then
-    return "sqlite"
-  end
-
-  return ""
+  local ok, dialect = pcall(require, "poste-db.dialect")
+  if not ok then return "" end
+  return dialect.dialect_for_buf(bufnr) or ""
 end
 
 --- Format a SQL string using the specified formatter.
