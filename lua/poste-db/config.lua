@@ -144,12 +144,22 @@ M.config = vim.deepcopy(M.defaults)
 
 --- Merge user opts into the effective config (deep for nested tables).
 --- Called from poste-db.setup().
+--- List-valued options (sql_formatters) replace wholesale: tbl_deep_extend
+--- merges arrays by index, so `setup({ sql_formatters = { "pg_format" } })`
+--- kept the three excluded formatters as fallbacks and duplicated the new
+--- entry at position 4 — a shorter list could never shrink the default. An
+--- empty table still merges (a no-op for lists; the "no keymap overrides"
+--- reading for maps).
 --- @param opts table|nil
 function M.merge(opts)
   opts = opts or {}
   for k, v in pairs(opts) do
     if type(v) == "table" and type(M.config[k]) == "table" then
-      M.config[k] = vim.tbl_deep_extend("force", M.config[k], v)
+      if #v > 0 and #M.config[k] > 0 then
+        M.config[k] = vim.deepcopy(v)
+      else
+        M.config[k] = vim.tbl_deep_extend("force", M.config[k], v)
+      end
     else
       M.config[k] = v
     end

@@ -48,3 +48,32 @@ describe("poste-db setup idempotence", function()
     assert.equals(color_scheme, n_autocmds({ event = "ColorScheme" }))
   end)
 end)
+
+describe("poste-db config merge", function()
+  local saved_formatters
+
+  before_each(function()
+    saved_formatters = vim.deepcopy(config.config.sql_formatters)
+  end)
+
+  after_each(function()
+    config.config.sql_formatters = saved_formatters
+  end)
+
+  it("replaces a list-valued option instead of index-merging it", function()
+    -- tbl_deep_extend("force") merges arrays by index: the user's shorter
+    -- list used to keep the excluded defaults as fallbacks (source_format
+    -- picks a formatter from this list) with the new entry duplicated last.
+    config.merge({ sql_formatters = { "pg_format" } })
+    assert.same({ "pg_format" }, config.config.sql_formatters)
+  end)
+
+  it("still deep-merges map-valued options like keymaps", function()
+    local saved_run = config.config.keymaps.sql_source.run
+    config.merge({ keymaps = { sql_source = { run = "<space>" } } })
+    assert.equals("<space>", config.config.keymaps.sql_source.run)
+    assert.is_not_nil(config.config.keymaps.sql_source.show_ddl,
+      "siblings outside the merge must keep their defaults")
+    config.config.keymaps.sql_source.run = saved_run
+  end)
+end)
