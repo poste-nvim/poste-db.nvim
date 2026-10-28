@@ -257,8 +257,9 @@ function M.find_binary()
 end
 
 function M.search_dir()
-  local name = vim.api.nvim_buf_get_name(0)
-  return name ~= "" and vim.fn.fnamemodify(name, ":p:h") or vim.fn.getcwd()
+  -- One copy of the "real file buffer, else cwd" rule lives on
+  -- connections.get_search_dir; this used to be a second, drifting fork.
+  return require("poste-db.connections").get_search_dir()
 end
 
 local function resolve_conn_url(conn)

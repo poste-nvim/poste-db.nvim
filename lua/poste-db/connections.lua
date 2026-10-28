@@ -12,10 +12,19 @@ local M = {}
 -----------------------------------------------------------------------
 -- Get search directory for connections.toml
 -----------------------------------------------------------------------
-local function get_search_dir()
+--- Directory connections.toml discovery starts from: the current buffer's
+--- directory when it is a real file buffer, cwd otherwise. Pseudo buffers
+--- (poste://dataset, poste://db_browser, health://) carry a non-empty but
+--- non-file name, so the naive "buffer name wins" rule used to resolve them
+--- to "poste:" / "health:" and could read a different connections.toml than
+--- the SQL file being edited. Single copy shared by :PosteDbInfo,
+--- :checkhealth and completion/data.lua — do not fork it again.
+--- @return string
+function M.get_search_dir()
   local buf_name = vim.api.nvim_buf_get_name(0)
-  if buf_name ~= "" then
-    return vim.fn.fnamemodify(buf_name, ":h")
+  if buf_name ~= ""
+    and vim.api.nvim_get_option_value("buftype", { buf = 0 }) == "" then
+    return vim.fn.fnamemodify(buf_name, ":p:h")
   end
   return vim.fn.getcwd()
 end
@@ -142,18 +151,36 @@ end
 --- claims has no variables at all.
 --- @param search_dir string
 --- @return table<string,string>
+local _env_json_cache = {}
+local _env_json_cache_mtime = {}
+
+--- Same mtime-cache shape as load_dotenv below: get_env_vars runs on every
+--- statusline evaluation and cursor move, and an uncached readfile+decode of
+--- env.json per call made every connection-config read pay file IO. The cache
+--- key includes current_env because env.json section selection depends on it.
 local function load_env_json_vars(search_dir)
   local path = util.find_file_upwards("env.json", search_dir)
-  if not path then return {} end
-  local ok, data = pcall(vim.fn.readfile, path)
-  if not ok or not data then return {} end
-  local ok2, parsed = pcall(vim.json.decode, table.concat(data, "\n"))
-  if not ok2 or type(parsed) ~= "table" then return {} end
-  local envs = parsed.envs or parsed
-  local section = envs[state.current_env or "dev"]
-  if type(section) ~= "table" then section = envs end
-  if type(section) ~= "table" then return {} end
-  return scalar_env_vars(section)
+  local mtime = path and vim.fn.getftime(path) or nil
+  local cache_key = search_dir .. "#" .. (state.current_env or "dev")
+  if _env_json_cache[cache_key] ~= nil and _env_json_cache_mtime[cache_key] == mtime then
+    return _env_json_cache[cache_key]
+  end
+  local vars = {}
+  if path then
+    local ok, data = pcall(vim.fn.readfile, path)
+    if ok and data then
+      local ok2, parsed = pcall(vim.json.decode, table.concat(data, "\n"))
+      if ok2 and type(parsed) == "table" then
+        local envs = parsed.envs or parsed
+        local section = envs[state.current_env or "dev"]
+        if type(section) ~= "table" then section = envs end
+        if type(section) == "table" then vars = scalar_env_vars(section) end
+      end
+    end
+  end
+  _env_json_cache[cache_key] = vars
+  _env_json_cache_mtime[cache_key] = mtime
+  return vars
 end
 
 --- Merge all environment sources.
@@ -195,7 +222,10 @@ function M.substitute_vars(s, vars, depth)
   return result
 end
 
---- Copy a connection config with `{{VAR}}` references resolved.
+--- Copy a connection config with `{{VAR}}` references resolved. Nested
+--- tables (e.g. `tunnel = { to = "{{BASTION}}" }`) recurse: a literal
+--- `{{BASTION}}` reaching tunnel.ensure reads like a tunnel failure that is
+--- really a config mistake.
 --- @param conn table Connection config (raw values)
 --- @param vars table<string,string>
 --- @return table Resolved connection config
@@ -205,7 +235,11 @@ local function apply_env(conn, vars)
   if type(conn) ~= "table" then return conn end
   local resolved = {}
   for k, v in pairs(conn) do
-    resolved[k] = M.substitute_vars(v, vars)
+    if type(v) == "table" then
+      resolved[k] = apply_env(v, vars)
+    else
+      resolved[k] = M.substitute_vars(v, vars)
+    end
   end
   return resolved
 end
@@ -244,7 +278,7 @@ end
 --- mtime-keyed cache; `false` means the file exists but is broken.
 --- @return table|nil
 local function cached_parsed_config()
-  local search_dir = get_search_dir()
+  local search_dir = M.get_search_dir()
   local config_path = M.find_connections_toml(search_dir)
   if not config_path then
     _config_cache = nil
@@ -286,7 +320,7 @@ function M.get_connection_config(name)
   if not parsed then return nil end
   local conn = parsed[name]
   if type(conn) ~= "table" then return nil end
-  conn = apply_env(conn, M.get_env_vars(get_search_dir()))
+  conn = apply_env(conn, M.get_env_vars(M.get_search_dir()))
   conn.dialect = const.normalize_dialect(conn.dialect)
   return conn
 end
@@ -336,7 +370,9 @@ local function build_conn_url(name, conn, ensure_tunnel)
   -- is_sql_dialect gate (nil "defaults behave like postgres") — make that
   -- default real here, or the scheme concatenation dies on the nil.
   if conn.dialect == "sqlite" then
-    local path = conn.path or ":memory:"
+    -- `path = ""` is an unset path, not a file named "": the `or` fallback
+    -- never fired for it and the URL came out `sqlite:?mode=rwc`.
+    local path = (conn.path and conn.path ~= "") and conn.path or ":memory:"
     if path == ":memory:" then
       return "sqlite::memory:", nil
     end
@@ -439,7 +475,7 @@ end
 --- @param name string Connection name
 --- @return string|nil, string|nil url, error_message
 function M.resolve_connection_url(name)
-  local search_dir = get_search_dir()
+  local search_dir = M.get_search_dir()
   local config_path = M.find_connections_toml(search_dir)
   if not config_path then
     return nil, "connections.toml not found (searched from " .. search_dir .. ")"
@@ -467,7 +503,7 @@ function M.name_for_url(url)
   if not url or url == "" then return nil end
   local parsed = cached_parsed_config()
   if not parsed then return nil end
-  local vars = M.get_env_vars(get_search_dir())
+  local vars = M.get_env_vars(M.get_search_dir())
   for name, entry in pairs(parsed) do
     if type(entry) == "table" then
       local conn = apply_env(entry, vars)
@@ -489,7 +525,7 @@ end
 --- Fetch connections from connections.toml.
 --- @param callback function(connections: table[]) Called with parsed connection list
 function M.list_connections(callback)
-  local search_dir = get_search_dir()
+  local search_dir = M.get_search_dir()
   local config_path = M.find_connections_toml(search_dir)
   if not config_path then
     vim.schedule(function() callback({}) end)
@@ -516,7 +552,9 @@ function M.list_connections(callback)
       -- Skip dialects poste-db does not support (satellite sections from a
     -- shared connections.toml, e.g. redis)
     if not const.is_sql_dialect(conn.dialect) then goto continue end
-    table.insert(list, { name = name, dialect = conn.dialect, host = conn.host, port = conn.port, database = conn.database, path = conn.path })
+    -- `tunnel` rides along so the picker's 🔒 mark and run_test's
+    -- tunnel-routed test can see it; dropping it here made both dead.
+    table.insert(list, { name = name, dialect = conn.dialect, host = conn.host, port = conn.port, database = conn.database, path = conn.path, tunnel = conn.tunnel })
     ::continue::
   end
   -- Sorted by name: pairs() walks the toml table in hash order, which flips
@@ -699,7 +737,7 @@ function M.run_test(conn)
     return
   end
 
-  local search_dir = get_search_dir()
+  local search_dir = M.get_search_dir()
   local cmd = { "connection", "test", conn.name, "--path", search_dir }
 
   vim.notify(string.format("Testing '%s'...", conn.name), vim.log.levels.INFO, { title = const.PLUGIN_TITLE })

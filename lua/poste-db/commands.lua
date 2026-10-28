@@ -70,8 +70,7 @@ function M.setup()
     else
       parts[#parts + 1] = "poste_binary: not found"
     end
-    local buf_name = vim.api.nvim_buf_get_name(0)
-    local search_dir = buf_name ~= "" and vim.fn.fnamemodify(buf_name, ":h") or vim.fn.getcwd()
+    local search_dir = connections.get_search_dir()
     local config_path = connections.find_connections_toml(search_dir)
     parts[#parts + 1] = config_path and ("connections: " .. config_path) or ("connections: not found (searched from " .. search_dir .. ")")
     local parser_dir = vim.fn.stdpath("data") .. "/site/parser"
@@ -235,7 +234,8 @@ function M.setup()
   end, { nargs = 1, complete = "file", desc = "Execute a SQL file" })
 
   -- Debug commands stay out of the way by default. Enable them explicitly via
-  -- setup({ debug = true }) or the legacy g:poste_db_debug = true global.
+  -- setup({ debug = true }) or g:poste_db_debug = true (the g:poste_sql_debug
+  -- spelling is the deprecated alias compat.lua still honours).
   if config.config.debug or compat.opt("debug") then
     vim.api.nvim_create_user_command("PosteDbAutoTrigger", function()
       local group = vim.api.nvim_create_augroup("PosteDbAutoComplete", { clear = true })

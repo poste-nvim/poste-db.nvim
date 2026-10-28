@@ -98,11 +98,12 @@ function M.check()
     warn("platform: " .. sys .. " " .. machine .. " — may not have prebuilt binaries")
   end
 
-  -- connections.toml discovery
-  local buf_name = vim.api.nvim_buf_get_name(0)
-  local search_dir = buf_name ~= "" and vim.fn.fnamemodify(buf_name, ":h") or vim.fn.getcwd()
-  local util = require("poste-db.util")
-  local config_path = util.find_file_upwards("connections.toml", search_dir)
+  -- connections.toml discovery. Shared getter: on the health:// pseudo buffer
+  -- the old buffer-name rule resolved the search root to "health:", and the
+  -- report then named a directory nothing was actually searched from.
+  local connections = require("poste-db.connections")
+  local search_dir = connections.get_search_dir()
+  local config_path = connections.find_connections_toml(search_dir)
   if config_path then
     ok("connections.toml: " .. config_path)
   else

@@ -72,6 +72,40 @@ describe("connections find_connections_toml", function()
   end)
 end)
 
+describe("connections get_search_dir", function()
+  local saved_cwd, saved_buf
+
+  before_each(function()
+    saved_cwd = vim.fn.getcwd()
+    saved_buf = vim.api.nvim_get_current_buf()
+  end)
+
+  after_each(function()
+    vim.api.nvim_set_current_buf(saved_buf)
+    vim.fn.chdir(saved_cwd)
+  end)
+
+  it("uses the current file buffer's directory", function()
+    local buf = vim.api.nvim_create_buf(false, false)
+    vim.api.nvim_buf_set_name(buf, "/tmp/poste-search/query.sql")
+    vim.api.nvim_set_option_value("buftype", "", { buf = buf })
+    vim.api.nvim_set_current_buf(buf)
+    assert.equals("/tmp/poste-search", connections.get_search_dir())
+  end)
+
+  it("falls back to cwd on a pseudo buffer instead of its fake name", function()
+    -- poste://dataset / poste://db_browser / health:// carry a non-empty but
+    -- non-file name; the old buffer-name rule resolved the search root to
+    -- "poste:" / "health:" so the statusline and :checkhealth could read a
+    -- different connections.toml than the SQL file being edited.
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(buf, "poste://dataset")
+    vim.api.nvim_set_option_value("buftype", "nofile", { buf = buf })
+    vim.api.nvim_set_current_buf(buf)
+    assert.equals(saved_cwd, connections.get_search_dir())
+  end)
+end)
+
 describe("connections resolve_connection_url", function()
   local tmpdir
   local saved_cwd
@@ -332,6 +366,17 @@ describe("connections resolve_connection_url", function()
     assert.equals("sqlite::memory:", url)
   end)
 
+  it("treats an empty sqlite path as :memory:", function()
+    -- `path = ""` is an unset path, not a file named "": the old
+    -- `conn.path or ":memory:"` let the empty string through and built the
+    -- invalid `sqlite:?mode=rwc`.
+    package.loaded["poste-db.toml"].parse_file = function()
+      return { mem = { dialect = "sqlite", path = "" } }
+    end
+    local url = connections.resolve_connection_url("mem")
+    assert.equals("sqlite::memory:", url)
+  end)
+
   it("builds mssql URL from fields with default port", function()
     package.loaded["poste-db.toml"].parse_file = function()
       return {
@@ -464,6 +509,27 @@ describe("connections resolve_connection_url", function()
       local url, err = connections.resolve_connection_url("primary")
       assert.is_nil(url)
       assert.matches("ssh tunnel failed", err or "")
+    end)
+
+    it("expands {{VAR}} inside nested tables like tunnel.to", function()
+      -- apply_env used to pass nested tables through substitute_vars
+      -- untouched, so tunnel.ensure received the literal "{{POSTE_TEST_BASTION}}"
+      -- and the failure read like a tunnel problem instead of a config one.
+      vim.env.POSTE_TEST_BASTION = "jump@bastion"
+      package.loaded["poste-db.toml"].parse_file = function()
+        return { primary = {
+          dialect = "postgres", host = "db.internal", port = 5432,
+          database = "blog", user = "alice",
+          tunnel = { to = "{{POSTE_TEST_BASTION}}" },
+        } }
+      end
+      local seen
+      package.loaded["poste-db.tunnel"] = {
+        ensure = function(_, cfg) seen = cfg; return 17000 end,
+      }
+      connections.resolve_connection_url("primary")
+      vim.env.POSTE_TEST_BASTION = nil
+      assert.same({ to = "jump@bastion" }, seen)
     end)
 
     it("rejects tunnel combined with a raw url field", function()
@@ -648,6 +714,23 @@ describe("connections list_connections", function()
     assert.is_not_nil(captured)
     assert.equals(1, #captured)
     assert.equals("primary", captured[1].name)
+  end)
+
+  it("keeps the tunnel field on the picker rows", function()
+    -- format_connection's 🔒 mark and run_test's tunnel routing read
+    -- conn.tunnel; the row builder used to drop the field, making both dead
+    -- for every row that came through list_connections.
+    local config_path = tmpdir .. "/connections.toml"
+    vim.fn.writefile({ "[primary]", "dialect = \"postgres\"", "tunnel = \"jump@bastion\"" },
+      config_path)
+    util_stub.find_file_upwards = function() return config_path end
+    package.loaded["poste-db.toml"].parse_file = function()
+      return { primary = { dialect = "postgres", tunnel = "jump@bastion" } }
+    end
+    local captured
+    connections.list_connections(function(list) captured = list end)
+    vim.wait(100, function() return captured ~= nil end)
+    assert.equals("jump@bastion", captured[1].tunnel)
   end)
 
   it("sorts the list by name regardless of toml table order", function()
