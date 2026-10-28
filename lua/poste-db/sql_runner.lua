@@ -155,7 +155,7 @@ function M.run_sql_request()
 
   local binary = state.find_poste_binary()
   if not binary then
-    vim.notify("Poste binary not found.", vim.log.levels.ERROR)
+    vim.notify("Poste binary not found.", vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -224,64 +224,6 @@ function M.run_sql_request()
     vim.notify("You have unsaved edits. Commit or discard them first.", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return
   end
-  exec_seq = exec_seq + 1
-  local current_seq = exec_seq
-  indicators.clear_all(src_buf)
-
-  -- Request history entry (JetBrains-style sidebar): one entry per request.
-  -- Created here so the label is captured at request time; elapsed/error are
-  -- filled in by on_response/on_error via the captured entry reference.
-  local dataset = require("poste-db.dataset")
-  local label_start = stmt_start
-    or (is_visual and math.max(1, math.min(_vis_start, _vis_end)) or nil) or 1
-  local label = statement.extract_label(buf_lines, label_start)
-  if not label then
-    -- Fallback: <basename>_<per-buffer counter> (e.g. test_1, test_2)
-    label = statement.fallback_label(file, src_buf)
-  end
-  local ts = dataset.now_wall()
-  local entry = dataset.new_entry({
-    label = label,
-    ts_sec = ts.sec,
-    ts_nsec = ts.nsec,
-    src_buf = src_buf,
-    src_file = file,
-    stmt_line = stmt_start,
-  })
-  sql_buffer.clear_panel()
-
-  -- Set running indicators
-  local first_line = stmt_lines[1]
-  if not first_line then
-    first_line = (is_visual and math.max(_vis_start or 0, _vis_end or 0) > 0)
-      and math.min(_vis_start, _vis_end) or 1
-  end
-  first_line = math.max(1, math.min(first_line, #buf_lines))
-
-  -- Place the running spinner on the same line each statement's completion
-  -- indicator will land — the statement's FIRST line — so ✓/✘ replaces the
-  -- spinner in place and the sign column stays aligned with the SQL start.
-  if is_visual then
-    if #stmt_lines > 0 then
-      for i, ln in ipairs(stmt_lines) do
-        indicators.set_indicator(src_buf, stmt_indicator_line(ln), "running")
-      end
-    else
-      indicators.set_indicator(src_buf, first_line - 1, "running")
-    end
-  else
-    indicators.set_indicator(src_buf, first_line - 1, "running")
-  end
-
-  -- Line a whole-block failure lands on (the last statement's starting line
-  -- for visual runs), matching where its running spinner sits.
-  local block_result_line
-  if is_visual then
-    local last_start = stmt_lines[#stmt_lines] or first_line
-    block_result_line = stmt_indicator_line(last_start)
-  else
-    block_result_line = first_line - 1
-  end
 
   local sql_context = require("poste-db.context")
   local ctx
@@ -291,9 +233,6 @@ function M.run_sql_request()
   else
     ctx = sql_context.resolve_full_context(src_buf)
   end
-  -- Persist resolved context so it's available for dataset editing (PK introspection etc.)
-  if ctx.connection then state.context.connection = ctx.connection end
-  if ctx.database then state.context.database = ctx.database end
 
   -- Resolve connection name to URL and pass it directly: Lua owns
   -- connections.toml resolution (mirror rule), the binary only ever sees URLs
@@ -301,13 +240,13 @@ function M.run_sql_request()
   if ctx.connection and ctx.connection ~= "" then
     local connections = require("poste-db.connections")
     local url, err = connections.resolve_connection_url(ctx.connection)
-    if url then
-      conn_url = url
-    else
-      indicators.clear_all(src_buf)
+    if not url then
+      -- Cancel path: no state has been mutated yet, so a request that is
+      -- still in flight keeps its spinner and its epoch stays valid.
       vim.notify("Connection '" .. ctx.connection .. "' not found: " .. (err or "create a connections.toml in your project root"), vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
       return
     end
+    conn_url = url
   end
 
   local db = ctx.database
@@ -353,7 +292,6 @@ function M.run_sql_request()
       sql_statements[#sql_statements + 1] = table.concat(body_lines, "\n")
     end
   end
-  entry.sql = stmt_sql_raw or buf_content
 
   -- Unfiltered DML guard: a DELETE/UPDATE without a WHERE clause would hit
   -- every row. Confirm once (before any executor side effects) so a stray
@@ -372,10 +310,77 @@ function M.run_sql_request()
     end
   end
 
+  -- Everything below mutates request-scoped state, so it sits after every
+  -- cancel path above (no statement at cursor, dirty edits, missing
+  -- connection, DML-guard rejection): a cancelled run must keep the previous
+  -- response/dataset, must not bump the epoch (that would make the stale-seq
+  -- guard in sql_runner/response drop a still-running request's response)
+  -- and must not leave an empty history entry behind.
+  exec_seq = exec_seq + 1
+  local current_seq = exec_seq
+  indicators.clear_all(src_buf)
+
+  -- Request history entry (JetBrains-style sidebar): one entry per request.
+  -- Created here so the label is captured at request time; elapsed/error are
+  -- filled in by on_response/on_error via the captured entry reference.
+  local dataset = require("poste-db.dataset")
+  local label_start = stmt_start
+    or (is_visual and math.max(1, math.min(_vis_start, _vis_end)) or nil) or 1
+  local label = statement.extract_label(buf_lines, label_start)
+  if not label then
+    -- Fallback: <basename>_<per-buffer counter> (e.g. test_1, test_2)
+    label = statement.fallback_label(file, src_buf)
+  end
+  local ts = dataset.now_wall()
+  local entry = dataset.new_entry({
+    label = label,
+    ts_sec = ts.sec,
+    ts_nsec = ts.nsec,
+    src_buf = src_buf,
+    src_file = file,
+    stmt_line = stmt_start,
+  })
+  entry.sql = stmt_sql_raw or buf_content
+  sql_buffer.clear_panel()
+
+  -- Set running indicators
+  local first_line = stmt_lines[1]
+  if not first_line then
+    first_line = (is_visual and math.max(_vis_start or 0, _vis_end or 0) > 0)
+      and math.min(_vis_start, _vis_end) or 1
+  end
+  first_line = math.max(1, math.min(first_line, #buf_lines))
+
+  -- Place the running spinner on the same line each statement's completion
+  -- indicator will land — the statement's FIRST line — so ✓/✘ replaces the
+  -- spinner in place and the sign column stays aligned with the SQL start.
+  if is_visual then
+    if #stmt_lines > 0 then
+      for i, ln in ipairs(stmt_lines) do
+        indicators.set_indicator(src_buf, stmt_indicator_line(ln), "running")
+      end
+    else
+      indicators.set_indicator(src_buf, first_line - 1, "running")
+    end
+  else
+    indicators.set_indicator(src_buf, first_line - 1, "running")
+  end
+
+  -- Line a whole-block failure lands on (the last statement's starting line
+  -- for visual runs), matching where its running spinner sits.
+  local block_result_line
+  if is_visual then
+    local last_start = stmt_lines[#stmt_lines] or first_line
+    block_result_line = stmt_indicator_line(last_start)
+  else
+    block_result_line = first_line - 1
+  end
+
+  -- Persist resolved context so it's available for dataset editing (PK introspection etc.)
+  if ctx.connection then state.context.connection = ctx.connection end
+  if ctx.database then state.context.database = ctx.database end
+
   -- Fresh SQL session: clears request-scoped dataset/response state (Phase 2b).
-  -- Deliberately after every cancel path above (no statement at cursor, dirty
-  -- edits, missing connection, DML-guard rejection) so a cancelled run keeps
-  -- the previous response/dataset instead of wiping it.
   require("poste-db.session").begin({
     buf = src_buf,
     line = vim.fn.line("."),

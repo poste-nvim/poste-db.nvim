@@ -252,11 +252,31 @@ describe("sql_runner run_sql_request", function()
       confirm_calls = confirm_calls + 1
       return 2  -- No, cancel
     end
+
+    -- A cancelled run must not touch anything a still-running request depends
+    -- on: the epoch bump would make the stale-seq guard in sql_runner/response
+    -- silently DROP that request's response, and the spinner/history/panel
+    -- mutations would show UI for a run that never started.
+    local seq_before = runner.get_exec_seq()
+    local cleared, panels = 0, 0
+    local ind_stub = package.loaded["poste-db.indicators"]
+    local buf_stub = package.loaded["poste-db.buffer"]
+    ind_stub.clear_all = function() cleared = cleared + 1 end
+    buf_stub.clear_panel = function() panels = panels + 1 end
+    local dataset = require("poste-db.dataset")
+    local history_len = #dataset.history
+
     runner.run_sql_request()
     vim.fn.confirm = real_confirm
 
     assert.equals(1, confirm_calls, "guard must ask before executing")
     assert.equals(0, begin_calls, "cancelled run must not begin a new session")
+    assert.equals(seq_before, runner.get_exec_seq(),
+      "cancelled run must not bump the execution epoch")
+    assert.equals(0, cleared, "cancelled run must not clear running indicators")
+    assert.equals(0, panels, "cancelled run must not clear the history panel")
+    assert.equals(history_len, #dataset.history,
+      "cancelled run must not push an empty history entry")
     assert.same({ body = "{}" }, poste_state_stub.last_response)
     assert.same({ type = "resultset" }, sql_state_stub.last_dataset)
   end)
