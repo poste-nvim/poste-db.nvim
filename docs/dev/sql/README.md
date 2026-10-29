@@ -14,7 +14,7 @@ see `.opencode/skills/sql-architecture-harness/SKILL.md` for the house rules
 |--------|------|
 | `init.lua` | `setup()` entry: config merge, highlights, commands, autocmds, AI registration |
 | `config.lua` | User config (`M.config`), defaults, keymap lookup |
-| `compat.lua` | Legacy `poste_sql_*` globals + `poste_db_*`/`poste_sql_` variable-name fallbacks; deprecation warnings |
+| `compat.lua` | Legacy `poste_sql_*` globals + the five `g:` option-name fallbacks; deprecation warnings |
 | `constants.lua` | **Single source**: supported dialects, `DIALECT_ALIASES`, `URL_SCHEMES`/`dialect_from_url`, `DIALECT_DEFAULT_PORTS`, `SYSTEM_SCHEMAS`, directive parsing helpers; spinner/indicator constants merged from poste.nvim@5b3759e |
 | `state.lua` | SQL context (current connection/database binding) + dataset/cell state; + state-lite merged from poste.nvim@5b3759e (`config` singleton, `find_poste_binary`, `apply_highlight_overrides`, `log`) |
 | `cli.lua` | VENDORED from poste.nvim@5b3759e `lua/poste/cli.lua` — poste binary wrapper (`run`/`run_json`/`run_async`) |
@@ -74,7 +74,7 @@ see `.opencode/skills/sql-architecture-harness/SKILL.md` for the house rules
 | `dataset.lua` | Dataset data model/tab state |
 | `format.lua` | Value formatting, column widths, table drawing, pagination planning |
 | `highlights/` | Cell highlight extmarks (`render`) + highlight groups (`theme`) |
-| `statement_indicator.lua` / `statement.lua` | Sign-column statement indicators |
+| `statement_indicator.lua` | Statement-under-cursor indicator (background rectangle / gutter-number tint, `config.boundary_style`) |
 | `nav/` | Cross-dataset navigation routing (`detect`/`handlers`/`route`) |
 | `float_window.lua` | House floating-window primitive — all popups go through `open()`/`open_centered()` |
 | `insert_hint.lua` | Debounced INSERT template hint |
@@ -197,7 +197,8 @@ cross-repo contracts are:
 | [Context Architecture](./context-architecture.md) | SQL completion context detection architecture |
 | [Session Design](./session-design.md) | The persistent SQL session pool: problems, routing, lifecycle |
 | [AI Chat Integration](./ai-chat.md) | poste-ai.nvim "db" context: @connection mentions, schema injection, SQL code-block execution into the dataset |
+| [Audit 2026-10-30](./audit-2026-10-30.md) | Round 4: execution path, dataset UI wiring, browser/completion/export — fixed defects, deferred items (postgres PK = Rust-side), test surface |
 
 ---
 
-*SQL developer documentation — Last updated: 2026-10-19 (module index: added the two unlisted modules — diagnostics, log)*
+*SQL developer documentation — Last updated: 2026-10-30 (audit round 4: compat/statement_indicator rows corrected; audit-2026-10-30 added to the design docs)*

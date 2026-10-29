@@ -486,8 +486,25 @@ inline `-m`. Write the message to a temp file and use
 `git commit -F <file>`; or verify with `git log -1 --format=%B` word by word
 after committing instead of trusting the exit code.
 
+## 25. A guard with a release path but no set path: write the test before the guard, not after
+
+**What happened**: in the 2026-10-30 audit session, the `commit_edits`
+in-flight guard (edit_commit/init.lua) was written as a `commit_in_flight`
+module-local with clears in `on_response`, `on_error` and the failed-start
+branch — but the `commit_in_flight = true` assignment before `run_async` was
+never written. Every clearing site was in place; the guard simply never
+engaged. The spec written for the guard ("refuses a second dispatch while a
+commit is in flight") caught it on the first suite run.
+
+**Rule**: a boolean guard needs BOTH transitions spelled in the same edit —
+grep the flag name after writing it and count the assignments, not just the
+reads (`grep -c "flag = true"` alongside the clears). A guard test that
+exercises the blocked path is what makes the missing set observable; write it
+in the same change, and trust its red over a green suite that never reaches
+the branch.
+
 ---
 
-*Latest: 2026-10-28 review session (#24 backticks in commit messages).
-When adding an entry, keep the format: what happened (with file:line) →
-the rule (an executable check to run).*
+*Latest: 2026-10-30 audit session (#25 in-flight guard set path). When adding
+an entry, keep the format: what happened (with file:line) → the rule (an
+executable check to run).*
