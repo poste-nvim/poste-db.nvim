@@ -443,6 +443,22 @@ local function new_table_ref(table_name, schema, dialect)
   return qualified
 end
 
+-- Per-dialect id/created_at starter columns for the New Table generator.
+-- The old body hardcoded the postgres spelling (`id SERIAL`, `TIMESTAMP`)
+-- for every dialect: on sqlite SERIAL is just a type name — the column is
+-- neither auto-increment nor a rowid alias, so inserts without `id` stored
+-- NULL — and MSSQL's TIMESTAMP is the deprecated rowversion synonym, which
+-- rejects DEFAULT CURRENT_TIMESTAMP. Mirrors the per-dialect variants
+-- snippets.lua already carries for the `ct` template.
+local NEW_TABLE_COLUMNS = {
+  postgres = { "id SERIAL PRIMARY KEY", "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" },
+  mysql = { "id INT NOT NULL AUTO_INCREMENT PRIMARY KEY", "created_at DATETIME DEFAULT CURRENT_TIMESTAMP" },
+  mariadb = { "id INT NOT NULL AUTO_INCREMENT PRIMARY KEY", "created_at DATETIME DEFAULT CURRENT_TIMESTAMP" },
+  sqlite = { "id INTEGER PRIMARY KEY AUTOINCREMENT", "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" },
+  mssql = { "id INT IDENTITY(1,1) PRIMARY KEY", "created_at DATETIME2 DEFAULT SYSDATETIME()" },
+  clickhouse = { "id UInt64", "created_at DateTime DEFAULT now()" },
+}
+
 --- New Table: open form with table name, generate CREATE TABLE template.
 function M.new_table(node, context)
   local dialect = get_dialect(node, context)
@@ -477,10 +493,11 @@ function M.new_table(node, context)
     end
 
     local qualified = new_table_ref(table_name, schema, dialect)
+    local starter = NEW_TABLE_COLUMNS[dialect] or NEW_TABLE_COLUMNS.postgres
 
     table.insert(lines, "CREATE TABLE " .. qualified .. " (")
-    table.insert(lines, "  id SERIAL PRIMARY KEY,")
-    table.insert(lines, "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    table.insert(lines, "  " .. starter[1] .. ",")
+    table.insert(lines, "  " .. starter[2])
     table.insert(lines, ");")
     table.insert(lines, "")
 

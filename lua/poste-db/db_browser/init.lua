@@ -159,12 +159,18 @@ local function toggle_multi_select_on_table(buf_line)
 end
 
 local function get_selected_table_names()
-  local names = {}
+  -- {name, [schema]} pairs so the copy path can fetch the DDL of the table
+  -- the user actually yanked — a postgres table node's schema is meta-only,
+  -- and without it the paste defaulted to `public`.
+  local tables = {}
   for node, _ in pairs(multi_select.selected) do
-    table.insert(names, node.name)
+    table.insert(tables, {
+      name = node.name,
+      schema = node.meta and node.meta.schema or nil,
+    })
   end
-  table.sort(names)
-  return names
+  table.sort(tables, function(a, b) return a.name < b.name end)
+  return tables
 end
 
 local function find_target_db(buf_line)

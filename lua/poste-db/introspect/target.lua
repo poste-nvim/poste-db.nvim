@@ -33,6 +33,7 @@ function M.resolve_detected_action(target, db, _cword)
     return {
       kind = "ddl",
       db = target.db or db,
+      schema = target.schema,
       table_name = target.table_name,
     }
   end

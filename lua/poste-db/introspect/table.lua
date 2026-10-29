@@ -1,12 +1,12 @@
 --- Introspection --- table-level detail fetching and display.
 local const = require("poste-db.constants")
+local connections = require("poste-db.connections")
 local exec = require("poste-db.introspect.exec")
 local ui = require("poste-db.introspect.ui")
 
 local M = {}
 
 local function resolve_url(conn)
-  local connections = require("poste-db.connections")
   local url, url_err = connections.resolve_connection_url(conn)
   if not url then
     return nil, url_err or "unknown error"
@@ -58,7 +58,7 @@ function M.show_database_info(conn, db_name, show_float)
   })
 end
 
-function M.show_table_ddl(conn, db, cword, show_float)
+function M.show_table_ddl(conn, db, cword, show_float, schema)
   local url, url_err = resolve_url(conn)
   if not url then
     vim.notify("DDL: " .. url_err, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
@@ -66,6 +66,22 @@ function M.show_table_ddl(conn, db, cword, show_float)
   end
 
   local args = { "introspect", "--connection-url", url, "--type", "ddl", "--table", cword }
+
+  -- Schema placement, mirroring column.lua: on MySQL/MariaDB a schema IS a
+  -- database, so it goes on --database exactly as before. Everywhere else it
+  -- goes on --schema, and --database keeps the real context database — the
+  -- old `--database <schema>` repointed the connection at a database named
+  -- like the schema (postgres: "database app does not exist").
+  if schema and schema ~= vim.NIL and schema ~= "" then
+    local cc = connections.get_connection_config(conn)
+    local dialect = cc and cc.dialect or ""
+    if dialect == "mysql" or dialect == "mariadb" then
+      db = schema
+    else
+      table.insert(args, "--schema")
+      table.insert(args, schema)
+    end
+  end
   if db and db ~= vim.NIL and db ~= "" then
     table.insert(args, "--database")
     table.insert(args, db)

@@ -65,6 +65,18 @@ describe("snippets", function()
       assert.matches("ENGINE = MergeTree", snippets.resolve("ct", "clickhouse").snippet)
     end)
 
+    it("spells the postgres alter_modify_column type change as TYPE, not SET", function()
+      -- `ALTER COLUMN c SET <type>` is not postgres SQL (the type change is
+      -- `ALTER COLUMN c TYPE t`); the old template produced a syntax error
+      -- on every expansion.
+      assert.matches("ALTER COLUMN ${2:column_name} TYPE ${3:INTEGER};",
+        snippets.resolve("colu", "postgres").snippet)
+      assert.not_matches("SET ${", snippets.resolve("colu", "postgres").snippet)
+      -- The other dialects keep their working shapes.
+      assert.matches("MODIFY COLUMN", snippets.resolve("colu", "mysql").snippet)
+      assert.matches("MODIFY COLUMN", snippets.resolve("colu", nil).snippet)
+    end)
+
     it("falls back to default template when dialect has no variant", function()
       assert.matches("^INSERT INTO", snippets.resolve("ins", "postgres").snippet)
       assert.matches("^INSERT INTO", snippets.resolve("ins", "sqlite").snippet)

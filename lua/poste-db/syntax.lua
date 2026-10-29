@@ -1,7 +1,14 @@
---- SQL directive comment highlighter.
---- Only handles -- @connection / @database / @protocol highlighting.
---- SQL keyword/type/function highlighting is handled by Tree-sitter
---- via after/queries/poste_sql/highlights.scm.
+--- SQL tree-sitter highlight repair + directive highlighting. Four jobs:
+---   1. -- @connection / @database / @protocol directive comment highlighting
+---      (immediate, pre-###-header lines only)
+---   2. digit-prefix fragment recoloring (`123px`, `45%` — the number lexer
+---      swallows the unit otherwise)
+---   3. log-viewer line keyword highlighting (highlight_line)
+---   4. known-error-construct recoloring: hand-maintained false-positive
+---      patterns mirrored from ts_stmt.find_error_nodes (LEARNINGS #11 — the
+---      two tables move together)
+--- General SQL keyword/type/function highlighting is Tree-sitter's job via
+--- after/queries/poste_sql/highlights.scm; none of the above replace it.
 
 local M = {}
 local const = require("poste-db.constants")

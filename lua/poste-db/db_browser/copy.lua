@@ -34,7 +34,7 @@ local function run_sql_on_conn(conn_name, database, sql, on_result, on_error)
   sql_conn.run(conn_name, database, sql, on_result, on_error)
 end
 
-local function introspect_ddl(conn_name, db_name, table_name, on_result, on_error)
+local function introspect_ddl(conn_name, db_name, table_name, on_result, on_error, schema_name)
   local binary = cli.binary()
   if not binary then
     if on_error then on_error("Poste binary not found") end
@@ -63,6 +63,14 @@ local function introspect_ddl(conn_name, db_name, table_name, on_result, on_erro
   local db = util.named(db_name)
   if db then
     table.insert(args, "--database"); table.insert(args, db)
+  end
+  -- The schema must ride along: the binary's postgres DDL arm defaults to
+  -- `public` when --schema is absent, so the yanked `app.events` fetched the
+  -- DDL of public.events — a same-named public table was silently recreated
+  -- and copied IN ITS PLACE, and without one the paste errored "No DDL found".
+  local schema = util.named(schema_name)
+  if schema then
+    table.insert(args, "--schema"); table.insert(args, schema)
   end
 
   local stderr_buf = {}
@@ -441,7 +449,7 @@ local function copy_one_table(source, target, table_name, target_table_name, on_
         copy_data_cross_server(source, target, schema, table_name, target_table_name, on_done, on_error)
       end
     end, on_error)
-  end, on_error)
+  end, on_error, source.schema)
 end
 
 -- --------------------------------------------------------------- executors
@@ -556,10 +564,20 @@ function M.paste_objects(source, target, items, triggers, routines, opts)
               tag = KIND_TAGS.view,
               work = function(cb)
                 catalog.fetch_view_definition(
-                  { conn = it.conn, db = it.db, dialect = it.dialect, name = it.name },
+                  -- schema rides along so the postgres lookup targets the
+                  -- view's own namespace instead of "public or first match".
+                  { conn = it.conn, db = it.db, dialect = it.dialect,
+                    name = it.name, schema = it.schema },
                   function(body, err)
                     if not body then cb(false, nil, nil, err); return end
-                    local create_sql = "CREATE VIEW " .. quote(final_name, target.dialect)
+                    -- Same schema placement the table DDL carries: the view
+                    -- lands in its source namespace (an absent target schema
+                    -- fails the paste loudly, like the CREATE TABLE it would
+                    -- otherwise silently misplace).
+                    local qualified = it.schema and it.schema ~= ""
+                      and quote(it.schema, target.dialect) .. "." .. quote(final_name, target.dialect)
+                      or quote(final_name, target.dialect)
+                    local create_sql = "CREATE VIEW " .. qualified
                       .. " AS " .. body
                     execute_sql_on_target(target, create_sql, cb)
                   end)
@@ -708,13 +726,16 @@ function M.clone_database(source, target, opts)
 end
 
 --- Legacy compat shim for the old multi-select copy path (init.lua:start_copy).
---- Converts a flat list of table names into items and delegates to paste_objects.
-function M.copy_tables(source, target, table_names, on_complete)
+--- Converts a list of {name, [schema]} selections into items and delegates to
+--- paste_objects; a bare string is tolerated for very old callers.
+function M.copy_tables(source, target, table_selections, on_complete)
   local items = {}
-  for _, name in ipairs(table_names) do
+  for _, sel in ipairs(table_selections) do
+    if type(sel) == "string" then sel = { name = sel } end
     table.insert(items, {
       kind = "table",
-      name = name,
+      name = sel.name,
+      schema = sel.schema,
       conn = source.conn,
       db = source.db,
       dialect = source.dialect,

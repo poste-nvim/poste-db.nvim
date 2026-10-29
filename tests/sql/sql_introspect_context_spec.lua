@@ -20,6 +20,10 @@ describe("introspect context", function()
   end)
 
   it("resolves schema_table targets as ddl lookups", function()
+    -- BEHAVIOR CHANGE (2026-10-30 audit): the schema used to fold into `db`,
+    -- which for postgres repointed the connection at a database named like
+    -- the schema. The real context database stays in `db`; the schema rides
+    -- on `schema` (the argv layer decides --schema vs --database per dialect).
     local target = ctx.resolve_detected_target({
       ctx_type = "schema_table",
       ctx_data = "blog",
@@ -27,7 +31,22 @@ describe("introspect context", function()
 
     assert.same({
       kind = "ddl",
-      db = "blog",
+      db = "main",
+      schema = "blog",
+      table_name = "authors",
+    }, target)
+  end)
+
+  it("resolves schema_table targets without a context database", function()
+    local target = ctx.resolve_detected_target({
+      ctx_type = "schema_table",
+      ctx_data = "blog",
+    }, "authors", nil)
+
+    assert.same({
+      kind = "ddl",
+      db = nil,
+      schema = "blog",
       table_name = "authors",
     }, target)
   end)
@@ -56,7 +75,8 @@ describe("introspect context", function()
 
     assert.same({
       kind = "ddl",
-      db = "blog",
+      db = "main",
+      schema = "blog",
       table_name = "authors",
     }, target)
   end)

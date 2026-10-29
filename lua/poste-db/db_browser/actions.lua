@@ -195,7 +195,11 @@ execute_table_select = function(node, context)
   local conn = get_connection(node, context.root_nodes)
   local sql = "-- @connection " .. conn .. "\n"
     .. ops_sql.select_star_sql(ops_sql.qualified_table_ref(node, dialect), dialect)
-  local search_dir = vim.fn.getcwd()
+  -- Same config discovery as every other browser fetch (toggle/refresh/
+  -- show_table_info use get_search_dir): with the browser open over a SQL
+  -- file in another directory, getcwd() read a different connections.toml
+  -- than the same node's other actions did.
+  local search_dir = get_search_dir(context.source_buf)
 
   local connections = require("poste-db.connections")
   local url, err = connections.resolve_connection_url(conn)

@@ -114,14 +114,19 @@ function M.routine_names_sql(dialect)
 end
 
 --- SQL fetching the full CREATE statement of one procedure/function.
-function M.routine_def_sql(dialect, name, rtype)
+--- `schema` (optional) scopes the postgres lookup: pg_proc is matched by
+--- proname alone otherwise, so two schemas holding a same-named function
+--- delivered whichever ORDER BY chose first.
+function M.routine_def_sql(dialect, name, rtype, schema)
   if dialect == "mysql" or dialect == "mariadb" then
     local kind = (rtype == "PROCEDURE") and "PROCEDURE" or "FUNCTION"
     return "SHOW CREATE " .. kind .. " " .. esc_backtick(name)
   elseif dialect == "postgres" then
     return "SELECT pg_get_functiondef(p.oid)::text AS def"
-      .. " FROM pg_proc p"
+      .. " FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
       .. " WHERE p.proname = " .. esc_quote(name)
+      .. (schema and schema ~= ""
+          and " AND n.nspname = " .. esc_quote(schema) or "")
       .. " LIMIT 1"
   end
   return nil
@@ -129,7 +134,9 @@ end
 
 --- SQL fetching a view definition. MySQL/SQLite return the server's full
 --- "CREATE ... VIEW <ident> AS <body>" text; PG returns just the body.
-function M.view_definition_sql(dialect, name)
+--- `schema` (optional) scopes the postgres lookup the same way: without it
+--- the name matched across ALL schemas, public first.
+function M.view_definition_sql(dialect, name, schema)
   if dialect == "mysql" or dialect == "mariadb" then
     return "SHOW CREATE VIEW " .. esc_backtick(name)
   elseif dialect == "postgres" then
@@ -137,6 +144,8 @@ function M.view_definition_sql(dialect, name)
       .. " FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
       .. " WHERE c.relname = " .. esc_quote(name)
       .. " AND c.relkind IN ('v','m')"
+      .. (schema and schema ~= ""
+          and " AND n.nspname = " .. esc_quote(schema) or "")
       .. " AND n.nspname " .. SYSTEM_NS_SQL
       .. " ORDER BY CASE WHEN n.nspname = 'public' THEN 0 ELSE 1 END"
       .. " LIMIT 1"
@@ -389,10 +398,10 @@ end
 
 --- Fetch a view's SELECT body (no CREATE header) so the paste engine can
 --- recompose it under any target name.
----@param source table {conn, db, dialect, name}
+---@param source table {conn, db, dialect, name, [schema]}
 ---@param on_done function(body|nil, err|nil)
 function M.fetch_view_definition(source, on_done)
-  local sql = M.view_definition_sql(source.dialect, source.name)
+  local sql = M.view_definition_sql(source.dialect, source.name, source.schema)
   if not sql then on_done(nil, "unsupported dialect"); return end
   run_maps(sql, source, function(maps)
     local m = maps[1]
@@ -412,10 +421,10 @@ function M.fetch_view_definition(source, on_done)
 end
 
 --- Fetch a routine's full CREATE statement.
----@param source table {conn, db, dialect, name, rtype}
+---@param source table {conn, db, dialect, name, rtype, [schema]}
 ---@param on_done function(text|nil, err|nil)
 function M.fetch_routine_definition(source, on_done)
-  local sql = M.routine_def_sql(source.dialect, source.name, source.rtype)
+  local sql = M.routine_def_sql(source.dialect, source.name, source.rtype, source.schema)
   if not sql then on_done(nil, "unsupported dialect"); return end
   run_maps(sql, source, function(maps)
     local m = maps[1]

@@ -201,6 +201,7 @@ function M.show_table_ddl()
 
   -- Check for .column suffix (alias.column → column part)
   local after_dot_col = nil
+  local ddl_schema = nil
   local nxt = line_text:sub(end_col + 1, end_col + 1)
   if nxt == "." then
     local cm = line_text:match("^([%w_]+)", end_col + 2)
@@ -231,12 +232,13 @@ function M.show_table_ddl()
     end
     if action.kind == "ddl" and action.table_name then
       db = action.db or db
+      ddl_schema = action.schema
       cword = action.table_name
     end
   end
 
   -- Fallback: show DDL (table mode)
-  table_helper.show_table_ddl(conn, db, cword, guarded_show(token))
+  table_helper.show_table_ddl(conn, db, cword, guarded_show(token), ddl_schema)
 end
 
 return M

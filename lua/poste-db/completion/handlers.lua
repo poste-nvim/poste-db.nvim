@@ -27,6 +27,24 @@ local function typed_prefix(rust_ctx, line_before)
   return line_before:match("[%w_]+%.([%w_]*)$") or ""
 end
 
+-- The no-databases fallback: offer connections whose selection carries the
+-- directive_fallback marker (choosing one completes `@database <name>`).
+-- Built once — handle_directives' @database branch and handle_database's
+-- directive branch carried byte-identical copies.
+local function connection_fallback_items(conn_names)
+  local items = {}
+  for _, name in ipairs(conn_names) do
+    table.insert(items, {
+      label = name,
+      kind = 6,
+      insertText = "",
+      data = { directive_fallback = true, conn_name = name },
+      documentation = "connection: " .. name,
+    })
+  end
+  return items
+end
+
 function M.handle_directives(line_before, callback)
   -- The directive word must end here (whitespace or end of line): unanchored,
   -- a typo like `-- @connectionX` matched the prefix, found no name after it
@@ -50,17 +68,7 @@ function M.handle_directives(line_before, callback)
     data.ensure_databases(function(names)
       if #names == 0 then
         data.ensure_conn_names(function(conn_names)
-          local items = {}
-          for _, name in ipairs(conn_names) do
-            table.insert(items, {
-              label = name,
-              kind = 6,
-              insertText = "",
-              data = { directive_fallback = true, conn_name = name },
-              documentation = "connection: " .. name,
-            })
-          end
-          flush_items(callback, ctx.filter(items, db_prefix))
+          flush_items(callback, ctx.filter(connection_fallback_items(conn_names), db_prefix))
         end)
       else
         flush_items(callback, ctx.filter(ctx.make_items(names, 1, "database: "), db_prefix))
@@ -110,17 +118,7 @@ local function handle_database(line_before, ctx_data, callback)
   data.ensure_databases(function(names)
     if ctx_data == "directive" and #names == 0 then
       data.ensure_conn_names(function(conn_names)
-        local items = {}
-        for _, name in ipairs(conn_names) do
-          table.insert(items, {
-            label = name,
-            kind = 6,
-            insertText = "",
-            data = { directive_fallback = true, conn_name = name },
-            documentation = "connection: " .. name,
-          })
-        end
-        flush_items(callback, ctx.filter(items, db_prefix))
+        flush_items(callback, ctx.filter(connection_fallback_items(conn_names), db_prefix))
       end)
     else
       flush_items(callback, ctx.filter(ctx.make_items(names, 1, "database: "), db_prefix))

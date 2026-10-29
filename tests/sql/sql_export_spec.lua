@@ -192,6 +192,23 @@ describe("export format_sql_insert", function()
       data_result({ columns = { { name = "a" } }, rows = { { 1 } } }), {})
     assert.equals('INSERT INTO "export" ("a") VALUES (1);', out)
   end)
+
+  it("keeps a 15-digit integer exact in the INSERT", function()
+    -- LuaJIT's tostring rewrites an integral double past ~15 significant
+    -- digits into exponent form: 123456789012345 exported as
+    -- 1.2345678901234e+14 = 123456789012340, silently shifting the key on
+    -- re-import. The value is exactly representable (< 2^53), so the INSERT
+    -- must carry the full decimal form.
+    local out = export._test.format_sql_insert(
+      data_result({ columns = { { name = "id" } }, rows = { { 123456789012345 } } }), info())
+    assert.equals('INSERT INTO "public"."users" ("id") VALUES (123456789012345);', out)
+  end)
+
+  it("keeps a 15-digit integer exact in CSV", function()
+    local out = export._test.format_csv(
+      data_result({ columns = { { name = "id" } }, rows = { { 123456789012345 } } }))
+    assert.equals("id\n123456789012345", out)
+  end)
 end)
 
 describe("export sql_escape_val", function()

@@ -169,13 +169,18 @@ local cache_epoch = 0
 
 function M.get_cache() return cache end
 
---- Clear the schema cache for the current connection.
+--- Clear the schema cache for a connection.
 --- Call after DDL execution (CREATE TABLE, ALTER, DROP, etc.)
---- to force re-fetching on next completion.
-function M.clear_cache()
+--- to force re-fetching on next completion. `conn` (optional) names the
+--- connection the DDL ran on — browser-side DDL executes while the BROWSER
+--- window is focused, so resolving "the current connection" from the live
+--- buffer found nothing (or the wrong connection) and the cache survived.
+function M.clear_cache(conn)
   cache_epoch = cache_epoch + 1
-  local ctx = M.resolve_current_context()
-  local conn = ctx and ctx.connection
+  if not conn or conn == "" then
+    local ctx = M.resolve_current_context()
+    conn = ctx and ctx.connection
+  end
   if not conn then return end
   -- Cache keys are `<conn>/<db>`, `<conn>/<db>/db:<name>` and
   -- `<conn>/__databases__`. The old anchored `^db:` prefix matched none of

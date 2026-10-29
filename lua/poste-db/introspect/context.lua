@@ -64,9 +64,14 @@ function M.resolve_detected_target(parsed, cword, db, after_dot_col)
 
   if ct == "schema_table" and parsed.ctx_data then
     local schema = parsed.ctx_data or ""
+    -- The schema rides on `schema`, NOT folded into `db`: for postgres a
+    -- schema is not a database, and the old fold repointed the connection at
+    -- a database named like the schema ("database app does not exist").
+    -- mysql/mariadb keep the fold at the argv layer, where database==schema.
     return {
       kind = "ddl",
-      db = schema ~= "" and schema or db,
+      db = db,
+      schema = schema ~= "" and schema or nil,
       table_name = cword,
     }
   end
@@ -83,7 +88,8 @@ function M.resolve_detected_target(parsed, cword, db, after_dot_col)
       local ts = matched.schema or ""
       return {
         kind = "ddl",
-        db = ts ~= "" and ts or db,
+        db = db,
+        schema = ts ~= "" and ts or nil,
         table_name = matched.name or matched.alias or cword,
       }
     end
@@ -115,7 +121,8 @@ function M.resolve_detected_target(parsed, cword, db, after_dot_col)
     if schema_match then
       return {
         kind = "ddl",
-        db = cword,
+        db = db,
+        schema = cword,
         table_name = schema_match.name,
       }
     end

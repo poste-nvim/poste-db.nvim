@@ -204,7 +204,10 @@ function M.build_alter_column_sql(table_node, node, values, dialect)
     if default_val ~= nil and default_val ~= "" then
       table.insert(lines, "ALTER TABLE " .. table_ref .. " ALTER COLUMN " .. col_ref .. " SET DEFAULT " .. default_val .. ";")
     elseif default_val == "" then
-      table.insert(lines, "ALTER TABLE " .. table_ref .. " ALTER COLUMN " .. col_ref .. " SET DEFAULT '';")
+      -- An emptied Default field means DROP the default, not bind '' — the
+      -- old spelling silently replaced e.g. DEFAULT now() with the empty
+      -- string (and '' on a numeric column is a type error besides).
+      table.insert(lines, "ALTER TABLE " .. table_ref .. " ALTER COLUMN " .. col_ref .. " DROP DEFAULT;")
     end
     if comment_val ~= nil and comment_val ~= "" then
       table.insert(lines, "COMMENT ON COLUMN " .. table_ref .. "." .. col_ref .. " IS '" .. tostring(comment_val):gsub("'", "''") .. "';")
@@ -213,8 +216,11 @@ function M.build_alter_column_sql(table_node, node, values, dialect)
   elseif dialect == "mysql" or dialect == "mariadb" then
     local parts = { "ALTER TABLE " .. table_ref .. " MODIFY COLUMN " .. col_ref .. " " .. col_type }
     if not nullable then table.insert(parts, " NOT NULL") end
-    if default_val ~= nil and default_val ~= "" then table.insert(parts, " DEFAULT " .. default_val)
-    elseif default_val == "" then table.insert(parts, " DEFAULT ''") end
+    -- MODIFY COLUMN redefines the column whole: omitting the DEFAULT clause
+    -- (an emptied field) drops the existing default, and MySQL has no inline
+    -- `DROP DEFAULT` on MODIFY. Binding `DEFAULT ''` was never what a
+    -- cleared field meant.
+    if default_val ~= nil and default_val ~= "" then table.insert(parts, " DEFAULT " .. default_val) end
     if comment_val ~= nil and comment_val ~= "" then
       table.insert(parts, " COMMENT '" .. tostring(comment_val):gsub("'", "''") .. "'")
     end

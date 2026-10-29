@@ -99,7 +99,10 @@ local CATEGORIES = {
   alter_modify_column = {
     label = "alter table modify column",
     default = "ALTER TABLE ${1:table_name} MODIFY COLUMN ${2:column_name} ${3:INTEGER} ${4:NOT NULL} DEFAULT ${5:0} COMMENT '${6}';",
-    postgres = "ALTER TABLE ${1:table_name} ALTER COLUMN ${2:column_name} SET ${3:INTEGER} ${4:NOT NULL} DEFAULT ${5:0};",
+    -- Postgres spells a type change `ALTER COLUMN c TYPE t`; there is no
+    -- `SET <type>` form, and SET NOT NULL / SET DEFAULT are separate
+    -- statements (the shape ops_sql.build_alter_column_sql emits).
+    postgres = "ALTER TABLE ${1:table_name} ALTER COLUMN ${2:column_name} TYPE ${3:INTEGER};",
     sqlite = "ALTER TABLE ${1:table_name} MODIFY COLUMN ${2:column_name} ${3:INTEGER} ${4:NOT NULL} DEFAULT ${5:0};",
     mssql = "ALTER TABLE ${1:table_name} ALTER COLUMN ${2:column_name} ${3:INT} ${4:NOT NULL};",
     clickhouse = "ALTER TABLE ${1:table_name} MODIFY COLUMN ${2:column_name} ${3:String};",

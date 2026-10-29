@@ -133,9 +133,12 @@ end
 
 --- Drop the completion schema cache after browser-side DDL. The browser
 --- executes outside the SQL runner's response hook, so without this completion
---- keeps offering dropped tables (and misses created ones).
-function M.invalidate_completion_cache()
-  pcall(function() require("poste-db.completion.data").clear_cache() end)
+--- keeps offering dropped tables (and misses created ones). `conn_name` is
+--- the connection the DDL ran on: the browser window is focused during DDL,
+--- so letting clear_cache resolve "the current connection" from the live
+--- buffer found nothing (or a different connection) and the cache survived.
+function M.invalidate_completion_cache(conn_name)
+  pcall(function() require("poste-db.completion.data").clear_cache(conn_name) end)
 end
 
 --- Execute a DDL statement through exec_run, report the outcome, and refresh
@@ -185,7 +188,7 @@ function M.run_ddl_and_refresh(sql, conn_name, context, opts)
         vim.notify(opts.fail_prefix .. " failed:\n" .. msg, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
       else
         notify.info(opts.success_msg)
-        M.invalidate_completion_cache()
+        M.invalidate_completion_cache(conn_name)
       end
       M.refresh_subtree(opts.target_node, context, opts.node_type)
     end,

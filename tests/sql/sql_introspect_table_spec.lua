@@ -98,4 +98,67 @@ describe("introspect table helper", function()
       show_float = show_float,
     }, seen)
   end)
+
+  it("passes a postgres schema on --schema, keeping the real context database", function()
+    -- The old shape folded the schema into --database, which the CLI applies
+    -- as replace_database_in_url — gd on `blog.authors` connected to a
+    -- database NAMED blog instead of introspecting schema blog.
+    local captured = nil
+    connections_stub.resolve_connection_url = function()
+      return "postgres://user@localhost/appdb", nil
+    end
+    connections_stub.get_connection_config = function()
+      return { dialect = "postgres" }
+    end
+    exec_stub.run_json_items_job = function(args, opts)
+      captured = { args = args }
+      opts.on_items({})
+    end
+    ui_stub.show_ddl = function() end
+
+    helper.show_table_ddl("primary", "appdb", "authors", function() end, "blog")
+
+    assert.same({
+      "introspect",
+      "--connection-url",
+      "postgres://user@localhost/appdb",
+      "--type",
+      "ddl",
+      "--table",
+      "authors",
+      "--schema",
+      "blog",
+      "--database",
+      "appdb",
+    }, captured.args)
+  end)
+
+  it("maps a mysql schema onto --database (a schema IS a database there)", function()
+    local captured = nil
+    connections_stub.resolve_connection_url = function()
+      return "mysql://user@localhost/appdb", nil
+    end
+    connections_stub.get_connection_config = function()
+      return { dialect = "mysql" }
+    end
+    exec_stub.run_json_items_job = function(args, opts)
+      captured = { args = args }
+      opts.on_items({})
+    end
+    ui_stub.show_ddl = function() end
+
+    helper.show_table_ddl("primary", "appdb", "authors", function() end, "blog")
+
+    assert.same({
+      "introspect",
+      "--connection-url",
+      "mysql://user@localhost/appdb",
+      "--type",
+      "ddl",
+      "--table",
+      "authors",
+      "--database",
+      "blog",
+    }, captured.args)
+  end)
 end)

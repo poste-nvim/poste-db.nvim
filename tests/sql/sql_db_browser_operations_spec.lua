@@ -140,11 +140,14 @@ describe("db_browser operations build_alter_column_sql (postgres)", function()
     assert.same({ 'ALTER TABLE "public"."users" ALTER COLUMN "email" TYPE VARCHAR(255);' }, sql)
   end)
 
-  it("emits SET DEFAULT '' for an explicit empty-string default", function()
+  it("emits DROP DEFAULT for an emptied Default field", function()
+    -- BEHAVIOR CHANGE (2026-10-30 audit): an emptied Default field used to
+    -- bind `SET DEFAULT ''` — silently replacing e.g. DEFAULT now() with the
+    -- empty string. A cleared field means the user wants the default GONE.
     local sql = t.build_alter_column_sql(table_node(), column_node(), {
       col_type = "TEXT", nullable = true, default_val = "", comment_val = nil,
     }, "postgres")
-    assert.equals([[ALTER TABLE "public"."users" ALTER COLUMN "email" SET DEFAULT '';]], sql[2])
+    assert.equals([[ALTER TABLE "public"."users" ALTER COLUMN "email" DROP DEFAULT;]], sql[2])
   end)
 
   it("escapes single quotes inside comments", function()
@@ -168,6 +171,16 @@ describe("db_browser operations build_alter_column_sql (mysql)", function()
       col_type = "INT", nullable = false, default_val = "0", comment_val = "zero",
     }, "mysql")
     assert.same({ "ALTER TABLE `users` MODIFY COLUMN `email` INT NOT NULL DEFAULT 0 COMMENT 'zero';" }, sql)
+  end)
+
+  it("omits the DEFAULT clause for an emptied field (MODIFY drops it)", function()
+    -- MySQL has no inline DROP DEFAULT on MODIFY: redefining the column
+    -- without a DEFAULT clause removes the existing default. The old shape
+    -- bound `DEFAULT ''` instead.
+    local sql = t.build_alter_column_sql(table_node(), column_node(), {
+      col_type = "INT", nullable = true, default_val = "", comment_val = nil,
+    }, "mysql")
+    assert.same({ "ALTER TABLE `users` MODIFY COLUMN `email` INT;" }, sql)
   end)
 end)
 

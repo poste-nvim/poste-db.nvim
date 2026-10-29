@@ -150,4 +150,23 @@ describe("db_browser copy introspect_ddl", function()
     ddl_args("blog")
     assert.equals("blog", arg_value("--database"))
   end)
+
+  it("passes the source schema on --schema", function()
+    -- The binary's postgres DDL arm defaults to `public` without --schema:
+    -- the yanked `app.events` fetched public.events's DDL — a same-named
+    -- public table was silently recreated and copied in its place, and
+    -- without one the paste errored "No DDL found".
+    copy._test.introspect_ddl("pg-dev", "blog", "events", function() end, function() end, "app")
+    assert.equals("app", arg_value("--schema"))
+    assert.equals("events", arg_value("--table"))
+  end)
+
+  it("omits --schema when the source carries none", function()
+    copy._test.introspect_ddl("pg-dev", "blog", "events", function() end, function() end, nil)
+    assert.is_nil(arg_value("--schema"))
+    copy._test.introspect_ddl("pg-dev", "blog", "events", function() end, function() end, "")
+    assert.is_nil(arg_value("--schema"))
+    copy._test.introspect_ddl("pg-dev", "blog", "events", function() end, function() end, vim.NIL)
+    assert.is_nil(arg_value("--schema"))
+  end)
 end)

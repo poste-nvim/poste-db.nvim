@@ -124,7 +124,7 @@ execute_drop = function(table_node, qualified, conn, context)
           return
         end
         notify.info("Dropped table: " .. qualified)
-        util.invalidate_completion_cache()
+        util.invalidate_completion_cache(conn)
         if parent then
           util.refresh_subtree(parent, context, parent.node_type, search_dir)
         end
@@ -343,7 +343,7 @@ local function start_batch_drop(items, conn_label, search_dir, context)
       end
       show_summary()
       refresh_all_parents()
-      if completed > 0 then util.invalidate_completion_cache() end
+      if completed > 0 then util.invalidate_completion_cache(conn_label) end
       return
     end
     local it = items[idx]

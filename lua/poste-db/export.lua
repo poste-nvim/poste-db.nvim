@@ -109,6 +109,11 @@ local function export_val(v)
     local ok, encoded = pcall(vim.json.encode, v)
     return ok and encoded or vim.inspect(v)
   end
+  -- Integral doubles in full decimal form, not tostring's %.14g: the CSV/TSV
+  -- cell for an id 123456789012345 used to re-import as 123456789012340.
+  if type(v) == "number" and v == math.floor(v) and math.abs(v) < 2 ^ 53 then
+    return string.format("%.0f", v)
+  end
   return tostring(v)
 end
 
@@ -291,7 +296,12 @@ local ident = require("poste-db.ident")
 ---   there in practice.
 local function sql_escape_val(v, dialect)
   if v == nil or v == vim.NIL then return "NULL" end
-  if type(v) == "number" then return tostring(v) end
+  -- ident.quote_literal, NOT tostring: LuaJIT's %.14g rewrites an integral
+  -- double that needs more than ~15 significant digits into exponent form —
+  -- an id 123456789012345 exported as 1.2345678901234e+14 = ...40, silently
+  -- shifting the key on re-import. The same trap ident.quote_literal already
+  -- fixed for DML generation; the export path is the remaining consumer.
+  if type(v) == "number" then return ident.quote_literal(v, dialect) end
   if type(v) == "boolean" then return v and "TRUE" or "FALSE" end
   local s
   if type(v) == "table" then
