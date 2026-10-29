@@ -291,6 +291,13 @@ local function process_line(session, line)
   local ok, event = pcall(vim.json.decode, line)
   if ok and type(event) == "table" and event.type == "result" then
     process_event(session, event)
+  elseif not ok then
+    -- A dropped line is one lost response event: its request's callbacks never
+    -- fire (the sequence collector never reaches total) and nothing else will
+    -- ever clear the spinner. There is no per-request watchdog here, so the
+    -- log line is the only trace a desynced/truncated event leaves.
+    state.log("WARN", "SQL session undecodable line: "
+      .. tostring(line):sub(1, 160))
   end
 end
 

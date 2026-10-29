@@ -168,16 +168,6 @@ local function build_cmd(tmpfile, opts)
   return cmd
 end
 
---- Whether the caller pinned a concrete target for the run.
---- `""` is not a pin: it is what `build_response` writes when the server
---- reported no database, and the round-trip `state.context` → caller → here
---- used to count as one. With `opts.database = ""` the lone-`USE` shortcut was
---- skipped and the statement went to `exec-file`, which filters USE out of a
---- run — so the context never switched and nothing executed.
-local function has_target(opts)
-  return util.named(opts.conn_url) ~= nil or util.named(opts.database) ~= nil
-end
-
 -- The `exec-file` result event carries the SQL text; use its leading keyword to
 -- tell a query apart from a DML even when the binary/driver reports
 -- `affected_rows` as a number (not null) and omits columns/rows for a SELECT.
@@ -406,7 +396,7 @@ local function run_sql(sql, opts)
   local t0 = vim.uv.now()
   local base = journal_base(sql, opts)
   local use_db = detect_use(sql)
-  if use_db and not has_target(opts) then
+  if use_db then
     local resp = make_use_response(use_db)
     sql_log.result(base, resp, vim.uv.now() - t0)
     return resp
@@ -484,9 +474,16 @@ local function run_async(sql, opts, callbacks)
   -- on_error; SQL failures arrive as a normal response with has_error.
   on_response, on_error = sql_log.wrap_callbacks(base, t0, sql, on_response, on_error)
 
-  -- Lone USE statement: handled locally (exec-file skips USE).
+  -- Lone USE statement: handled locally. The binary cannot execute one —
+  -- exec_file filters USE statements out of the file and bails when nothing
+  -- remains ("No executable SQL statements found") — so a lone USE that
+  -- reaches it fails on every transport. Pinned targets make no difference:
+  -- with a connection or database pin the shortcut used to be skipped here
+  -- and the run died at the binary, leaving the context un-switched. The
+  -- switch to the USE target is the statement's only effect, so deliver it
+  -- locally no matter what the caller pinned.
   local use_db = detect_use(sql)
-  if use_db and not has_target(opts) then
+  if use_db then
     local resp = {
       status = "ok",
       latency_ms = 0,

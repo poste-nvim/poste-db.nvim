@@ -661,9 +661,9 @@ describe("exec_run", function()
     end)
 
     it("still runs a lone USE locally when the caller named a blank database", function()
-      -- The USE shortcut is guarded by "did the caller pin a target?". A `""`
-      -- used to count as a pin, so the statement went to exec-file — which
-      -- filters USE out of a run — and the context never switched.
+      -- A `""` database name is what the response round-trip writes when the
+      -- server reported none; it must not defer the statement to exec-file,
+      -- which filters USE out of a run.
       local captured = {}
       local er = load_capturing(captured)
       local responses = {}
@@ -674,6 +674,35 @@ describe("exec_run", function()
       assert.equals(1, #responses)
       assert.equals("other_db", responses[1].database)
       assert.equals(1, ret)
+    end)
+
+    it("still runs a lone USE locally when a connection is resolved", function()
+      -- A pinned conn_url used to count as "a target was pinned", so the USE
+      -- went to exec-file and died at the binary ("No executable SQL
+      -- statements found") — the context never switched, in the most common
+      -- configuration there is (any buffer with `-- @connection`).
+      local captured = {}
+      local er = load_capturing(captured)
+      local responses = {}
+      er.run_async("USE inventory;", { conn_url = "postgres://h/app", database = nil, log = false }, {
+        on_response = function(resp) responses[#responses + 1] = resp end,
+      })
+      assert.is_nil(captured.cmd, "nothing is dispatched to the binary")
+      assert.equals(1, #responses)
+      assert.equals("inventory", responses[1].database)
+      local body = vim.json.decode(responses[1].body)
+      assert.equals("use", body.type)
+    end)
+
+    it("still runs a lone USE locally when a database is pinned", function()
+      local captured = {}
+      local er = load_capturing(captured)
+      local responses = {}
+      er.run_async("USE new_db;", { conn_url = nil, database = "old_db", log = false }, {
+        on_response = function(resp) responses[#responses + 1] = resp end,
+      })
+      assert.is_nil(captured.cmd)
+      assert.equals("new_db", responses[1].database)
     end)
   end)
 end)

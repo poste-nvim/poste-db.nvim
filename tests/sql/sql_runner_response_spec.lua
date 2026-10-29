@@ -247,6 +247,30 @@ describe("sql_runner response.handle multi result", function()
     assert.equals(4, seen_max_end,
       "failed statement's sql context must stop at stmt_end, not #buf_lines (9)")
   end)
+
+  it("falls back to buf_content when the failed result has no statement entry", function()
+    -- get_stmt_sql returns "" (never nil) for an index past the statement
+    -- list, so the old `or buf_content` fallback was dead: last_error.sql —
+    -- the AI ask-about-this-error context — recorded the empty string.
+    local stmt_stub = package.loaded["poste-db.statement"]
+    local real_get = stmt_stub.get_stmt_sql
+    stmt_stub.get_stmt_sql = function() return "" end
+    local deps = make_deps({
+      stmt_lines = { 1 },
+      buf_lines = { "SELECT 1", "SELECT 2" },
+      buf_content = "SELECT 1\nSELECT 2",
+    })
+    response.handle(deps, single({
+      has_error = true,
+      results = {
+        { failed = true },
+        { row_count = 1, columns = { { name = "x" } }, execution_time_ms = 2 },
+      },
+    }))
+    stmt_stub.get_stmt_sql = real_get
+    assert.equals("SELECT 1\nSELECT 2", state_stub.last_error.sql,
+      "the empty-string return must fall back to the whole buffer content")
+  end)
 end)
 
 describe("sql_runner response.handle_error", function()

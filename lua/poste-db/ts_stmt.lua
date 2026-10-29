@@ -129,7 +129,21 @@ end
 -- buffer's changedtick advances (i.e. any edit). Lets find_stmt_span do an
 -- O(log n) number lookup instead of re-walking top-level TSNode children
 -- from the root on every cursor move (unmeasurably slow on large files).
+-- Bounded by a wholesale wipe: a closed buffer is never passed to
+-- find_stmt_span again, so nothing else removes its entry (bufnr values are
+-- never reused), and a large file's span list would otherwise outlive it
+-- until restart. The counter counts inserts, not live entries — deletions
+-- below don't decrement — so the cap may fire early; it is a leak bound,
+-- not an LRU, and a wiped entry simply rebuilds on the next call.
 local _span_cache = {}
+local _span_cache_inserts = 0
+local _SPAN_CACHE_MAX = 64
+
+local function span_cache_evict()
+  if _span_cache_inserts < _SPAN_CACHE_MAX then return end
+  _span_cache = {}
+  _span_cache_inserts = 0
+end
 
 --- Build the sorted list of top-level statement spans for a buffer.
 --- Mirrors the nodes find_stmt_span used to walk live (statement,
@@ -182,7 +196,9 @@ function M.find_stmt_span(buf, cursor_line)
       return nil
     end
     cache = { changedtick = changedtick, spans = spans }
+    span_cache_evict()
     _span_cache[buf] = cache
+    _span_cache_inserts = _span_cache_inserts + 1
   end
 
   local row = cursor_line - 1

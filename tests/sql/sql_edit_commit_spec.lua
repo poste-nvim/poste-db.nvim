@@ -115,11 +115,18 @@ describe("edit_commit commit_edits", function()
     install_stubs()
     captured.sql = nil
     captured.commit_opts = nil
+    captured.dispatches = nil
+    captured.commit_callbacks = nil
+    -- The flag a previous test left set must not leak into this one: the
+    -- stubs below never deliver a callback, so production's release path
+    -- (on_response / on_error) does not run.
+    pcall(function() require("poste-db.edit_commit")._test.reset_in_flight() end)
     -- commit_edits dispatches per call, so replace the refresh-path stub.
     package.loaded["poste-db.exec_run"] = {
       run_async = function(sql, opts)
         captured.sql = sql
         captured.commit_opts = opts
+        captured.dispatches = (captured.dispatches or 0) + 1
         return 7
       end,
     }
@@ -161,5 +168,27 @@ describe("edit_commit commit_edits", function()
     require("poste-db.edit_commit").commit_edits()
     assert.equals("", captured.commit_opts.database)
     assert.is_nil(captured.commit_opts.conn_url)
+  end)
+
+  it("refuses a second dispatch while a commit is in flight", function()
+    -- The stub never delivers a callback, so after the first call the batch
+    -- is still running: a second <leader>w used to re-dispatch the identical
+    -- DML (a plain INSERT then wrote duplicated rows).
+    require("poste-db.edit_commit").commit_edits()
+    assert.equals(1, captured.dispatches)
+    require("poste-db.edit_commit").commit_edits()
+    assert.equals(1, captured.dispatches, "the second commit must not dispatch")
+  end)
+
+  it("dispatches again once the in-flight commit's flag is released", function()
+    require("poste-db.edit_commit").commit_edits()
+    assert.equals(1, captured.dispatches)
+    -- Production releases the flag through the run's on_response / on_error
+    -- (exec_run delivers exactly once per run). The full callback path pulls
+    -- in the real exec/log modules, which the stubs above do not cover, so
+    -- the release is simulated at the seam the tests exercise.
+    require("poste-db.edit_commit")._test.reset_in_flight()
+    require("poste-db.edit_commit").commit_edits()
+    assert.equals(2, captured.dispatches, "a landed commit releases the flag")
   end)
 end)

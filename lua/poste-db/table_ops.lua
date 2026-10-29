@@ -39,7 +39,11 @@ local function insert_ddl(source_buf, ddl, label)
     vim.api.nvim_win_set_cursor(target_win, { line_count + 2, 0 })
   end
 
-  vim.notify("DDL inserted — review and execute with <leader>rr", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
+  -- The DDL sits in the SQL buffer; the source run keymap (`<CR>` by default,
+  -- config keymaps.sql_source.run) executes the statement under the cursor.
+  local run_key = require("poste-db.config").get_keymap("sql_source", "run", "<CR>")
+  vim.notify("DDL inserted — review and execute with " .. tostring(run_key),
+    vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 end
 
 --- Quote an identifier based on dialect.

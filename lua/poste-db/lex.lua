@@ -24,6 +24,13 @@ local function skip_ws_and_block_comments(s, from)
   return i
 end
 
+--- TEST-ONLY surface: no production caller (kept alive by sql_lex_spec).
+--- Its string reading differs from the live scanners on purpose of history:
+--- this treats `\` as an escape inside EVERY quoting style (lex.lua:49),
+--- while blank_regions and dml_guard's strip_non_code read backslash as
+--- ordinary content. If this is ever wired back into a boundary or comment
+--- path, reconcile the two readings first — the three-scanners-disagree
+--- class is what LEARNINGS #11 records.
 function M.is_comment_or_string(line, pos)
   local i = 1
   local region_start = nil

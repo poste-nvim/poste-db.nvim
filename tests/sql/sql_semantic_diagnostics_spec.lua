@@ -384,3 +384,62 @@ describe("semantic_diagnostics three-part references", function()
     assert.same({}, msgs("SELECT blog.users.name FROM users;"))
   end)
 end)
+
+-- The per-buffer fetch slot used to be re-checked INSIDE the scheduling loop:
+-- the first fetch's flag was set, the second iteration saw it and returned,
+-- so a page with N uncached tables converged one fetch per update pass (a
+-- full buffer re-walk each), and a tables fetch earlier in the same pass
+-- swallowed every column fetch at once.
+describe("semantic_diagnostics column fetch scheduling", function()
+  if not has_sql_parser then
+    it("is skipped when the parser is unavailable", function()
+      pending("Tree-sitter SQL parser unavailable in this Neovim environment")
+    end)
+    return
+  end
+
+  local created = {}
+  local function sh(body)
+    local path = vim.fn.tempname()
+    vim.fn.writefile({ "#!/bin/sh", body }, path)
+    local uv = vim.uv or vim.loop
+    uv.fs_chmod(path, 493)
+    created[#created + 1] = path
+    return path
+  end
+
+  after_each(function()
+    sem.invalidate(nil)
+    fake_binary = nil
+    fake_ctx = {}
+    for _, path in ipairs(created) do os.remove(path) end
+    created = {}
+  end)
+
+  it("schedules one columns fetch per uncached table in a single pass", function()
+    sem.invalidate(nil)
+    fake_ctx = { connection = "sched1", database = "blog" }
+    fake_binary = sh("echo '{\"items\":[{\"name\":\"x\"}]}'")
+    -- Tables already cached: no tables fetch competes for the slot, so the
+    -- very first pass must launch BOTH columns fetches. jobstart is called
+    -- synchronously inside update, so the launch count is read without
+    -- pumping the event loop.
+    sem._test.set_cache("sched1/blog", { tables = { "widget", "gadget" }, columns = {} })
+    local buf = sql_buf("SELECT id FROM widget;\nSELECT id FROM gadget;")
+    local real_jobstart = vim.fn.jobstart
+    local columns_jobs = 0
+    vim.fn.jobstart = function(args, opts)
+      for i, a in ipairs(args) do
+        if a == "--type" and args[i + 1] == "columns" then
+          columns_jobs = columns_jobs + 1
+        end
+      end
+      return real_jobstart(args, opts)
+    end
+    local ok, err = pcall(sem.update, buf)
+    vim.fn.jobstart = real_jobstart
+    assert.is_true(ok, "update must not raise: " .. tostring(err))
+    assert.equals(2, columns_jobs, "both uncached tables fetch in one pass")
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+end)

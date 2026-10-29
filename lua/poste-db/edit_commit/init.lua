@@ -150,6 +150,14 @@ end
 -- Commit / Rollback execution
 ---------------------------------------------------------------------------
 
+-- One commit in flight at a time. `edit_state.dirty` is cleared only when the
+-- response lands, so a second <leader>w / :w during the flight re-dispatches
+-- the identical DML batch (a plain INSERT then writes duplicated rows), and
+-- edits typed during the flight are wiped by the completion callback's
+-- reset_edit_state. exec_run delivers its outcome exactly once per run, so
+-- clearing the flag at the top of both callbacks releases it reliably.
+local commit_in_flight = false
+
 --- Commit all pending edits by generating and executing DML.
 function M.commit_edits()
   local D = require("poste-db.dataset")
@@ -157,6 +165,11 @@ function M.commit_edits()
   local tab = D.T()
   if not tab or not tab.edit_state or not tab.edit_state.dirty then
     vim.notify("No changes to commit", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
+    return
+  end
+  if commit_in_flight then
+    vim.notify("A commit is already in progress — wait for it to finish",
+      vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return
   end
 
@@ -256,6 +269,7 @@ function M.commit_edits()
   local transactional = const.supports_transactions(dialect)
   local exec_mode = transactional and "transaction" or "greedy"
 
+  commit_in_flight = true
   local job_id = exec_run.run_async(sql_content, {
     src_file = src_file,
     conn_url = conn_url,
@@ -264,6 +278,7 @@ function M.commit_edits()
     log = false, -- this function journals the commit with edit_summary itself
   }, {
     on_response = function(resp)
+      commit_in_flight = false
       local elapsed = vim.uv.now() - start_time
 
       local body = exec.decode_body(resp)
@@ -334,6 +349,7 @@ function M.commit_edits()
       M.refresh_dataset(tab)
     end,
     on_error = function(message)
+      commit_in_flight = false
       local elapsed = vim.uv.now() - start_time
       vim.notify("Commit: " .. message, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
       log.write_log({
@@ -352,8 +368,18 @@ function M.commit_edits()
   })
 
   if not job_id or job_id <= 0 then
+    -- A failed start already delivered on_error (releasing the flag); this is
+    -- the caller-side spawn-failure report, and the clear is defensive.
     vim.notify("Failed to start poste exec-file job", vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
+    commit_in_flight = false
   end
 end
+
+M._test = {
+  -- Tests stub exec_run without ever delivering a callback, so the flag a
+  -- previous test left set would leak into the next one; production always
+  -- releases it through on_response / on_error.
+  reset_in_flight = function() commit_in_flight = false end,
+}
 
 return M

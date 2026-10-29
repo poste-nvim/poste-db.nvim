@@ -792,17 +792,24 @@ function M.update(buf)
       })
     end
 
-    for _, pending in pairs(pending_column_fetches) do
+    -- One transport slot per buffer at a time. The check happens ONCE, here —
+    -- not per iteration: inside the loop the first fetch's flag would swallow
+    -- every remaining entry (the callback that clears it is async), and a
+    -- tables fetch earlier in this pass would swallow all of them. Each
+    -- callback re-runs M.update, which schedules whatever is still missing.
+    if next(pending_column_fetches) ~= nil then
       if _pending_checks[buf] then _updating = false; return end
       _pending_checks[buf] = true
-      fetch_columns(buf, pending.conn, pending.db, pending.tbl, function(success)
-        _pending_checks[buf] = nil
-        if success and vim.api.nvim_buf_is_valid(buf) then
-          vim.schedule(function()
-            M.update(buf)
-          end)
-        end
-      end)
+      for _, pending in pairs(pending_column_fetches) do
+        fetch_columns(buf, pending.conn, pending.db, pending.tbl, function(success)
+          _pending_checks[buf] = nil
+          if success and vim.api.nvim_buf_is_valid(buf) then
+            vim.schedule(function()
+              M.update(buf)
+            end)
+          end
+        end)
+      end
     end
     _updating = false
   end)

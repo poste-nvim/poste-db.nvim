@@ -124,12 +124,18 @@ function M.handle(deps, parsed)
         local failed, err_text = classify_result(result)
         if failed then
           deps.entry.error = true
+          -- get_stmt_sql returns "" (never nil) when the result index has no
+          -- statement entry, so an `or deps.buf_content` fallback here would
+          -- be dead and last_error.sql would record the empty string — what
+          -- the AI ask-about-this-error action then sends as context.
+          local err_sql = statement.get_stmt_sql(deps.buf_lines, deps.stmt_lines, i,
+            deps.visual_sel_end or deps.stmt_end or #deps.buf_lines)
+          if err_sql == "" then err_sql = deps.buf_content end
           state.last_error = {
             message = err_text,
             -- Same max_end fallback as the success branch below: without it a
             -- multi-line statement's error context would run to buffer end.
-            sql = statement.get_stmt_sql(deps.buf_lines, deps.stmt_lines, i,
-              deps.visual_sel_end or deps.stmt_end or #deps.buf_lines) or deps.buf_content,
+            sql = err_sql,
             connection = parsed.connection,
             database = parsed.database,
             at = os.time(),
