@@ -11,6 +11,54 @@ local function setup_db_browser_keymap(buf)
   end
 end
 
+--- Completion trigger wiring for one poste_sql buffer: the <C-Space> keymap,
+--- the INSERT-mode auto triggers and the blink.cmp zero keyword length.
+--- Called from BOTH the FileType handler and the BufRead handler — they
+--- overlap for a normally-loaded buffer, but the BufRead path alone covers
+--- buffers read before setup() ran and FileType alone covers buffers whose
+--- filetype is set later (setup_existing_buffers). Idempotent via a buffer
+--- var, so a double call never stacks the autocmds.
+local function setup_completion_triggers(buf)
+  if vim.b[buf].poste_db_completion_wired then return end
+  vim.b[buf].poste_db_completion_wired = true
+
+  local k = config.get_keymap("sql_source", "trigger_completion", "<C-Space>")
+  if k then
+    vim.keymap.set("i", k, function()
+      pcall(function() require("poste-db.completion.adapter").show() end)
+    end, { buffer = buf, noremap = true, silent = true, desc = "Trigger completion" })
+  end
+  local sql_keywords = { from=true, join=true, where=true, set=true, on=true, having=true, by=true, ["and"]=true, ["or"]=true, use=true }
+  local trig_group = vim.api.nvim_create_augroup("PosteDbTrigger_" .. buf, { clear = true })
+  vim.api.nvim_create_autocmd("CursorMovedI", {
+    group = trig_group, buffer = buf,
+    callback = function()
+      local line = vim.api.nvim_get_current_line()
+      local col = vim.api.nvim_win_get_cursor(0)[2]
+      if col < 1 or line:sub(col, col) ~= " " then return end
+      local last_word = line:sub(1, col - 1):match("(%w+)%s*$")
+      if last_word and sql_keywords[last_word:lower()] then
+        require("poste-db.completion.adapter").show({ force = true, trigger_kind = "manual" })
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd("InsertEnter", {
+    group = trig_group, buffer = buf,
+    callback = function()
+      local line = vim.api.nvim_get_current_line()
+      local col = vim.api.nvim_win_get_cursor(0)[2]
+      local before = line:sub(1, col)
+      local prefix = before:match("[%w_]*$") or ""
+      if #prefix > 0 then
+        vim.schedule(function()
+          require("poste-db.completion.adapter").show({ force = true, trigger_kind = "manual" })
+        end)
+      end
+    end,
+  })
+  vim.b[buf].blink_cmp_min_keyword_length = 0
+end
+
 function M.setup()
   local sql_runner = require("poste-db.sql_runner")
   local sql_syntax = require("poste-db.syntax")
@@ -28,6 +76,10 @@ function M.setup()
       buffer_setup.setup_buffer_keymaps(args.buf)
       sql_runner.ensure_sql_keymaps(args.buf)
       setup_db_browser_keymap(args.buf)
+      -- The BufRead handler below only fires for files read after setup(); a
+      -- lazy-loaded first buffer (ft = "poste_sql") arrives through here and
+      -- still needs its completion triggers.
+      setup_completion_triggers(args.buf)
       -- Buffer-local: a top-level BufUnload with pattern "poste_sql" matched
       -- against the *file name* (never literally "poste_sql"), so the
       -- connection cleanup silently never ran.
@@ -85,7 +137,7 @@ function M.setup()
   vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
     group = group,
     pattern = { "*.sql", "*.sqlite" },
-    callback = function()
+    callback = function(args)
       pcall(vim.treesitter.language.register, "sql", "poste_sql")
       pcall(vim.treesitter.language.register, "sql", "poste_sqlite")
       local name = vim.api.nvim_buf_get_name(0)
@@ -94,41 +146,9 @@ function M.setup()
       else
         vim.bo.filetype = "poste_sql"
       end
-      local k = config.get_keymap("sql_source", "trigger_completion", "<C-Space>")
-      if k then
-        vim.keymap.set("i", k, function()
-          pcall(function() require("poste-db.completion.adapter").show() end)
-        end, { buffer = 0, noremap = true, silent = true, desc = "Trigger completion" })
-      end
-      local sql_keywords = { from=true, join=true, where=true, set=true, on=true, having=true, by=true, ["and"]=true, ["or"]=true, use=true }
-      local trig_group = vim.api.nvim_create_augroup("PosteDbTrigger_" .. vim.api.nvim_get_current_buf(), { clear = true })
-      vim.api.nvim_create_autocmd("CursorMovedI", {
-        group = trig_group, buffer = 0,
-        callback = function()
-          local line = vim.api.nvim_get_current_line()
-          local col = vim.api.nvim_win_get_cursor(0)[2]
-          if col < 1 or line:sub(col, col) ~= " " then return end
-          local last_word = line:sub(1, col - 1):match("(%w+)%s*$")
-          if last_word and sql_keywords[last_word:lower()] then
-            require("poste-db.completion.adapter").show({ force = true, trigger_kind = "manual" })
-          end
-        end,
-      })
-      vim.api.nvim_create_autocmd("InsertEnter", {
-        group = trig_group, buffer = 0,
-        callback = function()
-          local line = vim.api.nvim_get_current_line()
-          local col = vim.api.nvim_win_get_cursor(0)[2]
-          local before = line:sub(1, col)
-          local prefix = before:match("[%w_]*$") or ""
-          if #prefix > 0 then
-            vim.schedule(function()
-              require("poste-db.completion.adapter").show({ force = true, trigger_kind = "manual" })
-            end)
-          end
-        end,
-      })
-      vim.b.blink_cmp_min_keyword_length = 0
+      -- Setting the filetype above fires the FileType handler, which wires
+      -- everything buffer-local (keymaps, triggers) through one path.
+      setup_completion_triggers(args.buf)
     end,
   })
 end

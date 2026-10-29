@@ -147,3 +147,26 @@ describe("buffer_search same_value", function()
     assert.is_true(same(vim.NIL, vim.NIL))
   end)
 end)
+
+describe("buffer_search compute_matches", function()
+  local compute = search._test.compute_matches
+
+  it("skips a non-table row instead of raising mid-search", function()
+    -- The render path (format.row_cells) reads a malformed row as empty; the
+    -- search pass used to ipairs into it and raise, killing the whole
+    -- search for a hand-built or skewed response.
+    local tab = {
+      rows_source = { { "alpha", "1" }, "garbage", { "beta", "2" } },
+      view_indices = nil,
+      page_size = 50,
+      search_matches = {},
+      search_matches_by_page = {},
+    }
+    local ok = pcall(compute, tab, "a")
+    assert.is_true(ok, "a non-table row must not raise")
+    -- "alpha" and "beta" both contain an `a`; the garbage row must contribute
+    -- nothing AND still occupy its view position, so beta keeps row = 3.
+    assert.equals(2, tab.search_total_matches)
+    assert.same({ { row = 1, col = 1 }, { row = 3, col = 1 } }, tab.search_matches)
+  end)
+end)

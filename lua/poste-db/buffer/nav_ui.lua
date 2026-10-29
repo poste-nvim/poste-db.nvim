@@ -250,6 +250,14 @@ end
 --- @param entry table|nil overrides D.active_entry()
 local _last_sql_statusline = nil
 
+--- Forget the unchanged-text caches. A freshly created dataset window has no
+--- win-local statusline yet, so a stale "same text" verdict would leave it
+--- blank (run query A, close the panel, run the identical query A again).
+--- Call when ensure_dataset_window actually creates a window.
+function M.reset_statusline_caches()
+  _last_sql_statusline = nil
+end
+
 function M.update_dataset_sql_statusline(entry)
   local win = D.dataset_window
   if not win or not vim.api.nvim_win_is_valid(win) then return end

@@ -86,18 +86,23 @@ local function compute_matches(tab, text)
   local total_count = 0
   for view_pos, src_idx in ipairs(all_indices) do
     local row_data = tab.rows_source[src_idx]
-    for ci, val in ipairs(row_data) do
-      local s = search_text_of(val)
-      if s:lower():find(q, 1, true) then
-        total_count = total_count + 1
-        local page = math.ceil(view_pos / tab.page_size)
-        if not tab.search_matches_by_page[page] then
-          tab.search_matches_by_page[page] = {}
+    -- A malformed or hand-built response can carry a non-table row; the
+    -- render path (format.row_cells) reads those as empty instead of
+    -- raising, and a raise here would kill the whole search pass.
+    if type(row_data) == "table" then
+      for ci, val in ipairs(row_data) do
+        local s = search_text_of(val)
+        if s:lower():find(q, 1, true) then
+          total_count = total_count + 1
+          local page = math.ceil(view_pos / tab.page_size)
+          if not tab.search_matches_by_page[page] then
+            tab.search_matches_by_page[page] = {}
+          end
+          tab.search_matches_by_page[page][#tab.search_matches_by_page[page] + 1] = {
+            row = view_pos, col = ci, global_match_idx = total_count,
+          }
+          tab.search_matches[#tab.search_matches + 1] = { row = view_pos, col = ci }
         end
-        tab.search_matches_by_page[page][#tab.search_matches_by_page[page] + 1] = {
-          row = view_pos, col = ci, global_match_idx = total_count,
-        }
-        tab.search_matches[#tab.search_matches + 1] = { row = view_pos, col = ci }
       end
     end
   end
@@ -376,7 +381,9 @@ function M.filter_by_current_cell()
 
   local indices = {}
   for i, r in ipairs(tab.rows_source) do
-    if same_value(r[col], filter_val) then
+    -- Same malformed-row reading as compute_matches above: a non-table row
+    -- contributes no match instead of raising mid-filter.
+    if type(r) == "table" and same_value(r[col], filter_val) then
       indices[#indices + 1] = i
     end
   end
@@ -478,6 +485,7 @@ M._test = {
   record_search = record_search,
   search_text_of = search_text_of,
   same_value = same_value,
+  compute_matches = compute_matches,
 }
 
 return M

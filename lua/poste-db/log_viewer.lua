@@ -46,6 +46,13 @@ local function normalize_entry(entry)
   if entry.elapsed_ms ~= nil and type(entry.elapsed_ms) ~= "number" then
     entry.elapsed_ms = nil
   end
+  -- edit_summary gets INDEXED (edit_summary_line reads s.updates/…): a
+  -- hand-edited journal line with a number or boolean there raised on
+  -- expand. Keep it only as a table — strings survived only by accident of
+  -- the string metatable.
+  if entry.edit_summary ~= nil and type(entry.edit_summary) ~= "table" then
+    entry.edit_summary = nil
+  end
   return entry
 end
 
@@ -252,14 +259,27 @@ end
 
 local TBL_W = 0
 
+-- Per-render memo for entry_database's connections.toml lookups. One render
+-- asks for the same connection up to three times per entry (width calc, every
+-- summary row, every expanded row) — with LOG_MAX_ENTRIES = 1000 that used to
+-- be ~3000 get_connection_config calls, each a fresh apply_env table build.
+-- The answer for a connection cannot change within one render; the memo is
+-- dropped wherever a render begins.
+local _db_memo = {}
+
 local function entry_database(entry)
   if entry.database and entry.database ~= "" then return entry.database end
   if entry.connection and entry.connection ~= "" then
+    local conn = entry.connection
+    if _db_memo[conn] ~= nil then return _db_memo[conn] end
+    local db = nil
     local ok, config = pcall(require, "poste-db.connections")
     if ok then
-      local cfg = config.get_connection_config(entry.connection)
-      if cfg and cfg.database and cfg.database ~= "" then return cfg.database end
+      local cfg = config.get_connection_config(conn)
+      if cfg and cfg.database and cfg.database ~= "" then db = cfg.database end
     end
+    _db_memo[conn] = db
+    return db
   end
   return nil
 end
@@ -570,6 +590,7 @@ end
 
 local function render()
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  _db_memo = {}
   local lines, filtered = build_lines()
   if #lines == 0 then
     lines = { "  <empty>" }
@@ -578,6 +599,10 @@ local function render()
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  -- The winbar must be refreshed on the empty path too: a filter that matches
+  -- nothing used to keep advertising the unfiltered count, and an empty
+  -- journal never set the key help at all.
+  update_winbar()
   if #filtered == 0 then
     local line_len = #(lines[1] or "")
     if line_len > 0 then
@@ -600,8 +625,6 @@ local function render()
       end
     end
   end
-  vim.bo[buf].modifiable = false
-  update_winbar()
 end
 
 function M.get_entry_at_cursor()

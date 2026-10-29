@@ -117,6 +117,14 @@ end
 function M.open(opts)
   opts = opts or {}
   local buf = opts.buf or vim.api.nvim_create_buf(false, true)
+  -- A fresh scratch buffer wipes when its last window closes: the close
+  -- paths below (on_winleave / close_keys) only close the window, and every
+  -- open used to leak one unlisted buffer plus its buffer-local autocmds.
+  -- Caller-supplied buffers (opts.buf) keep the caller's own lifecycle —
+  -- they may be shown again. The same idiom log_viewer passes via buf_options.
+  if not opts.buf then
+    vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+  end
 
   if opts.lines then
     vim.api.nvim_set_option_value("modifiable", true, { buf = buf })
@@ -179,6 +187,9 @@ function M.open(opts)
 
   if opts.on_winleave then
     vim.api.nvim_create_autocmd("WinLeave", {
+      -- Grouped per open so nothing accumulates ungrouped; buffer-local, so
+      -- the bufhidden=wipe above (fresh buffers) also removes it.
+      group = vim.api.nvim_create_augroup("PosteDbFloatWinLeave_" .. buf, { clear = true }),
       buffer = buf,
       callback = function()
         if type(opts.on_winleave) == "function" then

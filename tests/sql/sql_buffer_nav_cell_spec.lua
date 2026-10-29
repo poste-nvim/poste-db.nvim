@@ -78,6 +78,27 @@ describe("buffer_nav_cell", function()
     assert.equals("status", col_name)
   end)
 
+  it("reads a non-table row as an all-NULL row", function()
+    -- A hand-built response can carry a non-table entry in rows; indexing it
+    -- used to raise and kill the whole column yank.
+    local values = cell.collect_column_values({
+      data = {
+        results = {
+          {
+            rows = {
+              { "a", "1" },
+              "garbage",
+              { "c", "3" },
+            },
+          },
+        },
+      },
+      meta = { type = "resultset" },
+    }, 2)
+
+    assert.same({ "1", "NULL", "3" }, values)
+  end)
+
   it("collects column yank values in view order, filtered rows only", function()
     local values = cell.collect_column_values({
       data = {

@@ -30,14 +30,13 @@ function M.setup_buffer_keymaps(buf)
   end
 
   if nav then
-    local k = config.get_keymap("sql_source", "show_ddl", "K")
-    if k and nav.show_ddl then vim.keymap.set("n", k, nav.show_ddl, keymap_opts) end
-    k = config.get_keymap("sql_source", "format", "<leader>ff")
-    if k and nav.format_sql then vim.keymap.set("n", k, nav.format_sql, keymap_opts) end
-    k = config.get_keymap("sql_source", "goto_definition", "gd")
+    -- goto_definition is the only nav surface: K and <leader>ff are bound by
+    -- sql_runner.ensure_sql_keymaps (show_ddl → introspect, format →
+    -- source_format), which the FileType handler also runs; the dead guards
+    -- for the nonexistent nav.show_ddl / nav.format_sql /
+    -- nav.trigger_completion hid that fact.
+    local k = config.get_keymap("sql_source", "goto_definition", "gd")
     if k and nav.goto_definition then vim.keymap.set("n", k, nav.goto_definition, keymap_opts) end
-    k = config.get_keymap("sql_source", "trigger_completion", "<C-Space>")
-    if k and nav.trigger_completion then vim.keymap.set("n", k, nav.trigger_completion, keymap_opts) end
   end
 
   -- Ask the AI about a visual selection (@file(l1-l2) mention into the chat)

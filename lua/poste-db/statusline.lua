@@ -220,7 +220,12 @@ end
 function M.get_context_hl()
   local ctx = vim.b.poste_db_context
   if not ctx or ctx == "" then return nil end
-  local conn_name = ctx:match("^(.-)[/]") or ctx
+  -- b:poste_db_conn first — the same rule the mini wrapper documents: a
+  -- dataset buffer's context string ("conn  🗄 db  ⭡ table") has no `/` to
+  -- split on, so the slash-parse handed the whole decorated string to the
+  -- lookup and lualine lost the per-connection color on every dataset buffer.
+  local conn_name = vim.b.poste_db_conn
+    or ctx:match("^(.-)[/]") or ctx
   return get_ctx_color(conn_name)
 end
 

@@ -101,6 +101,13 @@ end
 
 local activate  -- forward declaration (move ⇢ activate)
 
+-- Window-local statusline cache: j/k used to write the option and force
+-- redrawstatus on EVERY move even when the built text was identical (the same
+-- per-keystroke cost the db_browser statusline fix removed). Reset on open —
+-- a freshly created sidebar window has no statusline, so a stale
+-- "unchanged" verdict would leave it blank.
+local _last_statusline = nil
+
 --- Show the SQL of the history item under the cursor in the sidebar's own
 --- statusline. Falls back to the default statusline when there's no SQL.
 update_sql_statusline = function()
@@ -118,6 +125,8 @@ update_sql_statusline = function()
   end
   local nav_ui = require("poste-db.buffer.nav_ui")
   local text = nav_ui.build_sql_statusline(sql, bar_width)
+  if text == _last_statusline then return end
+  _last_statusline = text
   pcall(vim.api.nvim_set_option_value, "statusline", text, { win = win })
   vim.cmd("redrawstatus")
 end
@@ -187,6 +196,9 @@ function M.open()
   vim.keymap.set("n", "q", M.close, km)
   vim.keymap.set("n", "<Esc>", M.close, km)
 
+  -- New window: the statusline cache must not answer for it — reset before
+  -- refresh(), whose update_sql_statusline call does the actual write.
+  _last_statusline = nil
   M.refresh()
   if D.active_history >= 1 then
     set_cursor_line(line_to_index(D.active_history))

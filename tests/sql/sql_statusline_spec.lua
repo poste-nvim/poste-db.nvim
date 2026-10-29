@@ -45,6 +45,17 @@ describe("statusline context text", function()
     assert.equals("PosteDbSqlCtxprod", hl)
   end)
 
+  it("context highlight reads b:poste_db_conn for a dataset-shaped context", function()
+    -- A dataset buffer's context string has no `/` to split on ("conn  🗄 db
+    -- ⭡ table"), so the slash-parse handed the whole decorated string to the
+    -- lookup and lualine lost the per-connection color on every dataset
+    -- buffer. The mini path already reads b:poste_db_conn first.
+    vim.b.poste_db_context = "prod  🗄 blog  ⭡ users"
+    vim.b.poste_db_conn = "prod"
+    local hl = statusline.get_context_hl()
+    assert.equals("PosteDbSqlCtxprod", hl)
+  end)
+
   it("degrades a table-typed color/link/bg instead of erroring the redraw", function()
     -- The TOML parser turns `color = [1]` into a real table; `:sub` used to
     -- raise on it — inside a function every statusline redraw runs. A

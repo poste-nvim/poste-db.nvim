@@ -370,6 +370,17 @@ describe("log viewer _normalize_entry", function()
     assert.is_nil(log._normalize_entry(nil))
   end)
 
+  it("drops a non-table edit_summary instead of erroring on expand", function()
+    -- edit_summary_line indexes s.updates: a hand-edited journal line with a
+    -- number in edit_summary raised "attempt to index a number value" the
+    -- moment that entry was expanded. Strings survived only by accident of
+    -- the string metatable.
+    assert.is_nil(log._normalize_entry({ sql = "SELECT 1", edit_summary = 5 }).edit_summary)
+    assert.is_nil(log._normalize_entry({ sql = "SELECT 1", edit_summary = true }).edit_summary)
+    assert.same({ updates = 1 },
+      log._normalize_entry({ sql = "SELECT 1", edit_summary = { updates = 1 } }).edit_summary)
+  end)
+
   it("leaves well-formed entries untouched", function()
     local src = { ts = "2026-10-05T10:00:00", sql = "SELECT 1", status = "success", elapsed_ms = 12 }
     assert.same(src, log._normalize_entry(vim.deepcopy(src)))

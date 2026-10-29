@@ -185,7 +185,7 @@ function M.get_dataset_buffer()
   if k then
     vim.keymap.set("n", k, function() M.history_next() end, opts)
   end
-  k = config.get_keymap("sql_dataset", "history_prev", "<leader>b")
+  k = config.get_keymap("sql_dataset", "history_prev", "<leader>p")
   if k then
     vim.keymap.set("n", k, function() M.history_prev() end, opts)
   end
@@ -418,6 +418,17 @@ end
 function M.delete_history_entry(idx)
   local n = D.history_count()
   if idx < 1 or idx > n then return end
+  -- Same guard switch_tab / switch_history_entry apply: deleting the ACTIVE
+  -- entry discards its tabs and its edit_state (queued INSERTs/UPDATEs/
+  -- DELETEs against a real table) with no warning — the auto-switch below
+  -- reads the new active entry and would never notice.
+  if idx == D.active_history then
+    local current = D.T()
+    if current and current.edit_state and current.edit_state.dirty then
+      vim.notify(C.EDIT_CONFLICT_MSG, vim.log.levels.WARN, { title = C.TITLE })
+      return
+    end
+  end
   local was_active = (idx == D.active_history)
   D.delete_entry(idx)
   if n == 1 then
@@ -495,6 +506,11 @@ local function ensure_dataset_window(buf, is_error)
     vim.cmd("botright " .. height .. "split")
     D.dataset_window = vim.api.nvim_get_current_win()
     D.dataset_tabpage = vim.api.nvim_get_current_tabpage()
+    -- A brand-new window carries no win-local winbar/statusline: the
+    -- unchanged-text caches must not answer for it, or an identical rerun
+    -- after close skips the writes and the reopened panel loses both.
+    _last_winbar_text = nil
+    require("poste-db.buffer.nav_ui").reset_statusline_caches()
     vim.api.nvim_set_current_win(src_win)
     vim.fn.winrestview(src_view)
   end
@@ -715,10 +731,11 @@ function M.render_dataset(lines, meta, opts)
   apply_dataset_win_options(D.dataset_window, is_error)
 
   if not is_error then
-    local winbar_text = require("poste-db.buffer.nav").build_status_winbar(meta)
-    if D.dataset_window and vim.api.nvim_win_is_valid(D.dataset_window) then
-      pcall(vim.api.nvim_set_option_value, "winbar", winbar_text or "", { win = D.dataset_window })
-    end
+    -- Through the cache guard, not a raw option write: finalize already built
+    -- the same text, so every render after the first skips the option write
+    -- here. The recreate path is covered by ensure_dataset_window resetting
+    -- the caches when it actually creates a window.
+    set_dataset_winbar(require("poste-db.buffer.nav").build_status_winbar(meta))
 
     if tab.header_text then
       require("poste-db.buffer.header").update()

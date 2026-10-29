@@ -138,7 +138,12 @@ function M.collect_column_values(tab, col)
   local values = {}
   for i = 1, order and #order or #res.rows do
     local row = order and res.rows[order[i]] or res.rows[i]
-    local v = row[col]
+    -- A non-table row (hand-built response) reads as an all-NULL row so the
+    -- yanked column stays one value per row and in screen order. Explicit
+    -- if, not `type(row) == "table" and row[col] or nil` — that idiom folds
+    -- a legitimate `false` cell into the nil/NULL branch (LEARNINGS #4).
+    local v = nil
+    if type(row) == "table" then v = row[col] end
     -- A column yank spells an empty cell NULL (a single-cell copy spells it
     -- with the empty string); everything else goes through the shared scalar
     -- reading.

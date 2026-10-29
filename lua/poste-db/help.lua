@@ -109,9 +109,12 @@ function M.open()
   local ft = vim.bo[buf].filetype
   local buf_name = vim.api.nvim_buf_get_name(buf)
   local sections
+  -- `poste_dataset` is the only spelling any code sets (buffer/init.lua);
+  -- the "PosteDataset" alternative used to sit beside it but nothing ever
+  -- produced it.
   if ft == "poste_sql" or ft == "poste_sqlite" or ft == "sql" then
     sections = { "sql_source" }
-  elseif ft == "poste_dataset" or ft == "PosteDataset" then
+  elseif ft == "poste_dataset" then
     sections = { "sql_dataset" }
   elseif buf_name:match("poste://db_browser") then
     sections = { "sql_db_browser" }

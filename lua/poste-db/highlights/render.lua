@@ -180,8 +180,16 @@ function M.apply_dataset_highlights(buf, lines, meta)
 
     if not row_nums_hidden() and defer_row_nums then
       local captured_lines = lines
+      -- Two renders can land inside one event-loop turn (a multi-response
+      -- batch): the later apply_dataset_highlights clears the namespace, and
+      -- a stale scheduled pass would re-add row-number tints computed from
+      -- the OLD line positions on top of the new content. The buffer's
+      -- content is rewritten with nvim_buf_set_lines between passes, so a
+      -- changedtick mismatch means this pass is painting a dead page.
+      local captured_tick = vim.api.nvim_buf_get_changedtick(buf)
       vim.schedule(function()
         if row_nums_hidden() or not vim.api.nvim_buf_is_valid(buf) then return end
+        if vim.api.nvim_buf_get_changedtick(buf) ~= captured_tick then return end
         for row_idx = meta.data_start_line, meta.data_end_line do
           local line = captured_lines[row_idx] or ""
           local row_range = M.find_cell_range(line, 1)

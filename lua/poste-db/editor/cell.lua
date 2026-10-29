@@ -286,9 +286,12 @@ end
 function M.track_cell_edit(es, row_key, col, old_val, new_val)
   if new_val == old_val then
     es.modified_cells[row_key] = nil
-    if not next(es.modified_cells) then
-      es.dirty = false
-    end
+    -- Same three-way recompute as track_row_delete's cancel path: reverting
+    -- the last cell edit must not clear `dirty` while an added/deleted row is
+    -- still queued — a modified_cells-only check unblocked tab switches and
+    -- :w while an INSERT was pending.
+    es.dirty = next(es.modified_cells) ~= nil or next(es.deleted_rows) ~= nil
+      or #es.added_rows > 0
     return
   end
   local row_idx = tonumber(row_key:match("^(%d+):"))

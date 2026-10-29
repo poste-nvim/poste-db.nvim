@@ -693,6 +693,25 @@ describe("edit_state tracking", function()
       assert.is_nil(es.modified_cells["1:2"])
       assert.is_false(es.dirty)
     end)
+
+    it("keeps dirty while a queued row insert is pending", function()
+      -- A modified_cells-only recompute cleared `dirty` when the last cell
+      -- edit reverted: tab switches unblocked and :w did nothing while an
+      -- `o`-queued INSERT was still uncommitted.
+      editor.track_row_add(es, { "a", "b" })
+      editor.track_cell_edit(es, "1:2", 2, "old", "new")
+      assert.is_true(es.dirty)
+      editor.track_cell_edit(es, "1:2", 2, "old", "old")
+      assert.is_nil(es.modified_cells["1:2"])
+      assert.is_true(es.dirty, "an added row is still pending")
+    end)
+
+    it("keeps dirty while a deleted row is pending", function()
+      editor.track_row_delete(es, 2)
+      editor.track_cell_edit(es, "3:1", 1, "x", "y")
+      editor.track_cell_edit(es, "3:1", 1, "x", "x")
+      assert.is_true(es.dirty, "a deleted row is still pending")
+    end)
   end)
 
   describe("track_row_delete", function()
