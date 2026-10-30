@@ -469,7 +469,14 @@ function M.find_stmt_lines(buf_lines, start_line, end_line, dialect)
     if trimmed:upper():match("^USE ") then goto continue end
     if trimmed:match("^%-%-") then goto continue end
 
-    if current_stmt == nil then current_stmt = i end
+    -- A line that is nothing but `;` (or `;;`) carries no statement: it used
+    -- to OPEN one and close it in the same pass, so a stray semicolon line in
+    -- a selection became its own entry in stmt_lines. Every index after it
+    -- then pointed one statement off, and the result->statement mapping read
+    -- ";" as the SQL: no table name, so the whole result set lost its DML
+    -- editing. A `;` line still CLOSES the statement above it (below).
+    local has_content = trimmed:gsub(";", ""):match("%S") ~= nil
+    if current_stmt == nil and has_content then current_stmt = i end
 
     if (blanked[i - start_line + 1] or ""):match(";") then
       table.insert(stmt_lines, current_stmt)
@@ -562,6 +569,19 @@ local function read_identifier(text, pos)
   end
 end
 
+--- Words that end a FROM item instead of aliasing it. `read_identifier`
+--- lowercases unquoted names, so the set is lowercase; a quoted alias is never
+--- a keyword and never lands here.
+local FROM_ITEM_TERMINATOR = {}
+for _, kw in ipairs({
+  "where", "group", "order", "having", "limit", "offset", "join", "inner",
+  "left", "right", "full", "cross", "natural", "union", "except", "intersect",
+  "on", "using", "window", "for", "returning", "set", "values", "select",
+  "into", "fetch", "tablesample", "partition", "lateral",
+}) do
+  FROM_ITEM_TERMINATOR[kw] = true
+end
+
 --- The table a reference points at: the last identifier in its chain, read from
 --- `text` starting at `pos`.
 --- Everything in front of the final dot is a qualifier this helper cannot
@@ -584,8 +604,32 @@ local function last_part(text, pos)
   -- above looks at. Same ambiguity as a two-JOIN query, so the same answer:
   -- nil, and the caller falls back to "result n" rather than targeting whichever
   -- table comes first.
+  --
+  -- An alias sits between the name and that comma (`FROM users u, orders o`),
+  -- so it is skipped first: checking for the comma at `next_pos` saw the `u`
+  -- and returned "users" for a two-table result, which handed the DML builder
+  -- a table the SELECT never targeted on its own.
   local k = next_pos
-  while text:sub(k, k):match("%s") do k = k + 1 end
+  local function skip_space()
+    while text:sub(k, k):match("%s") do k = k + 1 end
+  end
+  skip_space()
+  local is_as = text:sub(k, k + 1):upper() == "AS"
+    and (text:sub(k + 2, k + 2):match("%s") ~= nil)
+  if is_as then
+    k = k + 2
+    skip_space()
+    local _, after_as = read_identifier(text, k)
+    if after_as then k = after_as end
+    skip_space()
+  else
+    local alias, after_alias = read_identifier(text, k)
+    -- `WHERE`, `GROUP`, … are lexically identifiers; an alias is any other word
+    if alias and not FROM_ITEM_TERMINATOR[alias] then
+      k = after_alias
+      skip_space()
+    end
+  end
   if text:sub(k, k) == "," then return nil end
   return name
 end

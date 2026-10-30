@@ -185,6 +185,22 @@ function M.truncate(s, max_dw)
   -- then raised on `#s`.
   if type(s) ~= "string" then s = tostring(s) end
   if s == "" then return s end
+  -- ASCII fast path: one byte is one cell, so the cut is a byte index and no
+  -- per-character strdisplaywidth call is needed. This is the hot case (error
+  -- messages, most cells, log previews) — it made wrapping a long message pay
+  -- one pcall per character. Correctness: if the first `max_dw` bytes are
+  -- ASCII, the prefix measures exactly `max_dw` and any following character
+  -- costs at least one more cell, so the cut point is right whatever follows.
+  if max_dw and max_dw >= 1 then
+    local prefix = s:sub(1, max_dw)
+    local nextb = s:byte(max_dw + 1)
+    -- Only when the cut lands on an ASCII boundary: a following multibyte
+    -- character may be a zero-width mark that belongs to the last kept cell
+    -- (`e` + U+0301), and the general path below is what knows that.
+    if #prefix == max_dw and not prefix:find("[\128-\255]") and (nextb == nil or nextb < 0x80) then
+      return prefix
+    end
+  end
   -- once per call, not once per character: this runs per rendered cell, and
   -- width_mode() is a pcall'd require + config lookups
   local mode = width_mode()

@@ -466,6 +466,15 @@ function M.parse(content)
       if not single_quoted_name and key:find(".", 1, true) then
         return nil, "Dotted keys (a.b = …) are not supported: " .. key
       end
+      -- A repeated key is an error in TOML, and the one shape this parser used
+      -- to accept fail-open: the last spelling won in silence. In a
+      -- connections file that means a half-commented password rotation (or a
+      -- copy-pasted pair) connects with a credential the user cannot see —
+      -- and the failure that follows reads as an auth error, not as a typo.
+      -- Key only, never the value.
+      if section[key] ~= nil then
+        return nil, "Duplicate key: " .. key
+      end
       section[key] = val
     end
   end

@@ -161,12 +161,22 @@ function M.parse_json(text)
     end
   end
 
+  -- Every element must be an object with string keys. Checking here (not only
+  -- in the row loop below) keeps `seen` string-keyed, so `table.sort(keys)`
+  -- cannot raise "attempt to compare string with number" on a heterogeneous
+  -- array — `[{"a":1},[2,3]]`, a shape API dumps produce — and an array of
+  -- arrays is rejected as the wrong shape instead of arriving as numeric
+  -- column names that blow up the column mapper.
   local seen = {}
   for _, obj in ipairs(data) do
-    if type(obj) == "table" then
-      for k, _ in pairs(obj) do
-        seen[k] = true
+    if type(obj) ~= "table" then
+      return nil, "Expected array of objects"
+    end
+    for k, _ in pairs(obj) do
+      if type(k) ~= "string" then
+        return nil, "Expected array of objects"
       end
+      seen[k] = true
     end
   end
   local keys = {}
@@ -181,9 +191,6 @@ function M.parse_json(text)
 
   local rows = {}
   for _, obj in ipairs(data) do
-    if type(obj) ~= "table" then
-      return nil, "Expected array of objects"
-    end
     local row = {}
     for _, k in ipairs(keys) do
       local v = obj[k]

@@ -75,11 +75,26 @@ local function pad_left(s, width)
   return string.rep(" ", width - dw) .. s
 end
 
---- Local timezone offset (seconds east of UTC), computed by comparing the
---- local and UTC renderings of the same instant.
-local function local_utc_offset()
-  local now = os.time()
-  return os.time(os.date("*t", now)) - os.time(os.date("!*t", now))
+--- Local timezone offset (seconds east of UTC) AT a given instant.
+---
+--- `os.date("!*t", at)` renders `at` in UTC; reading those fields back with
+--- `os.time` lands `off` seconds before `at`, so the difference is the offset
+--- in force at `at`.
+---
+--- Two traps this shape exists for:
+---  * The `isdst` field `os.date("!*t")` returns MUST be dropped — `os.time`
+---    honors it, so a July instant would be read as standard time and every
+---    summer value would come back one hour short in a DST zone.
+---  * Reading the offset at "now" (the previous shape) leaves
+---    `off(now) - off(value)` behind: a July timestamp viewed in October
+---    rendered an hour early, and the reverse in spring.
+--- @param at number|nil epoch seconds (defaults to now)
+--- @return number offset in seconds east of UTC
+local function local_utc_offset(at)
+  at = at or os.time()
+  local t = os.date("!*t", at)
+  t.isdst = nil
+  return at - os.time(t)
 end
 
 --- Convert a datetime string to local timezone for display.
@@ -110,12 +125,16 @@ local function format_datetime_local(s)
       if sign == "-" then tz_off = -tz_off end
     end
   end
-  -- os.time reads the fields as LOCAL time; shifting by (local_off - tz_off)
-  -- yields the true epoch, which os.date then renders in local time.
+  -- `os.time(fields)` reads the fields as LOCAL time, so it returns the epoch
+  -- of "this wall clock as this machine spells it", which is `off` seconds
+  -- behind the epoch of the same fields read as UTC. Adding that offset back
+  -- gives the timestamp's true UTC epoch; subtracting the string's own offset
+  -- then lands on the instant it names. `os.date` renders that instant in
+  -- local time on its own — adding the offset here as well double-counted it.
   local ok, result = pcall(function()
-    return os.date("%Y-%m-%d %H:%M:%S",
-      os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = sec })
-        - tz_off + local_utc_offset())
+    local wall = os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = sec })
+    local utc_epoch = wall + local_utc_offset(wall) - tz_off
+    return os.date("%Y-%m-%d %H:%M:%S", utc_epoch)
   end)
   if not ok then return s end
   return result .. (fraction or "")
@@ -947,31 +966,41 @@ function M.render_row(row, layout, row_number)
   return data_row(cells, layout.col_widths, layout.numeric_cols)
 end
 
+--- Wrap text to `width` display cells, preserving the original line breaks.
+---
+--- The cut is driven by `truncate`, which stops at the budget: a window of
+--- `width * 4` bytes is enough for any UTF-8 character to fill `width` cells,
+--- so each chunk costs one bounded scan instead of measuring the whole
+--- remaining line (the previous `while display_width(line) > width` shape
+--- re-measured the tail every round: 400k chars took 1.0 s, 800k took 4.2 s,
+--- and the error panel renders this synchronously on the main loop).
+--- @param text string
+--- @param width number display cells per line
+--- @return string[]
 local function wrap_text(text, width)
   if not text or #text == 0 then return {} end
+  if width < 1 then width = 1 end
   local lines = {}
   for line in (text .. "\n"):gmatch("(.-)\n") do
-    -- Cut on character boundaries by display width. The old byte-based
-    -- `line:sub(1, width)` split multibyte characters in half and put
-    -- invalid UTF-8 into the buffer (error messages routinely contain
-    -- non-ASCII table/column names).
-    -- wutil.truncate walks the line once per cut; the scan it replaced
-    -- measured every character with its own strdisplaywidth() call, so a
-    -- long driver error paid O(n^2) nvim round-trips to wrap.
-    local chunks = 0
-    while wutil.display_width(line) > width do
-      local head = wutil.truncate(line, width)
-      if head == "" then
-        -- one character wider than the line: take it whole or loop forever
-        head = vim.fn.strcharpart(line, 0, 1)
+    -- 4 bytes per character is the UTF-8 maximum; one extra cell of slack
+    -- covers a wide (2-cell) character at the boundary.
+    local window_bytes = width * 4 + 4
+    local pos, n = 1, #line
+    if n == 0 then
+      table.insert(lines, "")
+    else
+      while pos <= n do
+        local window = line:sub(pos, pos + window_bytes - 1)
+        local head = wutil.truncate(window, width)
+        if head == "" then
+          -- one character wider than the line: take it whole or loop forever
+          head = vim.fn.strcharpart(window, 0, 1)
+        end
+        table.insert(lines, head)
+        if pos + #window - 1 >= n and head == window then break end
+        pos = pos + #head
       end
-      table.insert(lines, head)
-      line = line:sub(#head + 1)
-      chunks = chunks + 1
     end
-    -- A cut that lands exactly on the end of the line leaves "": emitting it
-    -- added a blank row the message never had.
-    if chunks == 0 or line ~= "" then table.insert(lines, line) end
   end
   return lines
 end

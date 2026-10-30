@@ -20,6 +20,34 @@ end
 --- dml then emits its exact digits rather than the corrupted number.
 local MAX_EXACT_DOUBLE = 2 ^ 53
 
+--- Significant decimal digits a double round-trips exactly. 15 is the
+--- guaranteed floor (`%.17g` is where the last digit starts to wobble), and a
+--- numeric column with a longer literal must reach the server as text.
+local MAX_EXACT_DIGITS = 15
+
+--- Significant decimal digits in a numeric literal: sign, decimal point and
+--- leading zeros are not significant.
+--- @param s string
+--- @return number
+local function significant_digits(s)
+  local digits = s:gsub("^[%-+]", ""):gsub("%.", ""):gsub("^0+", "")
+  return #digits
+end
+
+--- Whether a double keeps every digit of this literal. Two different limits:
+---  * an integer literal is exact anywhere below 2^53, whatever its digit
+---    count (that is what MAX_EXACT_DOUBLE checks), and
+---  * a literal with a real fractional part carries at most 15 significant
+---    decimal digits (`0.1234567890123456789` rounds, silently, and a
+---    numeric(30,19) column accepts the rounded value).
+--- @param s string
+--- @return boolean
+local function digits_are_exact(s)
+  local frac = s:match("%.([0-9]*)$")
+  if not frac or frac:match("^0*$") then return true end
+  return significant_digits(s) <= MAX_EXACT_DIGITS
+end
+
 function M.coerce_value(str, col_type)
   if str == nil or str == vim.NIL then return vim.NIL end
   local s = tostring(str):gsub("^%s+", ""):gsub("%s+$", "")
@@ -47,10 +75,18 @@ function M.coerce_value(str, col_type)
   -- A digit-string becomes a number only when the column holds numbers (`007`
   -- in a varchar column is the text `007`), the value fits a double, and an
   -- integer column is not being handed a fraction.
+  --
+  -- The digit COUNT matters as much as the magnitude: `math.abs(num) < 2^53`
+  -- only guarantees exact INTEGERS, while a double carries ~15 significant
+  -- decimal digits. `0.1234567890123456789` is small enough to pass the
+  -- magnitude test and still gets rounded on the way to a numeric(30,19)
+  -- column — silently, on a server that accepts the rounded value. Keeping the
+  -- literal as text lets the database parse it at full precision.
   local num = tonumber(s)
   if num and s:match("^%-?%d+%.?%d*$")
     and types.is_numeric(ctype)
     and math.abs(num) < MAX_EXACT_DOUBLE
+    and digits_are_exact(s)
     and not (types.is_integer(ctype) and num ~= math.floor(num)) then
     return num
   end
@@ -65,9 +101,14 @@ function M.build_column_map(parsed_cols, table_cols)
   local unmatched_table = {}
 
   for ii, name in ipairs(parsed_cols) do
+    -- Names arrive from CSV/TSV headers (always strings) and from decoded JSON
+    -- keys, which a heterogeneous array can hand over as numbers. Compare as
+    -- text so a non-string cannot raise "attempt to index a number value" here
+    -- — the parse layer rejects that shape, this is the second line.
+    local key = type(name) == "string" and name or tostring(name)
     local found = false
     for ti, tc in ipairs(table_cols) do
-      if tc.name:lower() == name:lower() then
+      if tc.name:lower() == key:lower() then
         table.insert(col_map, {
           import_idx = ii,
           import_name = name,
