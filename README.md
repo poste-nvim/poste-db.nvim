@@ -193,7 +193,7 @@ The current connection and database are shown in the statusline as `[connection/
 |-----|--------|
 | `i` / `cc` | Enter edit mode |
 | `dd` | Delete row |
-| `o` | Insert row below |
+| `o` | Append a row at the end of the table |
 | `<leader>w` | Commit changes as one transaction (BEGIN/COMMIT/ROLLBACK) |
 
 ### Export
@@ -292,7 +292,7 @@ its trigger word:
 | `cte` | `cte` | `with ... as` | default only |
 | `idx` | `create_index` | `create index` | default only |
 | `cola` | `alter_add_column` | `alter table add column` | postgres/sqlite drop `COMMENT` |
-| `colu` | `alter_modify_column` | `alter table modify column` | postgres uses `ALTER COLUMN ... SET` |
+| `colu` | `alter_modify_column` | `alter table modify column` | postgres uses `ALTER COLUMN ... TYPE` |
 | `uni` | `union_all` | `union all` | default only |
 
 All snippets use **LSP-style syntax** (`${1:placeholder}`, `$0` for exit, `$$` for literal `$`). See `:help vim.snippet` or the [LSP spec](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#snippet_syntax) for details.

@@ -503,8 +503,38 @@ exercises the blocked path is what makes the missing set observable; write it
 in the same change, and trust its red over a green suite that never reaches
 the branch.
 
+## 26. `os.date("!*t")` carries `isdst = false`, and `os.time` honours it
+
+**What happened**: the round-5 fix for DST-wrong timestamps (format.lua) first
+computed the local offset as `at - os.time(os.date("!*t", at))`. For a July
+instant in Berlin that returned +3600 instead of +7200: `os.date("!*t")`
+returns a table with `isdst = false`, and `os.time` *reads* that field, so the
+summer instant was interpreted as standard time. A second error (adding the
+offset again before `os.date`) cancelled it for UTC values but not for
+`+02:00` ones, so a naive spot-check looked right.
+
+**Rule**: when converting between local and UTC with `os.time`/`os.date`,
+always `t.isdst = nil` before feeding a table back to `os.time`, and remember
+`os.date(fmt, epoch)` already renders local. Verify with
+`TZ=Europe/Berlin` on a **summer and a winter** value plus a `+HH:MM` string —
+one value in one zone cannot distinguish "correct" from "two errors cancelling".
+
+## 27. Cache the payload, not the fact that you fetched it
+
+**What happened**: `editor/column.lua`'s `pk_cache` was keyed
+`conn:db:table` and stored `true`. The metadata it fetched (primary_key /
+default / enum_values) is written onto a *layout*, and a second dataset for the
+same table is a new layout — so the cache hit returned before touching it and
+that dataset had no primary key. Commits then used the all-column WHERE
+("may update several rows") and the PK column became editable again.
+
+**Rule**: a cache key that names a *resource* must store the resource's data,
+not a "done" flag, whenever the consumer is a fresh object per call. Grep the
+cache name and ask, for every hit path, "what does the caller receive?" — a hit
+that returns nothing is a hit that silently skips the work.
+
 ---
 
-*Latest: 2026-10-30 audit session (#25 in-flight guard set path). When adding
-an entry, keep the format: what happened (with file:line) → the rule (an
-executable check to run).*
+*Latest: 2026-10-30 round-5 audit session (#26 isdst trap, #27 cache the
+payload). When adding an entry, keep the format: what happened (with file:line)
+→ the rule (an executable check to run).*

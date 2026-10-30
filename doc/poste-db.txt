@@ -222,7 +222,7 @@ With a table result open (primary keys are introspected automatically):
 
     i / cc         Edit cell (insert / replace)
     dd             Delete row
-    o              Insert row below
+    o              Append a row at the end of the table
     <leader>w      Commit all pending edits
 
 `<leader>w` generates UPDATE/INSERT/DELETE DML from the pending edits and
@@ -406,6 +406,8 @@ All options go to `require("poste-db.init").setup(opts)`; defaults shown:
                                      -- number and clamped to >= 1, so a typo
                                      -- costs a slow import, not a hung one
       debug = false,
+      log_level = "WARN",            -- or "DEBUG"/"INFO"/"ERROR" — see
+                                     -- |poste-db-log-level|
       confirm_unfiltered_dml = true, -- gate DELETE/UPDATE without WHERE
       width_mode = "nvim",           -- or "terminal" — see |poste-db-width-mode|
       boundary_style = "background", -- or "gutter" — see |poste-db-boundary-style|
@@ -424,6 +426,15 @@ sets. Set it to a positive number (e.g. `5000`) when a stray `SELECT *` on a
 huge table should be cut off at the server instead of streamed into Neovim
 (`rows_truncated` marks the cut). The value is read when a session starts —
 run `:PosteDbSessionStop` on a running session to pick up a changed setting.
+
+                                                              *poste-db-log-level*
+`log_level` is the minimum severity written to the log file (`log_file`,
+default `stdpath("cache") .. "/poste-db.log"`). Levels are `"DEBUG"`,
+`"INFO"`, `"WARN"` (default) and `"ERROR"`. `DEBUG` records the
+first 300 bytes of every statement the session transport sends, so it is off
+by default: the file has no size bound and statements carry whatever the query
+carried. Set `log_level = "DEBUG"` while diagnosing a transport problem, then
+put it back. The file is created with `0600` permissions.
 
                                                               *poste-db-width-mode*
 `width_mode` picks the width oracle for dataset/table cell padding. Neovim

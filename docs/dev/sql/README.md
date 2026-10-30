@@ -198,7 +198,8 @@ cross-repo contracts are:
 | [Session Design](./session-design.md) | The persistent SQL session pool: problems, routing, lifecycle |
 | [AI Chat Integration](./ai-chat.md) | poste-ai.nvim "db" context: @connection mentions, schema injection, SQL code-block execution into the dataset |
 | [Audit 2026-10-30](./audit-2026-10-30.md) | Round 4: execution path, dataset UI wiring, browser/completion/export — fixed defects, deferred items (postgres PK = Rust-side), test surface |
+| [Audit 2026-10-30 round 5](./audit-2026-10-30-round5.md) | Round 5: uncommitted edits dropped by the browser, import data shapes, DST offset, pagination on insert, caches (pk metadata, winbar), `wrap_text` O(n²), log level/mode — plus the claims that did not survive re-verification |
 
 ---
 
-*SQL developer documentation — Last updated: 2026-10-30 (audit round 4: compat/statement_indicator rows corrected; audit-2026-10-30 added to the design docs)*
+*SQL developer documentation — Last updated: 2026-10-30 (audit round 5: render guard, pagination, import shapes, DST, caches, perf; audit-2026-10-30-round5 added)*
