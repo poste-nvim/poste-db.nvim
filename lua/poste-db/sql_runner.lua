@@ -377,7 +377,17 @@ function M.run_sql_request()
   end
 
   -- Persist resolved context so it's available for dataset editing (PK introspection etc.)
-  if ctx.connection then state.context.connection = ctx.connection end
+  -- A database belongs to the connection it was resolved on, so a switch to a
+  -- different connection drops it: it used to survive, and completion then
+  -- asked the new connection for the old one's database. A `USE` (or an
+  -- unchanged connection) keeps it — `ctx.database` is only written forward
+  -- because a buffer without `@database` must not erase a USE.
+  if ctx.connection then
+    if state.context.connection and state.context.connection ~= ctx.connection then
+      state.context.database = nil
+    end
+    state.context.connection = ctx.connection
+  end
   if ctx.database then state.context.database = ctx.database end
 
   -- Fresh SQL session: clears request-scoped dataset/response state (Phase 2b).

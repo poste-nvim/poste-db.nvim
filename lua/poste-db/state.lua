@@ -32,6 +32,11 @@ M.icons = {}  -- { [kind_name_or_int] = "icon_string" }, set via setup({ icons =
 M.config = {
   poste_binary = vim.fn.stdpath("data") .. "/poste/bin/poste",
   log_file = vim.fn.stdpath("cache") .. "/poste-db.log",
+  -- Minimum level written to `log_file`. DEBUG is off by default because the
+  -- session transport logs the first 300 bytes of every statement — payloads
+  -- and PII included — and this file has no size bound. Set "DEBUG"/"INFO"
+  -- while diagnosing.
+  log_level = "WARN",
   highlights = {},
 }
 
@@ -156,8 +161,24 @@ function M.apply_highlight_overrides(group_names)
   end
 end
 
+--- Log level ranks, lowest first. A message is written when its rank is at
+--- least `M.config.log_level`'s (default WARN).
+local LOG_RANK = { DEBUG = 1, INFO = 2, WARN = 3, ERROR = 4 }
+
 function M.log(level, msg)
   if not M.config.log_file or M.config.log_file == "" then return end
+  local threshold = LOG_RANK[M.config.log_level] or LOG_RANK.WARN
+  if (LOG_RANK[level] or LOG_RANK.INFO) < threshold then return end
+  -- Statement text passes through here (session_conn logs the SQL payload), so
+  -- the file must not be world-readable: create it 0600, the same armor
+  -- exec_run.write_temp_file puts on the argv temp file.
+  local uv = vim.uv or vim.loop
+  if uv and vim.fn.filereadable(M.config.log_file) == 0 then
+    pcall(function()
+      local fd = uv.fs_open(M.config.log_file, "a", 384) -- 0o600
+      if fd then uv.fs_close(fd) end
+    end)
+  end
   local ts = os.date("%Y-%m-%d %H:%M:%S")
   local line = string.format("[%s] [%s] %s\n", ts, level, msg)
   local f = io.open(M.config.log_file, "a")

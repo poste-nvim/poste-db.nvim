@@ -635,6 +635,13 @@ end
 function M.apply_connection(conn)
   local conn_name = conn.name
   state.context.connection = conn_name
+  -- The database belonged to the connection being replaced. Keeping it made
+  -- completion/semantic fetches ask the NEW connection for the OLD one's
+  -- database (an empty list or a server error), and keyed their caches on a
+  -- `<conn>/<db>` pair that does not exist. Context is position-determined
+  -- (see context.lua), so the next resolve fills this back in from the
+  -- buffer's own `@database` directive.
+  state.context.database = nil
 
   -- Update or insert @connection directive in the current buffer
   local buf = vim.api.nvim_get_current_buf()

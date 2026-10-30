@@ -58,20 +58,23 @@ local function get_dialect_flag(bufnr, cursor_line)
 end
 
 local function extract_sql_block(bufnr, line_before, cursor_line)
-  local total_lines = vim.api.nvim_buf_line_count(bufnr)
+  -- One bulk read: the two section-marker scans used to fetch a single line per
+  -- call in each direction, so a completion on a 5k-line buffer paid ~10k nvim
+  -- API round-trips — on the per-keystroke path, where the context cache could
+  -- not amortize it because extraction ran before the cache lookup.
+  local all = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local total_lines = #all
   local block_start = 1
-  if cursor_line > 1 then
-    for i = cursor_line - 1, 1, -1 do
-      if const.is_section_marker(vim.api.nvim_buf_get_lines(bufnr, i - 1, i, false)[1] or "") then
-        block_start = i + 1
-        break
-      end
+  for i = cursor_line - 1, 1, -1 do
+    if const.is_section_marker(all[i] or "") then
+      block_start = i + 1
+      break
     end
   end
 
   local block_end = total_lines
   for i = cursor_line + 1, total_lines do
-    if const.is_section_marker(vim.api.nvim_buf_get_lines(bufnr, i - 1, i, false)[1] or "") then
+    if const.is_section_marker(all[i] or "") then
       block_end = i - 1
       break
     end
@@ -81,11 +84,17 @@ local function extract_sql_block(bufnr, line_before, cursor_line)
     return nil
   end
 
-  local block_lines = vim.api.nvim_buf_get_lines(bufnr, block_start - 1, block_end, false)
+  local block_lines = {}
+  for i = block_start, block_end do
+    block_lines[#block_lines + 1] = all[i]
+  end
   local sql_text = table.concat(block_lines, "\n")
 
-  local before_lines = vim.api.nvim_buf_get_lines(bufnr, block_start - 1, cursor_line - 1, false)
-  table.insert(before_lines, line_before)
+  local before_lines = {}
+  for i = block_start, cursor_line - 1 do
+    before_lines[#before_lines + 1] = all[i]
+  end
+  before_lines[#before_lines + 1] = line_before
   local offset = #table.concat(before_lines, "\n")
 
   return sql_text, offset
@@ -147,6 +156,18 @@ local function try_rust_context_async(bufnr, line_before, cursor_line, callback,
   local ok_ft, ft = pcall(function() return vim.bo[bufnr].filetype end)
   if not ok_ft or (ft ~= "poste_sql" and ft ~= "poste_sqlite") then callback(nil); return end
 
+  -- The dialect is part of the cache key, so a caller that did not pass one
+  -- still has to resolve it before the lookup. The lookup comes BEFORE the
+  -- block extraction: the key does not need the text, and extraction is the
+  -- expensive half on a large buffer.
+  dialect = dialect or get_dialect_flag(bufnr, cursor_line)
+  local ckey = cache_key(bufnr, cursor_line, line_before, dialect)
+  local cached = _ctx_cache[ckey]
+  if cached then
+    callback(cached)
+    return
+  end
+
   local sql_text, offset = extract_sql_block(bufnr, line_before, cursor_line)
   if not sql_text then callback(nil); return end
 
@@ -157,15 +178,6 @@ local function try_rust_context_async(bufnr, line_before, cursor_line, callback,
     local context = offset <= #sql_text and sql_text:sub(ctx_start, ctx_end) or "N/A"
     state.log("INFO", string.format("DEBUG: offset=%d char='%s' ctx='%s' line_before_len=%d",
       offset, char_at_cursor, context:gsub("\n", "\\n"), #line_before))
-  end
-
-  -- The dialect is part of the cache key, so a caller that did not pass one
-  -- still has to resolve it before the lookup.
-  dialect = dialect or get_dialect_flag(bufnr, cursor_line)
-  local ckey = cache_key(bufnr, cursor_line, line_before, dialect)
-  if _ctx_cache[ckey] then
-    callback(_ctx_cache[ckey])
-    return
   end
 
   local binary = data.find_binary()

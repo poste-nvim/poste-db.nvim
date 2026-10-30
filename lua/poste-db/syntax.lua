@@ -148,6 +148,28 @@ function M.highlight_digit_prefix_fragments(buf, dialect)
   end
 end
 
+--- SQL keywords `highlight_line` colours. Module-level: the function runs once
+--- per rendered log line (log_viewer's detail view calls it for every line of
+--- an expanded entry), and rebuilding this table plus its lookup map inside it
+--- cost 80 table writes per line for a result that never changes.
+local KEYWORDS = {
+  "SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES", "UPDATE", "SET",
+  "DELETE", "CREATE", "TABLE", "ALTER", "DROP", "INDEX", "VIEW", "WITH",
+  "AND", "OR", "NOT", "NULL", "IN", "AS", "ON", "JOIN", "LEFT", "RIGHT",
+  "INNER", "OUTER", "FULL", "CROSS", "GROUP", "BY", "ORDER", "HAVING",
+  "LIMIT", "OFFSET", "DISTINCT", "CASE", "WHEN", "THEN", "ELSE", "END",
+  "EXISTS", "UNION", "ALL", "BETWEEN", "LIKE", "IS", "TRUE", "FALSE",
+  "PRIMARY", "KEY", "FOREIGN", "REFERENCES", "CASCADE", "DEFAULT",
+  "INTEGER", "INT", "BIGINT", "SMALLINT", "TEXT", "VARCHAR", "CHAR",
+  "BOOLEAN", "BOOL", "FLOAT", "DOUBLE", "DECIMAL", "NUMERIC",
+  "DATE", "TIMESTAMP", "TIME", "JSON", "JSONB", "SERIAL", "BIGSERIAL",
+  "COUNT", "SUM", "AVG", "MIN", "MAX", "COALESCE", "CAST",
+}
+local KEYWORD_MAP = {}
+for _, kw in ipairs(KEYWORDS) do
+  KEYWORD_MAP[kw] = true
+end
+
 --- SQL keyword highlighting for a single line via extmarks.
 --- Used by log_viewer to highlight SQL in detail view.
 --- @param buf number  Buffer handle
@@ -156,23 +178,7 @@ end
 --- @param text string  Text content to highlight (without buffer prefix)
 --- @param offset number  Column offset in buffer where text starts
 function M.highlight_line(buf, ns, line_idx, text, offset)
-  local keywords = {
-    "SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES", "UPDATE", "SET",
-    "DELETE", "CREATE", "TABLE", "ALTER", "DROP", "INDEX", "VIEW", "WITH",
-    "AND", "OR", "NOT", "NULL", "IN", "AS", "ON", "JOIN", "LEFT", "RIGHT",
-    "INNER", "OUTER", "FULL", "CROSS", "GROUP", "BY", "ORDER", "HAVING",
-    "LIMIT", "OFFSET", "DISTINCT", "CASE", "WHEN", "THEN", "ELSE", "END",
-    "EXISTS", "UNION", "ALL", "BETWEEN", "LIKE", "IS", "TRUE", "FALSE",
-    "PRIMARY", "KEY", "FOREIGN", "REFERENCES", "CASCADE", "DEFAULT",
-    "INTEGER", "INT", "BIGINT", "SMALLINT", "TEXT", "VARCHAR", "CHAR",
-    "BOOLEAN", "BOOL", "FLOAT", "DOUBLE", "DECIMAL", "NUMERIC",
-    "DATE", "TIMESTAMP", "TIME", "JSON", "JSONB", "SERIAL", "BIGSERIAL",
-    "COUNT", "SUM", "AVG", "MIN", "MAX", "COALESCE", "CAST",
-  }
-  local kw_map = {}
-  for _, kw in ipairs(keywords) do
-    kw_map[kw] = true
-  end
+  local kw_map = KEYWORD_MAP
 
   local hl_group = "Statement"
   local i = 1

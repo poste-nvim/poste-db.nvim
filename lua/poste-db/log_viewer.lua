@@ -339,10 +339,16 @@ local function part_range(parts, n)
   return start, start + #parts[n]
 end
 
-local function apply_highlights(line_idx, entry, _)
-  -- Get actual line length for bounds checking
-  local line = vim.api.nvim_buf_get_lines(buf, line_idx - 1, line_idx, false)[1] or ""
-  local line_len = #line
+--- @param line_idx number 1-based buffer line of the summary row
+--- @param entry table the journal entry that row renders
+--- @param parts string[] the row's summary segments, already built by
+---   `build_lines` — recomputing them here (clean_sql + preview_sql +
+---   pad_table, each measuring display width) doubled the cost of every
+---   render, and the two computations could drift apart again
+local function apply_highlights(line_idx, entry, parts)
+  parts = parts or summary_parts(entry)
+  local line_len = 0
+  for i = 1, #parts do line_len = line_len + #parts[i] end
 
   -- Error row: red for entire line (low priority so element colors show through)
   if entry.status == "error" and line_len > 0 then
@@ -351,7 +357,6 @@ local function apply_highlights(line_idx, entry, _)
     })
   end
 
-  local parts = summary_parts(entry)
   local mark_s, mark_e = part_range(parts, 2)
   local time_s, time_e = part_range(parts, 4)
   local db_s, db_e = part_range(parts, 6)
@@ -386,8 +391,10 @@ local function apply_highlights(line_idx, entry, _)
     end_col = src_e, hl_group = "PosteDbDatasetMetaDim", priority = 150,
   })
 
-  -- Filter word highlight
+  -- Filter word highlight (one concat of the segments we already hold, instead
+  -- of reading the line back out of the buffer)
   if filter_text ~= "" and line_len > 0 then
+    local line = table.concat(parts)
     local lower = line:lower()
     local ftext = filter_text:lower()
     local scan_pos = 1
@@ -534,9 +541,15 @@ local function edit_summary_line(entry)
 end
 M._edit_summary_line = edit_summary_line
 
+--- Build the buffer lines for the current filter.
+--- @return string[] lines
+--- @return number[] filtered indices into `entries`
+--- @return table<number, string[]> parts_by_line summary segments per 1-based
+---   line number, so the highlight pass does not have to rebuild them
 local function build_lines()
   local lines = {}
   local filtered = {}
+  local parts_by_line = {}
   for i, entry in ipairs(entries) do
     if filter_matches(entry) then
       table.insert(filtered, i)
@@ -546,8 +559,9 @@ local function build_lines()
   local line_idx = 1
   for _, idx in ipairs(filtered) do
     local entry = entries[idx]
-    local summary = table.concat(summary_parts(entry))
-    table.insert(lines, summary)
+    local parts = summary_parts(entry)
+    parts_by_line[line_idx] = parts
+    table.insert(lines, table.concat(parts))
     line_idx = line_idx + 1
     if expanded[idx] then
       -- SQL lines first
@@ -585,13 +599,13 @@ local function build_lines()
       line_idx = line_idx + 1
     end
   end
-  return lines, filtered
+  return lines, filtered, parts_by_line
 end
 
 local function render()
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   _db_memo = {}
-  local lines, filtered = build_lines()
+  local lines, filtered, parts_by_line = build_lines()
   if #lines == 0 then
     lines = { "  <empty>" }
   end
@@ -615,7 +629,7 @@ local function render()
   local line_idx = 1
   for _, idx in ipairs(filtered) do
     local entry = entries[idx]
-    apply_highlights(line_idx, entry, false)
+    apply_highlights(line_idx, entry, parts_by_line[line_idx])
     line_idx = line_idx + 1
     if expanded[idx] then
       local dl = count_detail_lines(entry)

@@ -12,6 +12,10 @@ local S = {
   dialog = nil,
   is_running = false,
   cancelled = false,
+  -- Bumped per run. Closures capture it, so a cancelled run's late callbacks
+  -- cannot write into the next run's state: `cancelled` alone is reset by the
+  -- next M.run, which made the old job's stdout look live again.
+  run_id = 0,
   n_succeeded = 0,
   n_failed = 0,
   total_affected = 0,
@@ -364,6 +368,8 @@ function M.run(opts)
   S.job_id = nil
   S.is_running = true
   S.cancelled = false
+  S.run_id = (S.run_id or 0) + 1
+  local run_id = S.run_id
   S.summary_seen = false
   S.n_succeeded = 0
   S.n_failed = 0
@@ -443,7 +449,10 @@ function M.run(opts)
     stdout_buffered = false,
     stderr_buffered = true,
     on_stdout = function(_, data)
-      if not data or S.cancelled then return end
+      -- `run_id` catches the cancelled-then-restarted case: M.run resets
+      -- `cancelled`, so the old job's remaining chunks would otherwise be
+      -- appended to the new run's results.
+      if not data or S.cancelled or S.run_id ~= run_id then return end
       for _, chunk in ipairs(data) do
         if chunk == "" then
           if partial ~= "" then
@@ -472,6 +481,10 @@ function M.run(opts)
     end,
     on_exit = function(_, code)
       vim.schedule(function()
+        -- A superseded run's exit belongs to nobody: reporting it journalled a
+        -- bogus failure for the NEW file and forced S.is_running false while
+        -- that run was still live.
+        if S.run_id ~= run_id then return end
         if code ~= 0 and not S.cancelled then
           state.log("ERROR", "ExecFile exit code " .. code)
         end

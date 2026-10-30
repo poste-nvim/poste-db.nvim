@@ -79,7 +79,13 @@ function M.handle(deps, parsed)
     -- comment lines, so inspect the first real statement's keyword instead
     -- of anchoring the regex at the start of the whole blob.
     if M.is_ddl(deps.stmt_sql_raw or deps.buf_content) then
-      require("poste-db.completion.data").clear_cache()
+      -- Pass the connection the DDL ran on: with no argument clear_cache
+      -- resolves "the current connection" from the focused buffer, so a DDL
+      -- whose response landed after the user switched files dropped the WRONG
+      -- connection's cache and left the DDL'd one stale (the new table never
+      -- completed). The line below already uses state.context for exactly
+      -- this reason.
+      require("poste-db.completion.data").clear_cache(state.context.connection)
       -- Semantic diagnostics cache the introspected schema; a DDL may have
       -- created/renamed/dropped tables, so invalidate and re-check so the
       -- new tables are no longer reported as "not found".
@@ -271,8 +277,16 @@ function M.handle_error(deps, message, parsed)
   vim.schedule(function()
     if deps.current_seq < deps.get_exec_seq() then return end
     deps.entry.error = true
-    -- retained for the AI chat's "ask about this error" action
-    local err_ctx = require("poste-db.context").resolve_full_context(deps.src_buf, #deps.buf_lines)
+    -- Buffer-independent half first: `last_error` is what the AI chat's
+    -- "ask about this error" action sends, and it must survive the buffer
+    -- being gone. `resolve_full_context` raises "Invalid buffer id" on a
+    -- deleted buffer (the DDL branch above guards the same call), which used
+    -- to abort the whole scheduled callback — no last_error, no ✘ indicator,
+    -- no error panel, just an "Error executing vim.schedule lua callback".
+    local err_ctx = {}
+    if deps.src_buf and vim.api.nvim_buf_is_valid(deps.src_buf) then
+      err_ctx = require("poste-db.context").resolve_full_context(deps.src_buf, #deps.buf_lines) or {}
+    end
     state.last_error = {
       message = tostring(message),
       sql = deps.stmt_sql_raw or deps.buf_content,
@@ -280,6 +294,14 @@ function M.handle_error(deps, message, parsed)
       database = err_ctx.database,
       at = os.time(),
     }
+    if not (deps.src_buf and vim.api.nvim_buf_is_valid(deps.src_buf)) then
+      -- Nothing left to paint: the panel and indicator belong to a buffer the
+      -- user already closed. The notify is transport-only, so keep it.
+      if type(parsed) ~= "table" then
+        vim.notify(message, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
+      end
+      return
+    end
     indicators.set_indicator(deps.src_buf, deps.block_result_line, "error")
     -- A table here is the session transport's per-statement SQL error; nil or
     -- a string is a transport failure (binary missing, refused start, dead
