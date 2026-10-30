@@ -166,8 +166,20 @@ function M.apply_dataset_highlights(buf, lines, meta)
       end
 
       local col = 0
+      -- The dataset renderer spells a missing value `<null>` and a
+      -- default-filled one `<default>` (format.cell_to_string); `(NULL)` only
+      -- ever appears in the editor's cell prompts and yank text, so scanning
+      -- for it painted nothing. Both renderer spellings are matched here, in
+      -- line order (either can come first in a row).
       while true do
-        local start, stop = line:find("%(NULL%)", col + 1)
+        local ns_start, ns_stop = line:find("<null>", col + 1, true)
+        local ds_start, ds_stop = line:find("<default>", col + 1, true)
+        local start, stop
+        if ns_start and (not ds_start or ns_start <= ds_start) then
+          start, stop = ns_start, ns_stop
+        elseif ds_start then
+          start, stop = ds_start, ds_stop
+        end
         if not start then break end
         vim.api.nvim_buf_set_extmark(buf, ns, row_idx - 1, start - 1, {
           end_row = row_idx - 1,

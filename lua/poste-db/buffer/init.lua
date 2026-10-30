@@ -276,6 +276,20 @@ local function set_dataset_winbar(text)
   end
 end
 
+--- Rebuild the dataset winbar from `meta` and write it through the cache.
+---
+--- THE write path for the dataset winbar. The editor and search code used to
+--- call `nvim_set_option_value("winbar", ...)` directly, which left
+--- `_last_winbar_text` describing text the window no longer showed: the next
+--- cached build (identical to the stale entry) skipped the write, so a
+--- committed dataset kept advertising `=~1` and a cleared search kept
+--- advertising its filter until the text happened to change for another
+--- reason. Callers outside this module must come through here.
+--- @param meta table|nil dataset meta for the active tab
+function M.refresh_winbar(meta)
+  set_dataset_winbar(require("poste-db.buffer.nav").build_status_winbar(meta))
+end
+
 local function render_active_tab()
   local tab = D.T()
   if not tab then return end
@@ -629,6 +643,17 @@ function M.render_dataset(lines, meta, opts)
   end
 
   if tab_idx == 1 and not opts.keep_tabs then
+    -- Replacing the view discards the active entry's tabs, and with them the
+    -- queued INSERTs/UPDATEs/DELETEs (edit_state lives on the tab). Every
+    -- other view-replacing path — a run, tab/history switch, page change,
+    -- sort, search — refuses while edits are pending; the browser's <CR>
+    -- (db_browser/actions) and the AI result render did not, so an uncommitted
+    -- cell edit vanished without a word. One guard here covers them all.
+    local current = D.T()
+    if current and current.edit_state and current.edit_state.dirty then
+      vim.notify(C.EDIT_CONFLICT_MSG, vim.log.levels.WARN, { title = C.TITLE })
+      return
+    end
     -- Clear the active request's tabs (history entry stays; its fresh tabs
     -- table is reused, or a new entry is auto-created for legacy callers).
     D.reset_active_entry_tabs()

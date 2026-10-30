@@ -1,7 +1,6 @@
 --- Dataset search --- find column, filter by cell, next/prev match, search highlight.
 local D = require("poste-db.dataset")
 local C = require("poste-db.constants")
-local nav_ui = require("poste-db.buffer.nav_ui")
 local sql_state = require("poste-db.state")
 
 local sql_highlights = require("poste-db.highlights")
@@ -467,14 +466,16 @@ function M.find_column()
   end)
 end
 
+--- Refresh the winbar after the search state changed (filter applied, jump
+--- moved, search cleared). Goes through buffer.refresh_winbar — the cached
+--- write path — because a raw option write here left the cache describing
+--- text the window no longer showed: clearing the search kept the cleared
+--- fragment on screen until the text changed for another reason.
 update_winbar = function()
   if not D.dataset_window or not vim.api.nvim_win_is_valid(D.dataset_window) then return end
-  local meta = D.T() and D.T().meta
-  if not meta then return end
-  local text = nav_ui.build_status_winbar(meta, D.T(), #D.tabs, D.active_tab_idx)
-  if D.dataset_window and vim.api.nvim_win_is_valid(D.dataset_window) then
-    pcall(vim.api.nvim_set_option_value, "winbar", text or "", { win = D.dataset_window })
-  end
+  local tab = D.T()
+  if not (tab and tab.meta) then return end
+  require("poste-db.buffer").refresh_winbar(tab.meta)
 end
 -- The local `update_winbar` above is the only consumer; no export — an
 -- identical export on this file used to be dead weight next to page.lua's.

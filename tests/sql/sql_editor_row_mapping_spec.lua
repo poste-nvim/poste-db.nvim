@@ -114,6 +114,9 @@ describe("editor edits address source rows", function()
       page = page,
       page_size = 50,
       num_pages = 2,
+      -- The fixture is a two-page view, so paging is on; leaving this nil made
+      -- the tab "pagination off" for every paging decision that reads it.
+      pagination_enabled = true,
       padded = padded,
       meta = meta,
       original_sql = "select * from users",
@@ -229,6 +232,30 @@ describe("editor edits address source rows", function()
     local added = tab.edit_state.added_rows[1]
     assert.equals(61, added.row_idx, "tracked by source index")
     assert.equals(11, state.cell.row, "the new row is visible 11 of page 2")
+  end)
+
+  it("jumps to the page that holds the row it appended", function()
+    -- The row lands at the END of the table, which is only the page on screen
+    -- when the result does not paginate: without the jump the re-render drew
+    -- page 1 again, `visible` was nil, and the row was nowhere in sight.
+    install_tab(1, identity(60))
+    tab.pagination_enabled = true
+    nav.insert_row()
+    assert.equals(61, #tab.layout.rows)
+    assert.equals(2, tab.page, "the appended row lives on page 2")
+    assert.equals(11, state.cell.row, "cursor follows it there")
+  end)
+
+  it("keeps a pagination-off dataset whole after an insert", function()
+    -- `render_page(layout, page, tab.page_size)` cut the view down to the
+    -- first page: `o` on a long table left most of it off the screen.
+    install_tab(1, identity(60))
+    tab.pagination_enabled = false
+    nav.insert_row()
+    assert.equals(61, #tab.layout.rows)
+    assert.equals(61, tab.layout.total_rows, "the paging count follows the row set")
+    assert.equals(61, tab.meta.row_count, "the rendered page holds every row")
+    assert.equals(61, state.cell.row, "cursor on the appended row")
   end)
 
   ---------------------------------------------------------------------------

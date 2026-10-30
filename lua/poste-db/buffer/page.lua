@@ -6,12 +6,14 @@ local sql_state = require("poste-db.state")
 local M = {}
 
 --- Refresh buffer content from the tab's layout.
+--- @return table|nil meta the rendered page's meta (nil when there is nothing
+---   to render: no dataset window, or a tab without a layout)
 function M.refresh_page()
   local tab = D.T()
-  if not tab or not D.dataset_window then return end
+  if not tab or not D.dataset_window then return nil end
   -- Resultset tabs are always layout-aware now (render_dataset guarantees
   -- tab.layout); nothing to refresh for error/affected/raw pages.
-  if not tab.layout then return end
+  if not tab.layout then return nil end
 
   local fmt = require("poste-db.format")
   local lines, meta  -- locals: assigning them without `local` would leak globals
@@ -67,6 +69,7 @@ function M.refresh_page()
   if tab.header_text and not sql_state._hide_header_float then
     require("poste-db.buffer.header").update()
   end
+  return meta
 end
 
 local function is_dirty()

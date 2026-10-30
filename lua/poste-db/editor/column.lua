@@ -56,11 +56,20 @@ local METADATA_QUERIES = {
   },
 }
 
--- Cache: { ["connection:database:table"] = true }
-local pk_cache = {}
+--- Cached table metadata, keyed "connection:database:table":
+---   { [column_name] = { default = any, pk = true, enum = string[] },
+---     _by_type     = { [lowercased type] = string[] } }   -- postgres enums
+---
+--- The cache holds the METADATA, not "this table was already queried". A
+--- boolean hit returned early and never touched the new layout — and PK flags
+--- live on a single layout — so the second dataset for a table (a re-run
+--- query, a second browser <CR>) had no primary key at all: the commit fell
+--- back to an all-column WHERE ("may update several rows") and the PK column
+--- turned editable again.
+local meta_cache = {}
 
 function M.clear_pk_cache()
-  pk_cache = {}
+  meta_cache = {}
 end
 
 ---------------------------------------------------------------------------
@@ -153,40 +162,45 @@ local function run_introspection_query(query, connection, database)
 end
 
 ---------------------------------------------------------------------------
--- Result parsers
+-- Result parsers — body in, column metadata out
+--
+-- Parsing and applying are separate on purpose: the parsed table is what the
+-- cache stores, so a second layout for the same table gets the metadata
+-- without a round-trip. Parsers never touch a layout.
 ---------------------------------------------------------------------------
 
-local function parse_pk_results(body, layout, dialect)
-  local defaults = {}
-  local pk_names = {}
+--- @param body table decoded introspection response
+--- @param dialect string
+--- @return table map column name -> { default = any, pk = boolean }
+local function parse_pk_results(body, dialect)
+  local meta = {}
   local is_pk_col_idx = ((dialect == "mysql" or dialect == "mariadb") and 4) or 3
-  for _, res in ipairs(body.results) do
+  for _, res in ipairs(body.results or {}) do
     if res.rows then
       for _, row in ipairs(res.rows) do
         local col_name = tostring(row[1] or "")
-        local col_default = row[2]
-        local is_pk = row[is_pk_col_idx]
         if col_name ~= "" then
-          defaults[col_name] = (col_default ~= vim.NIL and col_default ~= nil) and col_default or nil
-          if is_pk and (is_pk == 1 or is_pk == "1") then
-            pk_names[col_name] = true
+          local entry = meta[col_name] or {}
+          local col_default = row[2]
+          if col_default ~= vim.NIL and col_default ~= nil then
+            entry.default = col_default
           end
+          local is_pk = row[is_pk_col_idx]
+          if is_pk == 1 or is_pk == "1" then entry.pk = true end
+          meta[col_name] = entry
         end
       end
     end
   end
-  for _, col in ipairs(layout.columns) do
-    if defaults[col.name] ~= nil then
-      col.default = defaults[col.name]
-    end
-    if pk_names[col.name] then
-      col.primary_key = true
-    end
-  end
+  return meta
 end
 
-local function parse_mysql_enum_body(body, layout)
-  for _, res in ipairs(body.results) do
+--- MySQL/MariaDB: `SHOW COLUMNS`-style rows carry the enum values inside the
+--- type text (`enum('a','b')`).
+--- @return table map column name -> string[]
+local function parse_mysql_enum_body(body)
+  local meta = {}
+  for _, res in ipairs(body.results or {}) do
     if res.rows then
       for _, row in ipairs(res.rows) do
         local col_name = tostring(row[1] or "")
@@ -195,47 +209,59 @@ local function parse_mysql_enum_body(body, layout)
         for v in col_type:gmatch("'([^']*)'") do
           table.insert(values, v)
         end
-        if #values > 0 then
-          for _, col in ipairs(layout.columns) do
-            if col.name == col_name then
-              col.enum_values = values
-              break
-            end
-          end
+        if col_name ~= "" and #values > 0 then
+          meta[col_name] = values
         end
       end
     end
   end
+  return meta
 end
 
-local function parse_postgres_enum_body(body, layout)
-  local enum_map = {}
-  for _, res in ipairs(body.results) do
+--- Postgres: `pg_enum` rows pair a type name with one value; the column only
+--- names the TYPE, so the result is keyed by type, not by column.
+--- @return table map lowercased type name -> string[]
+local function parse_postgres_enum_body(body)
+  local meta = {}
+  for _, res in ipairs(body.results or {}) do
     if res.rows then
       for _, row in ipairs(res.rows) do
         local type_name = tostring(row[1] or "")
         local enum_value = tostring(row[2] or "")
         if type_name ~= "" and enum_value ~= "" then
-          if not enum_map[type_name] then
-            enum_map[type_name] = {}
-          end
-          table.insert(enum_map[type_name], enum_value)
+          local key = type_name:lower()
+          meta[key] = meta[key] or {}
+          table.insert(meta[key], enum_value)
         end
       end
     end
   end
-  for _, col in ipairs(layout.columns) do
-    if col.ctype and enum_map[col.ctype:lower()] then
-      col.enum_values = enum_map[col.ctype:lower()]
-    end
-  end
+  return meta
 end
 
-local function parse_enum_results(body, layout, dialect)
+--- @return table map column name (mysql) or type name (postgres) -> string[]
+local function parse_enum_results(body, dialect)
   if dialect == "mysql" or dialect == "mariadb" then
-    parse_mysql_enum_body(body, layout)
+    return parse_mysql_enum_body(body)
   elseif dialect == "postgres" then
-    parse_postgres_enum_body(body, layout)
+    return parse_postgres_enum_body(body)
+  end
+  return {}
+end
+
+--- Write cached metadata onto a layout's columns.
+--- @param layout table
+--- @param meta table|nil cached metadata (see `meta_cache`)
+--- @param enums table|nil map column name / type name -> string[]
+local function apply_column_meta(layout, meta, enums)
+  for _, col in ipairs(layout.columns) do
+    local entry = meta and meta[col.name]
+    if entry then
+      if entry.default ~= nil then col.default = entry.default end
+      if entry.pk then col.primary_key = true end
+    end
+    local values = enums and (enums[col.name] or (col.ctype and enums[col.ctype:lower()]))
+    if values then col.enum_values = values end
   end
 end
 
@@ -261,11 +287,16 @@ function M.ensure_primary_key(tab)
   end
   if connection == "" then return end
   local cache_key = connection .. ":" .. database .. ":" .. table_name
-  if pk_cache[cache_key] then return end
+  local cached = meta_cache[cache_key]
+  if cached then
+    apply_column_meta(layout, cached.columns, cached.enums)
+    return
+  end
 
   for _, col in ipairs(layout.columns) do
     if col.primary_key then
-      pk_cache[cache_key] = true
+      -- Already known (the browser's column list carries `pk` on sqlite and
+      -- `key` on mysql): nothing to fetch, nothing to cache.
       return
     end
   end
@@ -278,29 +309,29 @@ function M.ensure_primary_key(tab)
 
   local pk_query = build_pk_query(dialect, table_name, db)
   if not pk_query then
-    pk_cache[cache_key] = true
     return
   end
 
   local log = require("poste-db.log")
   log.debug(string.format("PK introspection: table=%s query=%s conn=%s db=%s", table_name, pk_query, log.redact_url(connection), database))
   local body = run_introspection_query(pk_query, connection, database)
-  if body and body.results then
-    parse_pk_results(body, layout, dialect)
-  end
+  local columns_meta = (body and body.results) and parse_pk_results(body, dialect) or nil
 
+  local enums_meta
   local enum_query = build_enum_query(dialect, table_name, db)
   if enum_query then
     local enum_body = run_introspection_query(enum_query, connection, database)
     if enum_body and enum_body.results then
-      parse_enum_results(enum_body, layout, dialect)
+      enums_meta = parse_enum_results(enum_body, dialect)
     end
   end
 
+  apply_column_meta(layout, columns_meta, enums_meta)
+
   -- Cache only on success so a transient introspection failure is retried
   -- on the next edit/commit instead of being permanently skipped.
-  if body and body.results then
-    pk_cache[cache_key] = true
+  if columns_meta then
+    meta_cache[cache_key] = { columns = columns_meta, enums = enums_meta }
   end
 end
 

@@ -121,12 +121,23 @@ end
 --- Redraw the whole page from `tab.layout`, for when the row count changed and
 --- the lines below the change would otherwise keep their old positions. Returns
 --- the new meta, or nil when there is no dataset buffer to draw into.
+---
+--- The render window follows the tab's own paging state. Passing
+--- `tab.page_size` unconditionally (the previous shape) cut a pagination-OFF
+--- dataset down to its first page: `o` on a 120-row table left 70 rows on the
+--- layout and off the screen, and the winbar went on advertising them.
 local function rerender_dataset_page(tab)
   local buf = get_dataset().dataset_buffer
   if not (buf and vim.api.nvim_buf_is_valid(buf)) then return nil end
   local fmt = require("poste-db.format")
-  local lines, meta = fmt.render_page(tab.layout, tab.page or 1,
-    tab.page_size or const.EDITOR_PAGE_SIZE)
+  local page = tab.page or 1
+  local page_size = tab.page_size or const.EDITOR_PAGE_SIZE
+  if not tab.pagination_enabled then
+    -- Paging off means "the whole set is on screen": one page holding every
+    -- row, which is also the page the cursor arithmetic assumes.
+    page, page_size = 1, #tab.layout.rows
+  end
+  local lines, meta = fmt.render_page(tab.layout, page, page_size)
   meta.table_name = tab.meta and tab.meta.table_name
   require("poste-db.buffer").apply_rendered_page(tab, lines, meta)
   require("poste-db.highlights").apply_edit_highlights(buf, tab)
@@ -171,12 +182,11 @@ local function apply_cell_edit(row_idx, col_idx, new_val)
 
   render_source_row_line(tab, row_idx)
 
-  -- Update winbar
+  -- Update winbar (through buffer.refresh_winbar: a raw option write here
+  -- bypasses its unchanged-text cache and leaves the next build thinking the
+  -- window still shows the old text)
   if tab.edit_state.dirty then
-    local winbar_base = require("poste-db.buffer.nav").build_status_winbar(tab.meta)
-    if get_dataset().dataset_window and vim.api.nvim_win_is_valid(get_dataset().dataset_window) then
-      pcall(vim.api.nvim_set_option_value, "winbar", winbar_base or "", { win = get_dataset().dataset_window })
-    end
+    require("poste-db.buffer").refresh_winbar(tab.meta)
   end
 end
 
@@ -412,6 +422,11 @@ function M.delete_row()
     -- row was never on the server, and a line still standing would invite an
     -- edit that has no insert behind it any more
     table.remove(tab.layout.rows, src_row)
+    -- The row is gone from the layout, so the paging count goes with it (see
+    -- insert_row: this is the other half of the same invariant).
+    if tab.layout.total_rows and tab.layout.total_rows > 0 then
+      tab.layout.total_rows = tab.layout.total_rows - 1
+    end
     for _, added in ipairs(es.added_rows) do
       if added.row_idx > src_row then added.row_idx = added.row_idx - 1 end
     end
@@ -419,10 +434,7 @@ function M.delete_row()
     if meta and get_state().cell.row > meta.row_count then
       get_state().cell.row = math.max(1, meta.row_count)
     end
-    local winbar_base = require("poste-db.buffer.nav").build_status_winbar(tab.meta)
-    if get_dataset().dataset_window and vim.api.nvim_win_is_valid(get_dataset().dataset_window) then
-      pcall(vim.api.nvim_set_option_value, "winbar", winbar_base or "", { win = get_dataset().dataset_window })
-    end
+    require("poste-db.buffer").refresh_winbar(tab.meta)
     vim.notify("Insert cancelled", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
     return
   end
@@ -435,10 +447,7 @@ function M.delete_row()
   end
 
   -- Update winbar
-  local winbar_base = require("poste-db.buffer.nav").build_status_winbar(tab.meta)
-  if get_dataset().dataset_window and vim.api.nvim_win_is_valid(get_dataset().dataset_window) then
-    pcall(vim.api.nvim_set_option_value, "winbar", winbar_base or "", { win = get_dataset().dataset_window })
-  end
+  require("poste-db.buffer").refresh_winbar(tab.meta)
 end
 
 --- Insert a new row at the end of the table.
@@ -461,7 +470,24 @@ function M.insert_row()
   -- Append to layout rows and track in edit_state
   local new_row_idx = #tab.layout.rows + 1
   tab.layout.rows[new_row_idx] = vim.deepcopy(row_data)
+  -- `layout.total_rows` is the count pagination derives from (it comes from
+  -- the server), so a local append has to move it too: otherwise the new row
+  -- sits past the last page, `refresh_page` renders one row short, and the
+  -- winbar keeps advertising the pre-insert count.
+  tab.layout.total_rows = (tab.layout.total_rows or (new_row_idx - 1)) + 1
   cell.track_row_add(es, row_data, new_row_idx)
+
+  -- The row lands at the END of the table, which is only the page on screen
+  -- when the result does not paginate. Jump to the page that holds it first:
+  -- otherwise the re-render draws a page without the new row, `visible` is
+  -- nil, and the row the user just asked for is nowhere in sight (with
+  -- pagination off the same page_size truncation hid the whole tail).
+  if tab.pagination_enabled then
+    local page_size = tab.page_size or const.EDITOR_PAGE_SIZE
+    if page_size > 0 then
+      tab.page = math.max(1, math.ceil(new_row_idx / page_size))
+    end
+  end
 
   -- Re-render current page to show the new row
   local meta = rerender_dataset_page(tab)
@@ -480,10 +506,7 @@ function M.insert_row()
   end
 
   -- Update winbar
-  local winbar_base = require("poste-db.buffer.nav").build_status_winbar(tab.meta)
-  if get_dataset().dataset_window and vim.api.nvim_win_is_valid(get_dataset().dataset_window) then
-    pcall(vim.api.nvim_set_option_value, "winbar", winbar_base or "", { win = get_dataset().dataset_window })
-  end
+  require("poste-db.buffer").refresh_winbar(tab.meta)
 
   vim.notify("Row queued for insertion (commit with <leader>w)", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 end
