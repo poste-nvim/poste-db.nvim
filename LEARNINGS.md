@@ -253,16 +253,34 @@ fix: a `mysql_binary_to_hex` branch for
 BINARY/VARBINARY/TINYBLOB/MEDIUMBLOB/BLOB/LONGBLOB, emitting uppercase hex
 per MySQL's `HEX()` convention.
 
+**The label is not the data** (2026-10-30). That branch keyed on the
+driver's type name alone, and MySQL 8 sets the `BINARY` flag on *text*
+columns: `SHOW DATABASES`, `SHOW TABLES` and every `information_schema`
+string column collate `utf8mb3_bin`/`utf8mb4_0900_ai_ci` but still report
+`Flags: ... BINARY`, which sqlx renames to `VARBINARY`/`BINARY`/`BLOB`. So
+every database and table name arrived hexed — `show databases` answered
+`696E666F726D6174696F6E5F736368656D61` instead of `information_schema`, and
+`describe` hexed its `Type`/`Key`/`Default` cells too. No encoding bug: the
+BLOB label just lied. The fix is `mysql_binary_cell_to_json`: hex only when
+the bytes are not text (invalid UTF-8, or a NUL from `BINARY(n)` padding),
+otherwise emit the decoded string. Both halves matter — a `utf8mb4_bin`
+column is text, a `BINARY(16)` UUID is not. Regression tests
+`metadata_text_columns_are_not_hexed` and `real_binary_payloads_still_hex`
+pin each side. Note how this reached a user at all: the release tag lags the
+fix — `v0.1.3` predates `203c4f2`, so only a locally built debug binary
+shows it.
+
 **Rule**: poste plugins' queries default to `poste session`
 (`poste-db/executor.lua`'s `prefer_session=true`); the session path is the
 live converter and exec-file is the fallback (visual selections also go
-through exec-file). Changing one means changing the other;
-`poste.nvim`'s `poste-exec/src/sql_executor/mysql.rs` (the dialect engine
-MSSQL/ClickHouse currently use) carries a third copy of the same converter
-and must change too (all done). Verification: feed the binary
+through exec-file). Changing one means changing the other; both now call the
+single `poste-exec/src/sql_values.rs` copy (the old
+`sql_executor/mysql.rs` duplicate went away with the shared-loop refactor).
+Verification: feed the binary
 `{"seq":1,"sql":"SELECT hidden_hid FROM cinema.game_achievements LIMIT 3;"}`
-directly and check the returned JSON's `hidden_hid` equals `HEX(hidden_hid)`;
-after changing, `cargo build` to rebuild `poste.nvim/target/debug/poste`
+directly and check the returned JSON's `hidden_hid` equals `HEX(hidden_hid)`,
+then run `show databases` and check it answers names, not hex; after
+changing, `cargo build` to rebuild `poste.nvim/target/debug/poste`
 (the plugin resolves the binary by rtp directory, no install needed).
 
 ## 16. Devanagari overwrites the dataset's right border: strdisplaywidth folds Mc marks
