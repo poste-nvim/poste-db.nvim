@@ -128,8 +128,12 @@ local function prompt_add_column(table_name, dialect, source_buf)
     vim.ui.input({ prompt = "Column type (e.g. TEXT, INT): " }, function(col_type)
       if not col_type or col_type == "" then return end
       vim.ui.input({ prompt = "Nullable? [y/N]: " }, function(nullable_ans)
-        local nullable = nullable_ans and nullable_ans:lower() == "y"
+        -- Esc cancels the whole flow: a nil answer read as "no" and went on
+        -- to ask for a default, so there was no way out of the sequence.
+        if nullable_ans == nil then return end
+        local nullable = nullable_ans:lower() == "y"
         vim.ui.input({ prompt = "Default value (leave blank for none): " }, function(default_val)
+          if default_val == nil then return end
           local ddl = gen_add_column(table_name, col_name, col_type, nullable, default_val, dialect)
           insert_ddl(source_buf, ddl, "Add column: " .. table_name .. "." .. col_name)
         end)

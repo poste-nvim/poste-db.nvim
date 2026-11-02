@@ -44,8 +44,11 @@ function M.handle_connection_directive(buf, conn_name)
     vim.notify("connections.toml not found", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return true
   end
-  local config_lines = vim.fn.readfile(config_path)
-  if not config_lines then
+  -- readfile raises (E484) on an unreadable file — the `not config_lines`
+  -- branch below was dead and the user saw the raw error instead of the
+  -- notice; pcall makes the guard real.
+  local ok_read, config_lines = pcall(vim.fn.readfile, config_path)
+  if not ok_read or not config_lines then
     vim.notify("Cannot read connections.toml", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return true
   end

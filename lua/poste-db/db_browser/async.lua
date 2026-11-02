@@ -119,6 +119,11 @@ function M.run_introspect(conn_name, introspect_type, schema, table_name, databa
       local output = table.concat(data, "\n")
       local ok, parsed = pcall(vim.json.decode, output)
       if ok and type(parsed) == "table" then
+        -- A JSON null decodes to vim.NIL (truthy), and the consumers read
+        -- `item.type or "TEXT"` / `item.extra or ""` — which keep vim.NIL —
+        -- so an absent field crashed the import column mapper. Same clean the
+        -- introspect/init runner applies.
+        util.clean_nil(parsed)
         parsed_result = parsed
       else
         log.warn("Introspect JSON parse failed: " .. output:sub(1, 200))

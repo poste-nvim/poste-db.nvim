@@ -124,7 +124,17 @@ function M.explain()
   local database = ctx.database or ""
   local conn_url = nil
   if conn ~= "" then
-    conn_url = require("poste-db.connections").resolve_connection_url(conn)
+    local resolved, resolve_err = require("poste-db.connections").resolve_connection_url(conn)
+    if not resolved then
+      -- A tunnel failure or an unresolved {{VAR}} used to be swallowed and the
+      -- plan produced against the binary's own default connection — silently
+      -- explaining something the user is not connected to.
+      vim.notify("EXPLAIN: cannot resolve connection '" .. conn .. "'"
+        .. (resolve_err and (": " .. resolve_err) or ""),
+        vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
+      return
+    end
+    conn_url = resolved
   end
 
   local exec_run = require("poste-db.exec_run")

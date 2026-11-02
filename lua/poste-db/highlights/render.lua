@@ -107,7 +107,9 @@ function M.apply_dataset_highlights(buf, lines, meta)
           hl_group = "PosteDbDatasetMeta",
         })
       end
-      local ok_start, ok_end = line:find("OK")
+      -- word-bounded: a bare find also matched the substring inside echoed
+      -- statements (TOKYO, BOOKS) and tinted it green
+      local ok_start, ok_end = line:find("%f[%w]OK%f[%W]")
       if ok_start and ok_end then
         vim.api.nvim_buf_set_extmark(buf, ns, i - 1, ok_start - 1, {
           end_row = i - 1,

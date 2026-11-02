@@ -72,7 +72,9 @@ function M.build_column_info_lines(table_name, col)
   if col.extra and col.extra ~= "" and col.extra ~= vim.NIL then
     lines[#lines + 1] = "  Extra:    " .. tostring(col.extra)
   end
-  if col.max_length then
+  -- `max_length` is the one field here without a vim.NIL guard, and a JSON
+  -- null decodes to vim.NIL (truthy) — the line rendered "Max Len:  vim.NIL"
+  if col.max_length and col.max_length ~= vim.NIL then
     lines[#lines + 1] = "  Max Len:  " .. tostring(col.max_length)
   end
   if col.comment and col.comment ~= vim.NIL then

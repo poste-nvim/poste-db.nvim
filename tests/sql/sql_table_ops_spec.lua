@@ -206,3 +206,51 @@ describe("poste-db table_ops keymap names", function()
     assert.is_nil(desc.select_all)
   end)
 end)
+
+-- Esc on the "Nullable?" or "Default value" prompt read as "no"/"none" and
+-- carried on to the next prompt, so there was no way out of the sequence.
+describe("table_ops add column prompts", function()
+  local ops = require("poste-db.table_ops")
+  local buf, saved_input, saved_notify
+
+  before_each(function()
+    buf = vim.api.nvim_create_buf(false, true)
+    saved_input = vim.ui.input
+    saved_notify = vim.notify
+    vim.notify = function() end
+  end)
+
+  after_each(function()
+    vim.ui.input = saved_input
+    vim.notify = saved_notify
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+
+  local function lines_of()
+    return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  end
+
+  it("stops when the nullable prompt is cancelled", function()
+    local prompts = { "col", "TEXT", nil }
+    vim.ui.input = function(_, cb) cb(table.remove(prompts, 1)) end
+    ops.add_column("t", "postgres", buf)
+    assert.falsy(table.concat(lines_of(), "\n"):find("ADD COLUMN"),
+      "no DDL inserted after Esc")
+  end)
+
+  it("stops when the default-value prompt is cancelled", function()
+    local prompts = { "col", "TEXT", "n", nil }
+    vim.ui.input = function(_, cb) cb(table.remove(prompts, 1)) end
+    ops.add_column("t", "postgres", buf)
+    assert.falsy(table.concat(lines_of(), "\n"):find("ADD COLUMN"),
+      "no DDL inserted after Esc")
+  end)
+
+  it("inserts the DDL when every prompt is answered", function()
+    local prompts = { "col", "TEXT", "n", "" }
+    vim.ui.input = function(_, cb) cb(table.remove(prompts, 1)) end
+    ops.add_column("t", "postgres", buf)
+    local joined = table.concat(lines_of(), "\n")
+    assert.truthy(joined:find("ADD COLUMN"))
+  end)
+end)

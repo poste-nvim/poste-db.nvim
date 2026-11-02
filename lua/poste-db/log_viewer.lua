@@ -514,7 +514,10 @@ local function update_winbar()
   end
   local parts = { "%#PosteDbDatasetMeta# SQL Log" }
   if filter_text ~= "" then
-    table.insert(parts, string.format(" %%#PosteDbHistoryFilter#filter: %s%%#PosteDbDatasetMeta#", filter_text))
+    -- statusline items: a literal `%` in the user's filter (%f = buffer name,
+    -- %{...} = expression) was evaluated on every redraw
+    local shown = filter_text:gsub("%%", "%%%%")
+    table.insert(parts, string.format(" %%#PosteDbHistoryFilter#filter: %s%%#PosteDbDatasetMeta#", shown))
   end
   table.insert(parts, string.format("  [%d/%d]", count, total))
   if count < total then
@@ -531,10 +534,16 @@ end
 local function edit_summary_line(entry)
   local s = entry.edit_summary
   if not s then return nil end
+  -- `or 0` only catches nil; a hand-edited journal line carrying a string
+  -- ("many") reached %d and raised on expand — the header promises hand-edited
+  -- lines cannot take the viewer down, so coerce the type too.
+  local updates = tonumber(s.updates) or 0
+  local inserts = tonumber(s.inserts) or 0
+  local deletes = tonumber(s.deletes) or 0
   local line = string.format("     Edit: +%d updates, %d inserts, %d deletes",
-    s.updates or 0, s.inserts or 0, s.deletes or 0)
+    updates, inserts, deletes)
   if type(entry.affected_rows) == "number" then
-    local expected = (s.updates or 0) + (s.inserts or 0) + (s.deletes or 0)
+    local expected = updates + inserts + deletes
     line = line .. string.format(" · %d of %d row(s) affected", entry.affected_rows, expected)
   end
   return line

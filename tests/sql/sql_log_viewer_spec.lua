@@ -147,6 +147,17 @@ describe("log viewer _edit_summary_line", function()
   it("returns nil for an entry with no edit summary", function()
     assert.is_nil(log._edit_summary_line({ sql = "SELECT 1" }))
   end)
+
+  it("does not raise on a hand-edited non-numeric summary", function()
+    -- the header promises hand-edited lines cannot take the viewer down;
+    -- `or 0` only caught nil, a string reached %d and raised on expand
+    local line = log._edit_summary_line({
+      edit_summary = { updates = "many", inserts = true, deletes = "1" },
+      affected_rows = 3,
+    })
+    assert.truthy(line:find("0 updates, 0 inserts, 1 deletes"))
+    assert.truthy(line:find("3 of 1 row%(s%) affected"))
+  end)
 end)
 
 describe("log viewer _filter_matches", function()

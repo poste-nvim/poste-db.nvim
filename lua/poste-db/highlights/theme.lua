@@ -107,7 +107,10 @@ function M.setup()
   for _, name in ipairs(completion_kind_names) do
     local hl_name = "PosteDbCompletionKind" .. name
     link_if_empty(hl_name, completion_kind_links[name])
-    pcall(vim.api.nvim_set_hl, 0, "BlinkCmpKind" .. name, { link = hl_name })
+    -- `link_if_empty`, like every other group here: an unconditional write
+    -- clobbered the user's own BlinkCmpKind* colors for ALL filetypes on
+    -- every colorscheme event (blink reads these globally).
+    link_if_empty("BlinkCmpKind" .. name, hl_name)
   end
 
   state.apply_highlight_overrides({

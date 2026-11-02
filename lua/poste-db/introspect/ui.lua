@@ -27,10 +27,22 @@ end
 
 function M.show_column_info(items, table_name, col_name, show_float)
   local col = nil
+  -- exact spelling first, then case-insensitive: postgres folds unquoted
+  -- identifiers to lowercase (stored `name`, typed `Name`), MySQL columns
+  -- match in any case — both answered "Column 'Name' not found".
   for _, item in ipairs(items or {}) do
     if item.name == col_name then
       col = item
       break
+    end
+  end
+  if not col and type(col_name) == "string" then
+    local lower = col_name:lower()
+    for _, item in ipairs(items or {}) do
+      if type(item.name) == "string" and item.name:lower() == lower then
+        col = item
+        break
+      end
     end
   end
   if not col then
