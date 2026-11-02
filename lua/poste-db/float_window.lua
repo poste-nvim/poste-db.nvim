@@ -103,7 +103,8 @@ end
 ---   relative     string          "editor" | "win" | "cursor" (default "editor")
 ---   win          number          anchor window for relative="win"
 ---   width/height/row/col/anchor/zindex/focusable
----   border       string|boolean  (default "rounded")
+---   border       string  (default "rounded"; `false` is read as the default,
+---                          the and-or at the win_opts build below cannot pass it through)
 ---   title        string          (enables the title fallback retry)
 ---   title_pos    string          (default "left")
 ---   winhl        string          window highlight

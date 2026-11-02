@@ -37,7 +37,8 @@ local KNOWLEDGE = [[You are running inside poste-db.nvim, a SQL execution plugin
 - Use the schema summary injected with the user message; do not invent tables or columns that are not listed. If unsure about a column, ask.
 - Prefer LIMIT on exploratory SELECTs; never write destructive DDL/DML unless explicitly asked.]]
 
---- Look up the SQL dialect of a connection (postgres / mysql / sqlite), for
+--- Look up the SQL dialect of a connection (postgres / mysql / sqlite / mssql /
+--- clickhouse — the set KNOWLEDGE advertises above), for
 --- telling the model which SQL flavor to write. Nil when unknown.
 --- @param conn string|nil
 --- @return string|nil

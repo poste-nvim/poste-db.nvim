@@ -305,11 +305,13 @@ end
 --- without a top-level WHERE. Parens are dropped before scanning so a WHERE
 --- inside a subquery does not count as the statement's filter.
 ---
---- This is the only engine that runs when tree-sitter is unavailable, so it
---- scans the text under BOTH quote-escape readings and unions the hits: the
---- dialects disagree on whether `\'` escapes the quote, and either single
---- reading can park an unfiltered DELETE inside a phantom literal. A confirm
---- gate that over-flags one extra edge is fine; one that misses a statement is
+--- This runs when tree-sitter is unavailable AND whenever the tree-sitter
+--- pass found no risky statement (scan_text falls back to it on zero hits),
+--- so it scans the text under BOTH quote-escape readings and unions the
+--- hits: the dialects disagree on whether `\'` escapes the quote, and either
+--- single reading can park an unfiltered DELETE inside a phantom literal. A
+--- confirm gate that over-flags one extra edge is fine; one that misses a
+--- statement is
 --- not. Deduped on kind+snippet so a statement both readings flag asks once.
 --- @param sql string
 --- @return table[] each entry: { kind, snippet }
