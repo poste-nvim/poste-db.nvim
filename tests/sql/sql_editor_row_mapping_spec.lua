@@ -97,8 +97,9 @@ describe("editor edits address source rows", function()
   local dataset, nav
   local buf, tab
 
-  local function install_tab(page, view_indices, row_number_mode)
-    local layout = make_layout(60)
+  local function install_tab(page, view_indices, row_number_mode, n)
+    n = n or 60
+    local layout = make_layout(n)
     local lines, meta = fmt.render_view(layout, view_indices, page, 50,
       { row_number_mode = row_number_mode })
     local padded = {}
@@ -113,7 +114,7 @@ describe("editor edits address source rows", function()
       view_indices = view_indices,
       page = page,
       page_size = 50,
-      num_pages = 2,
+      num_pages = math.ceil(n / 50),
       -- The fixture is a two-page view, so paging is on; leaving this nil made
       -- the tab "pagination off" for every paging decision that reads it.
       pagination_enabled = true,
@@ -256,6 +257,95 @@ describe("editor edits address source rows", function()
     assert.equals(61, tab.layout.total_rows, "the paging count follows the row set")
     assert.equals(61, tab.meta.row_count, "the rendered page holds every row")
     assert.equals(61, state.cell.row, "cursor on the appended row")
+  end)
+
+  ---------------------------------------------------------------------------
+  -- The editor's re-render used to read `layout.rows` directly, ignoring
+  -- `view_indices`: `o` or `dd` on a sorted or filtered dataset snapped the
+  -- screen back to table order, and the queued row — not in the view — was
+  -- drawn nowhere. (Round-5 audit §5, "not done".)
+  ---------------------------------------------------------------------------
+  local function descending(n)
+    local v = {}
+    for i = 1, n do v[i] = n + 1 - i end
+    return v
+  end
+
+  local function first_data_cells()
+    local line = vim.api.nvim_buf_get_lines(buf, tab.meta.data_start_line - 1,
+      tab.meta.data_start_line, false)[1]
+    return cells_of(line)
+  end
+
+  it("appends an inserted row at the end of a sorted view and keeps the order", function()
+    install_tab(2, descending(60))
+    nav.insert_row()
+
+    assert.equals(61, #tab.view_indices, "the queued row joined the view")
+    assert.equals(61, tab.view_indices[61], "at its end")
+    assert.equals(2, tab.page)
+    assert.equals(11, tab.meta.row_count, "page 2 holds view positions 51..61")
+    -- page 2 of a descending view starts at source row 10; the old render
+    -- drew layout rows 51..60 here, i.e. the table order
+    assert.equals("10", first_data_cells()[1])
+    assert.equals(11, state.cell.row, "cursor on the appended row")
+    local last = vim.api.nvim_buf_get_lines(buf, tab.meta.data_start_line + 9,
+      tab.meta.data_start_line + 10, false)[1]
+    local cells = cells_of(last)
+    assert.equals("61", cells[1], "the # column shows the new row's source index")
+    assert.equals("<auto>", cells[2], "and its auto primary key (format spells [Auto] as <auto>)")
+  end)
+
+  it("moves num_pages with the row set", function()
+    -- A 50-row set fits one page; the appended row opens a second one. The
+    -- old re-render never recomputed the count, so the winbar said P:2/1 and
+    -- `L` thought there was nowhere to go.
+    install_tab(1, identity(50), nil, 50)
+    assert.equals(1, tab.num_pages)
+    nav.insert_row()
+    assert.equals(2, tab.page)
+    assert.equals(2, tab.num_pages)
+  end)
+
+  it("cancels a queued insert through a sorted view and keeps the view intact", function()
+    install_tab(2, descending(60))
+    nav.insert_row()
+    state.cell.row, state.cell.col = 11, 1 -- the queued row (where insert left the cursor)
+    nav.delete_row()
+
+    assert.equals(60, #tab.layout.rows)
+    assert.equals(60, #tab.view_indices, "the cancelled row left the view")
+    assert.equals(10, tab.view_indices[51])
+    assert.equals(1, tab.view_indices[60], "the descending order survived")
+    assert.equals(10, tab.meta.row_count)
+    assert.equals("10", first_data_cells()[1])
+    assert.is_nil(tab.edit_state.deleted_rows[51],
+      "no real row was marked deleted in place of the queued one")
+    assert.is_false(tab.edit_state.dirty)
+  end)
+
+  it("shifts the later view indices when an earlier queued row is cancelled", function()
+    install_tab(2, descending(60))
+    nav.insert_row() -- source 61, view position 61
+    nav.insert_row() -- source 62, view position 62
+    -- give the second row a name so the survivor can be told apart
+    local answer
+    vim.ui.input = function(_, cb) answer = cb end
+    state.cell.row, state.cell.col = 12, 2
+    nav.edit_cell()
+    answer("second")
+    assert.equals("second", tab.layout.rows[62][2])
+
+    state.cell.row, state.cell.col = 11, 1 -- the first queued row
+    nav.delete_row()
+
+    assert.equals(61, #tab.layout.rows)
+    assert.equals("second", tab.layout.rows[61][2], "the survivor moved down one slot")
+    assert.equals(61, #tab.view_indices)
+    assert.equals(61, tab.view_indices[61], "and so did its view entry")
+    assert.equals(1, #tab.edit_state.added_rows)
+    assert.equals(61, tab.edit_state.added_rows[1].row_idx)
+    assert.equals(11, tab.meta.row_count)
   end)
 
   ---------------------------------------------------------------------------
@@ -420,5 +510,34 @@ describe("a deleted row keeps the values it was addressed by", function()
     assert.equals('UPDATE "codes" SET "label" = \'also\' WHERE "code" = 8 AND "label" = \'eight\';',
       stmts[1].sql)
     assert.equals('DELETE FROM "codes" WHERE "code" = 7 AND "label" = \'seven\';', stmts[2].sql)
+  end)
+end)
+
+describe("dataset view helpers", function()
+  local D = require("poste-db.dataset")
+
+  it("keep view_indices and filtered_indices in step", function()
+    local tab = { view_indices = { 3, 1, 2 }, filtered_indices = { 1, 2, 3 } }
+    D.view_append_row(tab, 4)
+    assert.same({ 3, 1, 2, 4 }, tab.view_indices)
+    assert.same({ 1, 2, 3, 4 }, tab.filtered_indices)
+
+    D.view_remove_row(tab, 2)
+    assert.same({ 2, 1, 3 }, tab.view_indices, "2 dropped, 3 and 4 pulled down")
+    assert.same({ 1, 2, 3 }, tab.filtered_indices)
+  end)
+
+  it("tolerate a missing view or filter list", function()
+    -- `ipairs({ nil, list })` would have stopped before the second list
+    local tab = { view_indices = nil, filtered_indices = { 5, 6 } }
+    D.view_remove_row(tab, 5)
+    assert.same({ 5 }, tab.filtered_indices)
+    assert.is_nil(tab.view_indices)
+
+    local bare = {}
+    D.view_append_row(bare, 1)
+    D.view_remove_row(bare, 1)
+    assert.is_nil(bare.view_indices)
+    assert.is_nil(bare.filtered_indices)
   end)
 end)

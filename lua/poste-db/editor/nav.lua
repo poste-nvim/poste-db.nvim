@@ -118,28 +118,24 @@ local function revert_row_edits(tab, es, row_idx)
   if reverted then render_source_row_line(tab, row_idx) end
 end
 
---- Redraw the whole page from `tab.layout`, for when the row count changed and
---- the lines below the change would otherwise keep their old positions. Returns
---- the new meta, or nil when there is no dataset buffer to draw into.
+--- Redraw the whole page from the tab's view and paging state, for when the
+--- row count changed and the lines below the change would otherwise keep
+--- their old positions. Returns the new meta, or nil when there is no dataset
+--- buffer to draw into.
 ---
---- The render window follows the tab's own paging state. Passing
---- `tab.page_size` unconditionally (the previous shape) cut a pagination-OFF
---- dataset down to its first page: `o` on a 120-row table left 70 rows on the
---- layout and off the screen, and the winbar went on advertising them.
+--- The row window comes from `buffer.page.render_current_view`, the same
+--- decision `refresh_page` makes: it honours `view_indices` (a filtered or
+--- sorted dataset keeps its order after `o`/`dd` instead of snapping back to
+--- table order), follows the tab's own paging state (a pagination-OFF
+--- dataset stays whole), and moves `num_pages` with the row set.
 local function rerender_dataset_page(tab)
   local buf = get_dataset().dataset_buffer
   if not (buf and vim.api.nvim_buf_is_valid(buf)) then return nil end
-  local fmt = require("poste-db.format")
-  local page = tab.page or 1
-  local page_size = tab.page_size or const.EDITOR_PAGE_SIZE
-  if not tab.pagination_enabled then
-    -- Paging off means "the whole set is on screen": one page holding every
-    -- row, which is also the page the cursor arithmetic assumes.
-    page, page_size = 1, #tab.layout.rows
-  end
-  local lines, meta = fmt.render_page(tab.layout, page, page_size)
-  meta.table_name = tab.meta and tab.meta.table_name
+  local lines, meta = require("poste-db.buffer.page").render_current_view(tab)
   require("poste-db.buffer").apply_rendered_page(tab, lines, meta)
+  -- apply_rendered_page re-marks the edits itself while the tab is dirty;
+  -- this call covers the tab that just became clean (the last queued insert
+  -- cancelled by `dd`), whose stale marks it clears.
   require("poste-db.highlights").apply_edit_highlights(buf, tab)
   return meta
 end
@@ -422,6 +418,9 @@ function M.delete_row()
     -- row was never on the server, and a line still standing would invite an
     -- edit that has no insert behind it any more
     table.remove(tab.layout.rows, src_row)
+    -- The view arrays index into layout.rows, so the removal shifts them too
+    -- (a filtered or sorted dataset would otherwise draw the wrong rows).
+    get_dataset().view_remove_row(tab, src_row)
     -- The row is gone from the layout, so the paging count goes with it (see
     -- insert_row: this is the other half of the same invariant).
     if tab.layout.total_rows and tab.layout.total_rows > 0 then
@@ -476,8 +475,11 @@ function M.insert_row()
   -- winbar keeps advertising the pre-insert count.
   tab.layout.total_rows = (tab.layout.total_rows or (new_row_idx - 1)) + 1
   cell.track_row_add(es, row_data, new_row_idx)
+  -- A filtered or sorted view only draws the indices it carries: put the new
+  -- row at its end, or the re-render below shows a page without it.
+  get_dataset().view_append_row(tab, new_row_idx)
 
-  -- The row lands at the END of the table, which is only the page on screen
+  -- The row lands at the END of the view, which is only the page on screen
   -- when the result does not paginate. Jump to the page that holds it first:
   -- otherwise the re-render draws a page without the new row, `visible` is
   -- nil, and the row the user just asked for is nowhere in sight (with
@@ -485,7 +487,10 @@ function M.insert_row()
   if tab.pagination_enabled then
     local page_size = tab.page_size or const.EDITOR_PAGE_SIZE
     if page_size > 0 then
-      tab.page = math.max(1, math.ceil(new_row_idx / page_size))
+      -- Its position in the VIEW decides the page: the end of `view_indices`
+      -- when one is active, the end of the row set otherwise.
+      local view_pos = tab.view_indices and #tab.view_indices or new_row_idx
+      tab.page = math.max(1, math.ceil(view_pos / page_size))
     end
   end
 

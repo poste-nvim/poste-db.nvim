@@ -264,6 +264,45 @@ function M.compute_view_indices(tab)
   tab.view_indices = indices
 end
 
+--- Register a row just appended to `layout.rows` (at `src_idx`) with the
+--- filtered/sorted view. A re-render that goes through `view_indices` only
+--- draws the indices the view carries, so without this `o` on a sorted or
+--- filtered dataset queued a row nobody could see. The row lands at the END
+--- of the view: a queued row is all-nil cells, which is where the sort
+--- comparator sends it anyway, and a filter the user is looking through must
+--- not hide the row they just asked for. `filtered_indices` gets it too, so a
+--- later `compute_view_indices` keeps it.
+--- Keeping queued rows at the tail is also what lets `search_matches` (keyed
+--- by view position) survive without a recompute: nothing before them moves.
+function M.view_append_row(tab, src_idx)
+  if tab.view_indices then table.insert(tab.view_indices, src_idx) end
+  if tab.filtered_indices then table.insert(tab.filtered_indices, src_idx) end
+end
+
+--- Undo what `table.remove(layout.rows, src_idx)` did to the view arrays:
+--- `src_idx` itself goes, every later index moves down by one. In practice
+--- the removed row is a queued insert at the view's tail (see
+--- `view_append_row`), so the shift only ever touches other queued rows.
+function M.view_remove_row(tab, src_idx)
+  -- Not `ipairs({ tab.view_indices, tab.filtered_indices })`: a nil first
+  -- element would stop the loop before the second list.
+  for _, list_name in ipairs({ "view_indices", "filtered_indices" }) do
+    local list = tab[list_name]
+    if list then
+      local write = 1
+      for read = 1, #list do
+        local idx = list[read]
+        if idx ~= src_idx then
+          if idx > src_idx then idx = idx - 1 end
+          list[write] = idx
+          write = write + 1
+        end
+      end
+      for i = #list, write, -1 do list[i] = nil end
+    end
+  end
+end
+
 --- Recompute how many pages `total_rows` fills and pull `tab.page` back inside
 --- them. Every render path must call this: the count was otherwise only ever
 --- written by the paginated branch, so a filter or sort that shrank the view
