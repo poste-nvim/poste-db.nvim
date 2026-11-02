@@ -86,11 +86,17 @@ function M.resolve_detected_target(parsed, cword, db, after_dot_col)
     end
     if matched then
       local ts = matched.schema or ""
+      -- The argv layer wants the bare name. `pick_table_match` compared the
+      -- unquoted form, but handing back `matched.name` verbatim sent
+      -- `` `users` `` / `"Users"` to `poste introspect --table`, which then
+      -- answered "No DDL found" for any quoted table.
+      local name = util.unquote_ident(matched.name)
+      if name == "" then name = util.unquote_ident(matched.alias) end
       return {
         kind = "ddl",
         db = db,
         schema = ts ~= "" and ts or nil,
-        table_name = matched.name or matched.alias or cword,
+        table_name = name ~= "" and name or cword,
       }
     end
     if not SKIP_KEYWORDS[cword_lower] then
@@ -119,11 +125,12 @@ function M.resolve_detected_target(parsed, cword, db, after_dot_col)
       end
     end
     if schema_match then
+      local name = util.unquote_ident(schema_match.name)
       return {
         kind = "ddl",
         db = db,
         schema = cword,
-        table_name = schema_match.name,
+        table_name = name ~= "" and name or cword,
       }
     end
     if not is_table and tables and #tables > 0

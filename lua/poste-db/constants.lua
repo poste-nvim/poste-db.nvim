@@ -132,6 +132,19 @@ function M.supports_transactions(dialect)
   return not M.DIALECTS_WITHOUT_TRANSACTIONS[M.normalize_dialect(dialect)]
 end
 
+--- Dialects where the dotted prefix of a table reference (`x.users`) names
+--- a DATABASE, because they have no schema layer inside one: MySQL and its
+--- aliases, and ClickHouse. Everywhere else (postgres, mssql; sqlite's
+--- `main.` too) the prefix is a schema inside the current database, and the
+--- browser looks it up under that database. A nil dialect (defaults behave
+--- like postgres elsewhere) reads the prefix as a schema.
+--- @param dialect any
+--- @return boolean
+function M.dotted_prefix_is_database(dialect)
+  local base = M.normalize_dialect(dialect)
+  return base == "mysql" or base == "clickhouse"
+end
+
 --- Connection URL scheme prefixes → base dialect, ordered, first match wins
 --- (the prefixes are mutually exclusive, so the order is not load-bearing —
 --- but it is the order the Rust mirror reads too).

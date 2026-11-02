@@ -144,3 +144,68 @@ describe("nav_detect quoted names", function()
     assert.same("posts", target.table_name)
   end)
 end)
+
+-- The introspect sibling (introspect/context.lua) stopped folding the dotted
+-- prefix into the database in the 2026-10-30 round; this copy still did, so
+-- `gd` on postgres's `app.users` went looking for a database called `app`.
+-- The prefix now rides on `schema`, and nav/handlers decides per dialect
+-- whether it is a database (MySQL) or a schema inside the current one.
+describe("nav_detect dotted prefix", function()
+  local ctx = { connection = "conn", database = "blog" }
+
+  it("hands a matched table's prefix back as schema, not as the database", function()
+    local target = detect.resolve_detected_table_target({
+      ctx_type = "table",
+      tables = { { name = "users", schema = "app" } },
+    }, "select * from app.users", 22, "users", ctx)
+    assert.same({
+      action = "navigate_to_table",
+      database = "blog",
+      schema = "app",
+      table_name = "users",
+    }, target)
+  end)
+
+  it("does the same for a schema_table context and a resolved alias", function()
+    local st = detect.resolve_detected_table_target({
+      ctx_type = "schema_table",
+      ctx_data = "app",
+      tables = { { name = "users", schema = "app" } },
+    }, "app.users", 9, "users", ctx)
+    assert.equals("blog", st.database)
+    assert.equals("app", st.schema)
+
+    local col = detect.resolve_detected_table_target({
+      ctx_type = "column",
+      tables = { { name = "users", alias = "u", schema = "app" } },
+    }, "select u.name", 13, "name", ctx)
+    assert.equals("blog", col.database)
+    assert.equals("app", col.schema)
+    assert.equals("users", col.table_name)
+    assert.equals("name", col.column_name)
+  end)
+
+  it("leaves schema unset for an unqualified table", function()
+    local target = detect.resolve_detected_table_target({
+      ctx_type = "table",
+      tables = { { name = "users", schema = "" } },
+    }, "select * from users", 18, "users", ctx)
+    assert.is_nil(target.schema)
+    assert.equals("blog", target.database)
+  end)
+end)
+
+describe("constants.dotted_prefix_is_database", function()
+  local const = require("poste-db.constants")
+  it("is true for the dialects without a schema layer", function()
+    assert.is_true(const.dotted_prefix_is_database("mysql"))
+    assert.is_true(const.dotted_prefix_is_database("mariadb"))
+    assert.is_true(const.dotted_prefix_is_database("clickhouse"))
+  end)
+  it("is false where the prefix is a schema inside the database", function()
+    assert.is_false(const.dotted_prefix_is_database("postgres"))
+    assert.is_false(const.dotted_prefix_is_database("mssql"))
+    assert.is_false(const.dotted_prefix_is_database("sqlite"))
+    assert.is_false(const.dotted_prefix_is_database(nil))
+  end)
+end)

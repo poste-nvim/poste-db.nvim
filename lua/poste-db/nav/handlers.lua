@@ -111,6 +111,18 @@ function M.handle_table_reference(buf, line_num, line_text, cursor, full_ctx, ta
               if target.database then
                 full_ctx.database = target.database
               end
+              -- The dotted prefix: a database for MySQL-style dialects, a
+              -- schema inside the current database everywhere else (the
+              -- browser takes it on the table name, `schema.table`).
+              if target.schema then
+                local dialect = conn_config and conn_config.dialect
+                  or const.dialect_from_url((full_ctx.connection or ""):lower())
+                if const.dotted_prefix_is_database(dialect) then
+                  full_ctx.database = target.schema
+                else
+                  table_name = target.schema .. "." .. table_name
+                end
+              end
             end
           end
         end

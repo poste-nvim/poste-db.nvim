@@ -145,7 +145,12 @@ describe("nav._test.resolve_detected_table_target", function()
     }, target)
   end)
 
-  it("resolves schema_table to a database-scoped table target", function()
+  it("resolves schema_table to a table target carrying its prefix", function()
+    -- BEHAVIOR CHANGE (2026-11-02 audit): the prefix used to fold into
+    -- `database`, which for postgres sent `gd` to "Database 'blog' not
+    -- found". It rides on `schema` now, with the context database kept;
+    -- nav/handlers reads it as a database only for MySQL-style dialects.
+    -- (introspect/context.lua made the same change on 2026-10-30.)
     local target = nav._test.resolve_detected_table_target({
       ctx_type = "schema_table",
       ctx_data = "blog",
@@ -159,7 +164,8 @@ describe("nav._test.resolve_detected_table_target", function()
 
     assert.same({
       action = "navigate_to_table",
-      database = "blog",
+      database = nil,
+      schema = "blog",
       table_name = "authors",
       column_name = nil,
     }, target)

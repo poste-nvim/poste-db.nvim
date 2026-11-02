@@ -98,3 +98,27 @@ describe("introspect context", function()
     }, target)
   end)
 end)
+
+describe("introspect context quoted names", function()
+  -- `pick_table_match` compared the unquoted spelling but handed the raw
+  -- entry's name to the argv layer, so `K` on `users` in ``FROM `users` ``
+  -- asked the binary for a table literally named `users` with its backticks.
+  it("hands the bare name to the ddl lookup for a matched quoted table", function()
+    local target = ctx.resolve_detected_target({
+      ctx_type = "table",
+      tables = { { name = "`users`", alias = "", schema = "" } },
+    }, "users", "blog")
+    assert.equals("ddl", target.kind)
+    assert.equals("users", target.table_name)
+  end)
+
+  it("and for a table matched through its schema word", function()
+    local target = ctx.resolve_detected_target({
+      ctx_type = "column",
+      tables = { { name = '"Users"', alias = "", schema = "app" } },
+    }, "app", "blog")
+    assert.equals("ddl", target.kind)
+    assert.equals("app", target.schema)
+    assert.equals("Users", target.table_name)
+  end)
+end)

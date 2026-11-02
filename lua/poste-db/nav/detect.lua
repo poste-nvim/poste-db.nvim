@@ -29,8 +29,26 @@ local function pick_table_match(parsed_tables, word_lower)
   return matched, schema_matched
 end
 
-local function db_for_table(t, full_ctx)
-  return (t and t.schema and t.schema ~= "") and t.schema or full_ctx.database
+--- A `navigate_to_table` target. The dotted prefix the detector reports on
+--- an entry (`schema`) is handed back AS a prefix, next to the context's own
+--- database: whether it names a database (MySQL's `otherdb.users`) or a
+--- schema inside the current one (postgres's `app.users`) is the caller's
+--- call, since only it knows the dialect (nav/handlers composes the browser
+--- call from it). Folding it into `database` here sent every postgres
+--- schema-qualified reference to "Database 'app' not found".
+--- @param prefix string|nil the dotted prefix, "" and nil both meaning none
+local function table_target(full_ctx, prefix, table_name, column_name)
+  return {
+    action = "navigate_to_table",
+    database = full_ctx.database,
+    schema = (prefix and prefix ~= "") and prefix or nil,
+    table_name = table_name,
+    column_name = column_name,
+  }
+end
+
+local function prefix_of(t)
+  return t and t.schema or nil
 end
 
 --- A detect entry's bare name field: quotes stripped, nil preserved (NOT ""
@@ -131,28 +149,16 @@ function M.resolve_detected_table_target(parsed, line_text, end_col, cword, full
 
   if parsed.ctx_type == "dot_column" and parsed.ctx_data then
     local prefix = parsed.ctx_data or ""
-    return {
-      action = "navigate_to_table",
-      database = parsed.ctx_schema or full_ctx.database,
-      table_name = resolve_alias(parsed, prefix) or prefix,
-      column_name = word_after_dot(line_text, end_col) or cword,
-    }
+    return table_target(full_ctx, parsed.ctx_schema,
+      resolve_alias(parsed, prefix) or prefix,
+      word_after_dot(line_text, end_col) or cword)
   elseif parsed.ctx_type == "insert_column" and parsed.ctx_data then
     local prefix = parsed.ctx_data or ""
-    return {
-      action = "navigate_to_table",
-      database = parsed.ctx_schema or full_ctx.database,
-      table_name = resolve_alias(parsed, prefix) or prefix,
-      column_name = word_after_dot(line_text, end_col) or cword,
-    }
+    return table_target(full_ctx, parsed.ctx_schema,
+      resolve_alias(parsed, prefix) or prefix,
+      word_after_dot(line_text, end_col) or cword)
   elseif parsed.ctx_type == "schema_table" and parsed.ctx_data then
-    local schema = parsed.ctx_data or ""
-    return {
-      action = "navigate_to_table",
-      database = schema ~= "" and schema or full_ctx.database,
-      table_name = cword,
-      column_name = nil,
-    }
+    return table_target(full_ctx, parsed.ctx_data, cword, nil)
   elseif parsed.ctx_type == "table" then
     local matched, schema_matched = pick_table_match(parsed.tables, cword_lower)
     if schema_matched then
@@ -163,19 +169,10 @@ function M.resolve_detected_table_target(parsed, line_text, end_col, cword, full
       }
     end
     if matched then
-      return {
-        action = "navigate_to_table",
-        database = db_for_table(matched, full_ctx),
-        table_name = bare(matched, "name") or bare(matched, "alias") or cword,
-        column_name = nil,
-      }
+      return table_target(full_ctx, prefix_of(matched),
+        bare(matched, "name") or bare(matched, "alias") or cword, nil)
     end
-    return {
-      action = "navigate_to_table",
-      database = db_for_table(parsed.tables[1], full_ctx),
-      table_name = cword,
-      column_name = nil,
-    }
+    return table_target(full_ctx, prefix_of(parsed.tables[1]), cword, nil)
   elseif parsed.ctx_type == "column" or parsed.ctx_type == "keyword" then
     local after_dot_col = nil
     local nxt = line_text:sub(end_col + 1, end_col + 1)
@@ -187,45 +184,24 @@ function M.resolve_detected_table_target(parsed, line_text, end_col, cword, full
     if after_dot_col then
       local matched, schema_matched = pick_table_match(parsed.tables, cword_lower)
       if matched then
-        return {
-          action = "navigate_to_table",
-          database = db_for_table(matched, full_ctx),
-          table_name = bare(matched, "name") or bare(matched, "alias") or cword,
-          column_name = after_dot_col,
-        }
+        return table_target(full_ctx, prefix_of(matched),
+          bare(matched, "name") or bare(matched, "alias") or cword, after_dot_col)
       elseif schema_matched then
-        return {
-          action = "navigate_to_table",
-          database = cword,
-          table_name = bare(schema_matched, "name"),
-          column_name = nil,
-        }
+        -- the cursor word IS the prefix of this entry
+        return table_target(full_ctx, cword, bare(schema_matched, "name"), nil)
       end
       local resolved = resolve_alias(parsed, parsed.ctx_data or "")
       if resolved then
-        return {
-          action = "navigate_to_table",
-          database = db_for_table(table_by_name(parsed, resolved), full_ctx),
-          table_name = resolved,
-          column_name = after_dot_col,
-        }
+        return table_target(full_ctx, prefix_of(table_by_name(parsed, resolved)),
+          resolved, after_dot_col)
       end
     else
       local matched, schema_matched = pick_table_match(parsed.tables, cword_lower)
       if matched then
-        return {
-          action = "navigate_to_table",
-          database = db_for_table(matched, full_ctx),
-          table_name = bare(matched, "name") or bare(matched, "alias") or cword,
-          column_name = nil,
-        }
+        return table_target(full_ctx, prefix_of(matched),
+          bare(matched, "name") or bare(matched, "alias") or cword, nil)
       elseif schema_matched then
-        return {
-          action = "navigate_to_table",
-          database = cword,
-          table_name = bare(schema_matched, "name"),
-          column_name = nil,
-        }
+        return table_target(full_ctx, cword, bare(schema_matched, "name"), nil)
       end
 
       -- `alias.column`. end_col is the 0-based index just past the word under
@@ -248,21 +224,12 @@ function M.resolve_detected_table_target(parsed, line_text, end_col, cword, full
         resolved = resolve_alias(parsed, alias)
       end
       if resolved then
-        return {
-          action = "navigate_to_table",
-          database = db_for_table(table_by_name(parsed, resolved), full_ctx),
-          table_name = resolved,
-          column_name = cword,
-        }
+        return table_target(full_ctx, prefix_of(table_by_name(parsed, resolved)),
+          resolved, cword)
       end
       local target = bare(parsed.tables[1], "name") or bare(parsed.tables[1], "alias")
       if target then
-        return {
-          action = "navigate_to_table",
-          database = db_for_table(parsed.tables[1], full_ctx),
-          table_name = target,
-          column_name = cword,
-        }
+        return table_target(full_ctx, prefix_of(parsed.tables[1]), target, cword)
       end
     end
   end
