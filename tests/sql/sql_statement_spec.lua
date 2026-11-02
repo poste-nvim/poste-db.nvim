@@ -287,6 +287,16 @@ describe("statement extract_table_name", function()
     assert.equals("only", statement.extract_table_name("SELECT * FROM only;"))
     assert.equals("only", statement.extract_table_name('SELECT * FROM "only" t'))
   end)
+
+  it("ignores a keyword that merely ends an identifier", function()
+    -- `last_update` (on every Sakila table) contains UPDATE; with the earliest
+    -- reference winning, the keyword found inside the column name captured the
+    -- position of the following FROM and the function answered "from"
+    assert.equals("film", statement.extract_table_name("SELECT id, last_update FROM film"))
+    assert.equals("t", statement.extract_table_name("SELECT copied_into FROM t"))
+    assert.equals("x", statement.extract_table_name("SELECT * FROM x WHERE joined_at > 1"))
+    assert.equals("t", statement.extract_table_name("UPDATE t SET last_update = now()"))
+  end)
 end)
 
 describe("statement get_stmt_sql", function()

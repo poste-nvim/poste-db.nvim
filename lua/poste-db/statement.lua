@@ -688,7 +688,15 @@ function M.extract_table_name(sql)
   -- SELECT … FROM s` answered s, `UPDATE t SET c = (SELECT … FROM s)`
   -- answered s, and MERGE's `… THEN UPDATE SET x = 1` answered "set" — and
   -- the DML builder then aimed the user's edits at that table.
-  local patterns = { "FROM%s+()%S+", "UPDATE%s+()%S+", "INTO%s+()%S+", "JOIN%s+()%S+" }
+  --
+  -- `%f[%w_]` pins each keyword to a word start. Without it the UPDATE
+  -- pattern matched inside `last_UPDATE FROM film` (Sakila's column, on
+  -- every table) and captured the position of `FROM` — which the earliest-
+  -- wins rule then preferred over the real `FROM film`, answering "from".
+  local patterns = {
+    "%f[%w_]FROM%s+()%S+", "%f[%w_]UPDATE%s+()%S+",
+    "%f[%w_]INTO%s+()%S+", "%f[%w_]JOIN%s+()%S+",
+  }
   local tok_start
   for _, pat in ipairs(patterns) do
     local _, _, pos = upper:find(pat)
