@@ -221,6 +221,10 @@ local function cell_to_string(val, col)
   s = s:gsub("\r\n", "⏎"):gsub("\n", "⏎"):gsub("\r", "⏎")
   return s
 end
+--- One cell-to-text rule, shared beyond the renderer: the AI's result-set
+--- payload used to re-derive it with plain tostring, sending the model
+--- `vim.NIL` for every NULL and `table: 0x…` for JSON/JSONB cells.
+M.cell_to_string = cell_to_string
 
 --- Normalize raw DB type name to ctype for editor type-checking.
 --- Maps database-specific type names (INT4, VARCHAR, etc.) to

@@ -308,8 +308,18 @@ describe("statement get_stmt_sql", function()
     assert.equals("select 1", statement.get_stmt_sql({ "select 1", "select 2" }, { 1 }, 1))
   end)
 
-  it("concatenates multi-line statement", function()
-    assert.equals("select 1 select 2", statement.get_stmt_sql({ "select 1", "select 2", "select 3" }, { 1, 3 }, 1))
+  it("joins multi-line statement on newlines", function()
+    -- BEHAVIOR CHANGE (2026-11-02 audit): a space join glued the statement's
+    -- tail onto a `--` comment ("SELECT a, -- note   b FROM film"), so
+    -- extract_table_name answered nil and the result set lost its DML
+    -- editing. A newline ends the comment the way the buffer had it.
+    assert.equals("select 1\nselect 2", statement.get_stmt_sql({ "select 1", "select 2", "select 3" }, { 1, 3 }, 1))
+  end)
+
+  it("keeps a trailing statement readable past a -- comment", function()
+    local sql = statement.get_stmt_sql(
+      { "SELECT a, -- first", "  b FROM film;" }, { 1 }, 1, 2)
+    assert.equals("film", statement.extract_table_name(sql))
   end)
 
   it("stops at next statement line", function()
@@ -317,7 +327,7 @@ describe("statement get_stmt_sql", function()
   end)
 
   it("respects max_end parameter", function()
-    assert.equals("select 1 select 2", statement.get_stmt_sql({ "select 1", "select 2", "select 3" }, { 1 }, 1, 2))
+    assert.equals("select 1\nselect 2", statement.get_stmt_sql({ "select 1", "select 2", "select 3" }, { 1 }, 1, 2))
   end)
 
   it("without max_end, the last statement truncates to its first line", function()

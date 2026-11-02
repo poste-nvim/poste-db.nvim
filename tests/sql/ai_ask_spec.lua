@@ -162,3 +162,38 @@ describe("poste-db.ai ask entry points", function()
     window.close()
   end)
 end)
+
+-- The payload used to render cells with plain tostring: every SQL NULL
+-- reached the model as the token `vim.NIL`, a JSON/JSONB cell as
+-- `table: 0x…`, and a column name decoded from null made table.concat raise
+-- ("invalid value (userdata)").
+describe("ai ask_resultset cell rendering", function()
+  local ai = require("poste-db.ai")
+  local state_sql = require("poste-db.state")
+
+  after_each(function()
+    pcall(function() require("poste-ai.chat.window").close() end)
+    state_sql.last_dataset = nil
+  end)
+
+  it("renders NULL, JSON and null column names like the dataset does", function()
+    if not ai.available() then
+      pending("poste-ai.nvim not on rtp")
+      return
+    end
+    state_sql.last_dataset = {
+      type = "resultset",
+      results = { {
+        columns = { { name = vim.NIL }, { name = "doc" } },
+        rows = { { vim.NIL, { a = 1 } } },
+        original_sql = "SELECT x, doc FROM t",
+      } },
+    }
+    ai.ask_resultset()
+    local text = require("poste-ai.chat.window").input_text()
+    assert.truthy(text:find("Help me interpret this result set"))
+    assert.falsy(text:find("vim%.NIL"))
+    assert.falsy(text:find("table: 0x"))
+    require("poste-ai.chat.window").close()
+  end)
+end)

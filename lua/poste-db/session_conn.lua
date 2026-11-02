@@ -57,13 +57,15 @@ local function database_from_url(url)
   end
   local scheme_end = url:find("://")
   if scheme_end then
-    local after = url:sub(scheme_end + 3)
+    -- The query string goes first: a `/` inside it (`sslrootcert=/etc/ssl/
+    -- ca.pem`, the standard verify-full form; `options=-c search_path=a/b`)
+    -- used to win the last-slash search and name the database "ca.pem".
+    local after = url:sub(scheme_end + 3):gsub("[?#].*$", "")
     local last_slash = after:match(".*()/")
     if last_slash then
-      -- strip the query string; and a candidate that still carries `@` is
-      -- host info leaked from a `/` inside the password (db-less URL) —
-      -- no name is better than a wrong one
-      local db = after:sub(last_slash + 1):gsub("%?.*$", "")
+      -- a candidate that still carries `@` is host info leaked from a `/`
+      -- inside the password (db-less URL) — no name is better than a wrong one
+      local db = after:sub(last_slash + 1)
       if db ~= "" and not db:find("@", 1, true) then return db end
     end
   end

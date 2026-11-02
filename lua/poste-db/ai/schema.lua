@@ -33,7 +33,9 @@ local function word_in_text(name, text_l)
   return text_l:match("[^%w_]" .. pat .. "[^%w_]") ~= nil
     or text_l:match("^" .. pat .. "[^%w_]") ~= nil
     or text_l:match("[^%w_]" .. pat .. "$") ~= nil
-    or text_l == pat
+    -- the whole-text case compares text, not the escaped pattern: `my-table`
+    -- against `my%-table` never matched
+    or text_l == name:lower()
 end
 
 local function comment_of(entry, name)

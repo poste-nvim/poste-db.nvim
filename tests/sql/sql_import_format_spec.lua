@@ -160,3 +160,16 @@ describe("import.format.detect_format", function()
     assert.is_nil(fmt.detect_format("hello world", nil))
   end)
 end)
+
+describe("import.parse_json error text", function()
+  -- The message used to interpolate the pcall verdict: a decoded scalar
+  -- answered "Invalid JSON: true" (ok == true, wrong shape), a syntax error
+  -- "Invalid JSON: false".
+  it("names the reason, not the pcall verdict", function()
+    local _, e1 = require("poste-db.import.format").parse_json("42")
+    assert.equals("Expected an object or array, got number", e1)
+    local _, e2 = require("poste-db.import.format").parse_json("{nope")
+    assert.matches("^Invalid JSON: ", e2)
+    assert.not_equals("Invalid JSON: false", e2)
+  end)
+end)

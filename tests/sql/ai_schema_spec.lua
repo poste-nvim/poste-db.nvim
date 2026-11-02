@@ -128,3 +128,15 @@ describe("poste-db.ai.schema", function()
     assert.is_nil(got)
   end)
 end)
+
+-- `text_l == pat` compared the text against the *pattern-escaped* name, so an
+-- exact `my-table` never matched itself (the other three branches all need a
+-- surrounding character) and the mention was not expanded.
+describe("ai schema word_in_text with punctuation", function()
+  local wit = require("poste-db.ai.schema")._test.word_in_text
+  it("matches a hyphenated name against the bare text", function()
+    assert.is_true(wit("my-table", "my-table"))
+    assert.is_true(wit("my-table", "the my-table db"))
+    assert.is_false(wit("my-table", "my-tables"))
+  end)
+end)

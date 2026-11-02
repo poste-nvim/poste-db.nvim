@@ -647,3 +647,23 @@ describe("session_conn cleanup_buf closes only emptied sessions", function()
     assert.are.equal(0, vim.tbl_count(session_conn.list()))
   end)
 end)
+
+describe("session_conn database_from_url", function()
+  local dfu = require("poste-db.session_conn")._test.database_from_url
+
+  -- The query string used to be stripped AFTER the last-slash search, so a
+  -- `/` inside it (`sslrootcert=/etc/ssl/ca.pem` — the standard verify-full
+  -- form) named the database "ca.pem".
+  it("strips the query string before looking for the database", function()
+    assert.equals("mydb",
+      dfu("postgres://u:p@h:5432/mydb?sslmode=verify-full&sslrootcert=/etc/ssl/ca.pem"))
+    assert.equals("mydb",
+      dfu("mysql://u:p@h:3306/mydb?options=-c%20search_path=a/b"))
+  end)
+
+  it("still reads a plain URL and stays silent on a db-less one", function()
+    assert.equals("mydb", dfu("postgres://u:p@h:5432/mydb"))
+    assert.equals("mydb", dfu("postgres://u:p@h:5432/mydb?sslmode=require"))
+    assert.is_nil(dfu("postgres://u:p@h:5432"))
+  end)
+end)

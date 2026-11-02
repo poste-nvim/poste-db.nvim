@@ -147,8 +147,13 @@ end
 function M.parse_json(text)
   text = normalize_text(text)
   local ok, data = pcall(vim.json.decode, text)
-  if not ok or type(data) ~= "table" then
-    return nil, "Invalid JSON: " .. tostring(ok)
+  -- The reason, not the pcall verdict: `tostring(ok)` answered "true" for a
+  -- decoded scalar ("Invalid JSON: true" for input `42`).
+  if not ok then
+    return nil, "Invalid JSON: " .. tostring(data)
+  end
+  if type(data) ~= "table" then
+    return nil, "Expected an object or array, got " .. type(data)
   end
   if #data == 0 then
     -- A single object — the shape a pasted API response has — is one row:

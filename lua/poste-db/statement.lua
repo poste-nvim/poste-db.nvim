@@ -741,7 +741,12 @@ function M.get_stmt_sql(buf_lines, stmt_lines, idx, max_end)
       lines[#lines + 1] = ln
     end
   end
-  return table.concat(lines, " ")
+  -- Joined on newlines, not spaces: a `--` comment ends at ITS line, but a
+  -- space-joined `SELECT a, -- note   b FROM film` glued the rest of the
+  -- statement onto the comment — `extract_table_name` then answered nil and
+  -- the whole result set lost its DML editing. Both readers of this text
+  -- (table-name extraction, the AI's error context) treat newlines fine.
+  return table.concat(lines, "\n")
 end
 
 --- Extract a display label for a statement from the comment directly above it.

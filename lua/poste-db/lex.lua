@@ -102,9 +102,15 @@ function M.find_use_database(line)
   if name_pos > #trimmed then return nil end
   local quote = trimmed:sub(name_pos, name_pos)
   if quote == '"' or quote == "'" or quote == "`" then
+    -- A doubled quote inside the name is the escape (`"a""b"` is a"b), the
+    -- same reading the bracket branch below applies to `]]`; stopping at the
+    -- first closer resolved `USE "a""b"` to a database called `a`.
     local close = trimmed:find(quote, name_pos + 1, true)
+    while close and trimmed:sub(close + 1, close + 1) == quote do
+      close = trimmed:find(quote, close + 2, true)
+    end
     if not close then return nil end
-    local name = trimmed:sub(name_pos + 1, close - 1)
+    local name = trimmed:sub(name_pos + 1, close - 1):gsub(quote .. quote, quote)
     if name == "" then return nil end
     return name
   end

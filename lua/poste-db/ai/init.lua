@@ -156,7 +156,11 @@ function M.ask_resultset()
   end
   local res = data.results[1]
   local cols = {}
-  for _, c in ipairs(res.columns or {}) do cols[#cols + 1] = c.name or "?" end
+  for _, c in ipairs(res.columns or {}) do
+    -- `c.name or "?"` kept a JSON null (vim.NIL is truthy): table.concat
+    -- then raised "invalid value (userdata)" and pressing `a` threw
+    cols[#cols + 1] = require("poste-db.util").named(c.name) or "?"
+  end
   local rows = res.rows or {}
   if #cols == 0 or #rows == 0 then
     vim.notify("the result set is empty", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
@@ -164,6 +168,7 @@ function M.ask_resultset()
   end
 
   local MAX_ROWS = 20
+  local fmt = require("poste-db.format")
   local function row_line(cells) return "| " .. table.concat(cells, " | ") .. " |" end
   local out = { row_line(cols) }
   local seps = {}
@@ -172,8 +177,9 @@ function M.ask_resultset()
   for i = 1, math.min(#rows, MAX_ROWS) do
     local cells = {}
     for j = 1, #cols do
-      local v = rows[i][j]
-      local s = (v == nil and "NULL" or tostring(v)):gsub("[|\n]", " ")
+      -- The renderer's own cell rule: a NULL spelled `vim.NIL` and a JSONB
+      -- cell spelled `table: 0x…` are the two shapes tostring gets wrong.
+      local s = (fmt.cell_to_string(rows[i][j], res.columns and res.columns[j])):gsub("[|\n]", " ")
       if #s > 60 then
         -- char-safe cut at the byte budget: a plain sub split multibyte cell
         -- values (CJK schemas are first-class) and sent invalid UTF-8

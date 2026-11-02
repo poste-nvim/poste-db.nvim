@@ -243,3 +243,19 @@ describe("lex.blank_regions", function()
     assert.equals('"a""b"', out:match('"a""b"'))
   end)
 end)
+
+-- A doubled quote inside the name is the escape, the same reading the bracket
+-- branch already applied to `]]`; stopping at the first closer resolved
+-- `USE "a""b"` to a database called `a`.
+describe("lex.find_use_database doubled quotes", function()
+  it("reads a doubled quote as the escape in every quoting style", function()
+    assert.equals('a"b', lex.find_use_database('USE "a""b";'))
+    assert.equals("a`b", lex.find_use_database("USE `a``b`;"))
+    assert.equals("a]b", lex.find_use_database("USE [a]]b];"))
+  end)
+
+  it("still resolves a plain quoted name", function()
+    assert.equals("mydb", lex.find_use_database('USE "mydb"'))
+    assert.equals("mydb", lex.find_use_database("USE `mydb`;"))
+  end)
+end)
