@@ -20,6 +20,14 @@ end
 
 local function check_edit_guards(tab)
   if not tab or not tab.layout then return false end
+  -- Set by edit_commit for the duration of this tab's commit: its completion
+  -- resets the tab's edit_state and refreshes the rows from the server, so an
+  -- edit made now would be wiped without a word.
+  if tab.commit_in_flight then
+    vim.notify("A commit is in progress — wait for it to finish before editing",
+      vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
+    return false
+  end
   if tab.layout.rows and #tab.layout.rows > const.EDIT_MAX_ROWS then
     vim.notify("Editing is not supported for result sets > " .. const.EDIT_MAX_ROWS .. " rows", vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
     return false

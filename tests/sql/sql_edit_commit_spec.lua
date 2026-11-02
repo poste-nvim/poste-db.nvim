@@ -123,9 +123,10 @@ describe("edit_commit commit_edits", function()
     pcall(function() require("poste-db.edit_commit")._test.reset_in_flight() end)
     -- commit_edits dispatches per call, so replace the refresh-path stub.
     package.loaded["poste-db.exec_run"] = {
-      run_async = function(sql, opts)
+      run_async = function(sql, opts, callbacks)
         captured.sql = sql
         captured.commit_opts = opts
+        captured.commit_callbacks = callbacks
         captured.dispatches = (captured.dispatches or 0) + 1
         return 7
       end,
@@ -190,5 +191,28 @@ describe("edit_commit commit_edits", function()
     require("poste-db.edit_commit")._test.reset_in_flight()
     require("poste-db.edit_commit").commit_edits()
     assert.equals(2, captured.dispatches, "a landed commit releases the flag")
+  end)
+
+  it("marks the committed tab for the flight and releases it with the outcome", function()
+    -- The completion callback resets THIS tab's edit_state and refreshes it
+    -- from the server, so editor/nav refuses edits on a marked tab: an edit
+    -- typed during the flight used to vanish without a word.
+    local D = require("poste-db.dataset")
+    local tab = D.tabs[1]
+    require("poste-db.edit_commit").commit_edits()
+    assert.is_true(tab.commit_in_flight, "set at dispatch")
+
+    -- on_error journals the failure; silence the two sinks it writes to
+    local log = require("poste-db.edit_commit.log")
+    local saved_write, saved_notify = log.write_log, vim.notify
+    log.write_log = function() end
+    vim.notify = function() end
+    local ok, err = pcall(captured.commit_callbacks.on_error, "connection reset")
+    log.write_log, vim.notify = saved_write, saved_notify
+    assert.is_true(ok, err)
+
+    assert.is_nil(tab.commit_in_flight, "released with the outcome")
+    require("poste-db.edit_commit").commit_edits()
+    assert.equals(2, captured.dispatches, "and the dispatch gate opened with it")
   end)
 end)

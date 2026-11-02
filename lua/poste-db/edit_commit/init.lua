@@ -158,6 +158,22 @@ end
 -- clearing the flag at the top of both callbacks releases it reliably.
 local commit_in_flight = false
 
+--- Both halves of the guard in one place, so the global dispatch gate and the
+--- per-tab edit gate cannot drift apart. The per-tab mark is what
+--- `editor/nav.check_edit_guards` reads: the completion callback resets THAT
+--- tab's edit_state and refreshes it from the server, so an edit typed into
+--- it during the flight vanished without a word. Another tab's edits are not
+--- touched by the reset and need no gate, which is why the mark is per tab.
+local function mark_in_flight(tab)
+  commit_in_flight = true
+  tab.commit_in_flight = true
+end
+
+local function release_in_flight(tab)
+  commit_in_flight = false
+  tab.commit_in_flight = nil
+end
+
 --- Commit all pending edits by generating and executing DML.
 function M.commit_edits()
   local D = require("poste-db.dataset")
@@ -269,7 +285,7 @@ function M.commit_edits()
   local transactional = const.supports_transactions(dialect)
   local exec_mode = transactional and "transaction" or "greedy"
 
-  commit_in_flight = true
+  mark_in_flight(tab)
   local job_id = exec_run.run_async(sql_content, {
     src_file = src_file,
     conn_url = conn_url,
@@ -278,7 +294,7 @@ function M.commit_edits()
     log = false, -- this function journals the commit with edit_summary itself
   }, {
     on_response = function(resp)
-      commit_in_flight = false
+      release_in_flight(tab)
       local elapsed = vim.uv.now() - start_time
 
       local body = exec.decode_body(resp)
@@ -349,7 +365,7 @@ function M.commit_edits()
       M.refresh_dataset(tab)
     end,
     on_error = function(message)
-      commit_in_flight = false
+      release_in_flight(tab)
       local elapsed = vim.uv.now() - start_time
       vim.notify("Commit: " .. message, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
       log.write_log({
@@ -371,7 +387,7 @@ function M.commit_edits()
     -- A failed start already delivered on_error (releasing the flag); this is
     -- the caller-side spawn-failure report, and the clear is defensive.
     vim.notify("Failed to start poste exec-file job", vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
-    commit_in_flight = false
+    release_in_flight(tab)
   end
 end
 

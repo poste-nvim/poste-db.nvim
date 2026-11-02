@@ -348,6 +348,33 @@ describe("editor edits address source rows", function()
     assert.equals(11, tab.meta.row_count)
   end)
 
+  it("refuses every edit while the tab's commit is in flight", function()
+    -- edit_commit marks the tab for the flight; its completion resets the
+    -- tab's edit_state and refreshes the rows, so an edit made meanwhile was
+    -- wiped without a word
+    install_tab(1, identity(60))
+    tab.commit_in_flight = true
+    local notified
+    local saved_notify = vim.notify
+    vim.notify = function(msg) notified = msg end
+    local prompted = false
+    vim.ui.input = function() prompted = true end
+
+    nav.insert_row()
+    assert.equals(60, #tab.layout.rows, "no row queued")
+    state.cell.row, state.cell.col = 1, 2
+    nav.edit_cell()
+    assert.is_false(prompted, "no prompt opened")
+    nav.delete_row()
+    assert.is_nil(tab.edit_state, "no edit_state was even created")
+    assert.matches("commit is in progress", notified)
+    vim.notify = saved_notify
+
+    tab.commit_in_flight = nil
+    nav.insert_row()
+    assert.equals(61, #tab.layout.rows, "released: edits go through again")
+  end)
+
   ---------------------------------------------------------------------------
   -- The same edit through the live prompt, because the column has to be handed
   -- to the parser at this call site. Dropping the argument there left every
