@@ -442,4 +442,62 @@ describe("semantic_diagnostics column fetch scheduling", function()
     assert.equals(2, columns_jobs, "both uncached tables fetch in one pass")
     vim.api.nvim_buf_delete(buf, { force = true })
   end)
+
+  --- Run `update` on `sql`, then keep the event loop turning for a while so
+  --- the fetch lands, its callback re-runs the update, and any re-fetch that
+  --- run would launch gets counted. Returns the number of binaries spawned.
+  local function spawns_for(sql)
+    local buf = sql_buf(sql)
+    local real_jobstart = vim.fn.jobstart
+    local spawns = 0
+    vim.fn.jobstart = function(args, opts)
+      spawns = spawns + 1
+      return real_jobstart(args, opts)
+    end
+    local ok, err = pcall(sem.update, buf)
+    vim.wait(500, function() return false end)
+    vim.fn.jobstart = real_jobstart
+    assert.is_true(ok, "update must not raise: " .. tostring(err))
+    local diags = {}
+    for _, d in ipairs(vim.diagnostic.get(buf)) do
+      if d.source == "poste-db" then diags[#diags + 1] = d.message end
+    end
+    vim.api.nvim_buf_delete(buf, { force = true })
+    return spawns, diags
+  end
+
+  -- An empty listing used to be cached but read back as "never fetched":
+  -- the next update fetched again, the empty answer counted as a success and
+  -- re-ran the update — one `poste introspect` per event-loop turn, for as
+  -- long as the buffer stayed open (measured: thousands per second).
+  it("fetches an empty tables listing once, not on every update", function()
+    sem.invalidate(nil)
+    fake_ctx = { connection = "loop1", database = "fresh" }
+    fake_binary = sh("echo '{\"items\":[]}'")
+    local spawns, diags = spawns_for("SELECT id FROM anything;")
+    assert.equals(1, spawns, "one tables fetch, then the empty answer is final")
+    assert.same({}, diags, "an empty listing is 'cannot check', not 'everything is missing'")
+  end)
+
+  it("fetches an empty columns listing once, and checks nothing against it", function()
+    sem.invalidate(nil)
+    fake_ctx = { connection = "loop2", database = "blog" }
+    fake_binary = sh("echo '{\"items\":[]}'")
+    sem._test.set_cache("loop2/blog", { tables = { "users" }, columns = {} })
+    local spawns, diags = spawns_for("SELECT zzz FROM users;")
+    assert.equals(1, spawns, "one columns fetch for users")
+    assert.same({}, diags)
+  end)
+
+  it("releases the slot once all of a pass's column fetches have landed", function()
+    -- The first callback used to release the slot and re-run the update while
+    -- the other fetches were still in flight; that run scheduled them again.
+    sem.invalidate(nil)
+    fake_ctx = { connection = "sched2", database = "blog" }
+    fake_binary = sh("echo '{\"items\":[{\"name\":\"id\"}]}'")
+    sem._test.set_cache("sched2/blog", { tables = { "widget", "gadget" }, columns = {} })
+    local spawns, diags = spawns_for("SELECT id FROM widget;\nSELECT id FROM gadget;")
+    assert.equals(2, spawns, "each table fetched exactly once")
+    assert.same({}, diags, "and both columns resolved")
+  end)
 end)

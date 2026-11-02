@@ -431,7 +431,10 @@ local function resolve_conn_url(conn)
 end
 
 --- Build schema lookup from cached data.
-local function build_schema(tables, columns, db)
+--- `columns_fetched` rides along so the checker can tell a table whose
+--- columns were fetched and came back empty from one never asked about:
+--- both read as an empty lookup, but only the latter is worth a fetch.
+local function build_schema(tables, columns, db, columns_fetched)
   local known = {}
   for _, t in ipairs(tables or {}) do known[t:lower()] = true end
   local col_lookup = {}
@@ -444,7 +447,8 @@ local function build_schema(tables, columns, db)
     col_lookup[key] = col_lookup[key] or {}
     for _, c in ipairs(cols or {}) do col_lookup[key][c:lower()] = true end
   end
-  return { known_tables = known, columns = col_lookup, db = db }
+  return { known_tables = known, columns = col_lookup, db = db,
+    columns_fetched = columns_fetched or {} }
 end
 
 --- Launch an introspect job and hand its decoded `items` list to `store`.
@@ -528,8 +532,14 @@ local function fetch_tables(buf, conn, db, callback)
   local epoch = _schema_epoch
   run_introspect(args, function(items)
     if epoch ~= _schema_epoch then return end
-    _schema_cache[cache_key] = _schema_cache[cache_key] or { tables = {}, columns = {} }
-    _schema_cache[cache_key].tables = vim.tbl_map(function(i) return i.name end, items)
+    local entry = _schema_cache[cache_key] or { tables = {}, columns = {} }
+    _schema_cache[cache_key] = entry
+    entry.tables = vim.tbl_map(function(i) return i.name end, items)
+    -- An empty answer is still an answer. Without the mark it read as "never
+    -- fetched", the next update fetched again, the empty list counted as a
+    -- success and re-ran the update: one `poste introspect` process per
+    -- event-loop turn, for as long as the buffer stayed open.
+    entry.tables_fetched = true
   end, callback)
 end
 
@@ -550,8 +560,13 @@ local function fetch_columns(buf, conn, db, tbl, callback)
   local epoch = _schema_epoch
   run_introspect(args, function(items)
     if epoch ~= _schema_epoch then return end
-    _schema_cache[cache_key] = _schema_cache[cache_key] or { tables = {}, columns = {} }
-    _schema_cache[cache_key].columns[tbl:lower()] = vim.tbl_map(function(i) return i.name end, items)
+    local entry = _schema_cache[cache_key] or { tables = {}, columns = {} }
+    _schema_cache[cache_key] = entry
+    entry.columns[tbl:lower()] = vim.tbl_map(function(i) return i.name end, items)
+    -- Same mark as fetch_tables, per table: a view the user may not describe
+    -- answers an empty list, and re-fetching it on every update looped too.
+    entry.columns_fetched = entry.columns_fetched or {}
+    entry.columns_fetched[tbl:lower()] = true
   end, callback)
 end
 
@@ -643,7 +658,8 @@ function M.update(buf)
       if built == nil then
         local cached = _schema_cache[key]
         built = (cached and cached.tables and #cached.tables > 0)
-          and build_schema(cached.tables, cached.columns or {}, db) or false
+          and build_schema(cached.tables, cached.columns or {}, db,
+            cached.columns_fetched) or false
         schemas_built[key] = built
       end
       return built or nil
@@ -659,7 +675,14 @@ function M.update(buf)
 
       local schema = schema_for(conn, db)
       if not schema then
-        if not _pending_checks[buf] then
+        -- "No schema" is either never fetched (fetch now) or fetched and
+        -- empty (a fresh database, or a user with no visible tables): the
+        -- second must NOT fetch again — the empty answer counted as a
+        -- success and the callback re-ran this update, one binary spawn per
+        -- loop turn, forever.
+        local fetched = _schema_cache[conn .. "/" .. db]
+          and _schema_cache[conn .. "/" .. db].tables_fetched
+        if not fetched and not _pending_checks[buf] then
           _pending_checks[buf] = true
           fetch_tables(buf, conn, db, function(success)
             _pending_checks[buf] = nil
@@ -737,14 +760,19 @@ function M.update(buf)
         if not target_schema or not target_schema.known_tables[lower_tbl] then
           return nil
         end
-        -- `next(cols) == nil` is an empty cached list, which no real table can
-        -- have: treat it as not known yet rather than as "this table has no
-        -- columns", which would flag every reference to it.
+        -- `next(cols) == nil` is an empty cached list: not proof that the
+        -- table has no columns (a view the user may not describe answers
+        -- that too), so nothing is checked against it either way. Only a
+        -- table never asked about is worth a fetch — scheduling one for a
+        -- fetched-and-empty list looped, the empty answer counting as a
+        -- success that re-ran this update.
         local cols = target_schema.columns[lower_tbl]
         if not cols or not next(cols) then
-          local key = target_db .. "." .. lower_tbl
-          if not pending_column_fetches[key] then
-            pending_column_fetches[key] = { conn = conn, db = target_db, tbl = tbl_name }
+          if not target_schema.columns_fetched[lower_tbl] then
+            local key = target_db .. "." .. lower_tbl
+            if not pending_column_fetches[key] then
+              pending_column_fetches[key] = { conn = conn, db = target_db, tbl = tbl_name }
+            end
           end
           return nil
         end
@@ -795,15 +823,24 @@ function M.update(buf)
     -- One transport slot per buffer at a time. The check happens ONCE, here —
     -- not per iteration: inside the loop the first fetch's flag would swallow
     -- every remaining entry (the callback that clears it is async), and a
-    -- tables fetch earlier in this pass would swallow all of them. Each
-    -- callback re-runs M.update, which schedules whatever is still missing.
+    -- tables fetch earlier in this pass would swallow all of them.
+    --
+    -- The slot is released when the LAST of this pass's fetches lands, and
+    -- the update re-runs once. Releasing on the first callback re-ran the
+    -- update while the other N-1 fetches were still in flight, and that run
+    -- scheduled them all again: a cold six-table join spawned ~N²/2 binaries.
     if next(pending_column_fetches) ~= nil then
       if _pending_checks[buf] then _updating = false; return end
       _pending_checks[buf] = true
+      local outstanding, any_success = 0, false
+      for _ in pairs(pending_column_fetches) do outstanding = outstanding + 1 end
       for _, pending in pairs(pending_column_fetches) do
         fetch_columns(buf, pending.conn, pending.db, pending.tbl, function(success)
+          outstanding = outstanding - 1
+          any_success = any_success or success
+          if outstanding > 0 then return end
           _pending_checks[buf] = nil
-          if success and vim.api.nvim_buf_is_valid(buf) then
+          if any_success and vim.api.nvim_buf_is_valid(buf) then
             vim.schedule(function()
               M.update(buf)
             end)
