@@ -20,7 +20,6 @@ M.generate_dml = dml.generate_dml
 ---------------------------------------------------------------------------
 function M.format_log_entry(entry) return log.format_log_entry(entry) end
 function M.write_log(entry) return log.write_log(entry) end
-function M.set_log_path(path) return log.set_log_path(path) end
 
 ---------------------------------------------------------------------------
 -- Commit / Rollback

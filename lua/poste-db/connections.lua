@@ -192,6 +192,8 @@ function M.get_env_vars(search_dir)
   for k, v in pairs(load_env_json_vars(search_dir)) do vars[k] = v end
   for k, v in pairs(load_dotenv(search_dir)) do vars[k] = v end
   -- `vim.fn.environ()` enumerates real OS vars; `pairs(vim.env)` does not.
+  -- NOT cached: `vim.env.X = ...` changes the live process environment (the
+  -- precedence specs rely on it), so a snapshot would go stale.
   for k, v in pairs(vim.fn.environ()) do vars[k] = v end
   return vars
 end

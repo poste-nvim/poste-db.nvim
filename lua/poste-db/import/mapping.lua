@@ -169,7 +169,9 @@ function M.validate_and_type(import_rows, col_map)
   local bad = {}
 
   for ri, import_row in ipairs(import_rows) do
-    local row_vals = M.build_row_values(import_row, col_map)
+    -- built below from the coerced values: the pre-build from the raw import
+    -- row was fully overwritten by this loop, per row, for nothing
+    local row_vals = {}
     local row_errors = {}
 
     for _, mc in ipairs(col_map) do

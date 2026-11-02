@@ -771,11 +771,6 @@ function M.yank_sql()
   vim.notify("SQL yanked", vim.log.levels.INFO)
 end
 
-function M.refresh()
-  entries = load_entries()
-  render()
-end
-
 function M.close()
   if win and vim.api.nvim_win_is_valid(win) then
     vim.api.nvim_win_close(win, true)

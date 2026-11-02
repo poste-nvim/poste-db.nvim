@@ -84,13 +84,21 @@ local function container_tsnodes(root)
   return containers
 end
 
---- Convert a TSNode subtree to the plain { type, children } shape.
+--- Convert a TSNode subtree to the plain { type, children } shape, bounded
+--- to the depth the classifier reads: `missing_where` reads children types
+--- (depth 1) and `clauses_have_where` reads grandchildren types (depth 2).
+--- The unbounded copy materialized the whole tree — hundreds of thousands of
+--- tables per keystroke for a 10k-row `INSERT … VALUES` — to read two levels.
 --- @param node TSNode
+--- @param depth number current depth, 0 for the root
 --- @return table { type, children }
-local function to_plain(node)
+local PLAIN_MAX_DEPTH = 2
+local function to_plain(node, depth)
+  depth = depth or 0
   local plain = { type = node:type(), children = {} }
+  if depth >= PLAIN_MAX_DEPTH then return plain end
   for c in node:iter_children() do
-    plain.children[#plain.children + 1] = to_plain(c)
+    plain.children[#plain.children + 1] = to_plain(c, depth + 1)
   end
   return plain
 end

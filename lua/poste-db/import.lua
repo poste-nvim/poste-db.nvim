@@ -29,13 +29,19 @@ local function get_columns_from_node(table_node)
   return cols
 end
 
-local function fetch_columns_async(node, context, callback)
-  local conn = node.meta and node.meta.connection or sql_state.db_browser.connection
-  local dir = vim.fn.getcwd()
+--- The directory the connection's env.json / .env are searched from: the
+--- source buffer's own directory when there is one, cwd otherwise.
+local function get_search_dir(context)
   if context.source_buf and vim.api.nvim_buf_is_valid(context.source_buf) then
     local buf_name = vim.api.nvim_buf_get_name(context.source_buf)
-    if buf_name ~= "" then dir = vim.fn.fnamemodify(buf_name, ":p:h") end
+    if buf_name ~= "" then return vim.fn.fnamemodify(buf_name, ":p:h") end
   end
+  return vim.fn.getcwd()
+end
+
+local function fetch_columns_async(node, context, callback)
+  local conn = node.meta and node.meta.connection or sql_state.db_browser.connection
+  local dir = get_search_dir(context)
 
   vim.notify("Loading column info for " .. node.name .. "...", vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 
@@ -70,14 +76,6 @@ local function get_or_fetch_columns(node, context, callback)
   fetch_columns_async(node, context, callback)
 end
 
-local function get_search_dir(context)
-  if context.source_buf and vim.api.nvim_buf_is_valid(context.source_buf) then
-    local buf_name = vim.api.nvim_buf_get_name(context.source_buf)
-    if buf_name ~= "" then return vim.fn.fnamemodify(buf_name, ":p:h") end
-  end
-  return vim.fn.getcwd()
-end
-
 local function build_table_info(node, context)
   local dialect = "postgres"
   if node.meta and node.meta.dialect then
@@ -94,7 +92,6 @@ local function build_table_info(node, context)
     database = node.meta and node.meta.database,
     connection = node.meta and node.meta.connection,
     dialect = dialect,
-    search_dir = get_search_dir(context),
   }
 end
 

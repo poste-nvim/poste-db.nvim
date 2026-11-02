@@ -101,12 +101,6 @@ function M.clear_all(buf)
   if not any_active_spinners() then stop_timer() end
 end
 
---- Clear indicators for all lines except the current one.
-function M.clear_other_requests(buf, _line_0)
-  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
-  vim.api.nvim_buf_clear_namespace(buf, indicator_ns, 0, -1)
-end
-
 --- Format latency for display.
 local function format_latency(latency_ms)
   if latency_ms >= 1000 then
