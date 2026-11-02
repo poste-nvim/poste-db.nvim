@@ -553,6 +553,41 @@ that returns nothing is a hit that silently skips the work.
 
 ---
 
-*Latest: 2026-10-30 round-5 audit session (#26 isdst trap, #27 cache the
-payload). When adding an entry, keep the format: what happened (with file:line)
-→ the rule (an executable check to run).*
+## 28. Changing WHICH match wins re-rates every pattern's precision assumptions
+
+**What happened**: round 6 changed `extract_table_name` from "try keywords
+in a fixed order" to "earliest reference in the text wins". The new rule was
+correct, but the patterns had no word boundary — harmless under the old
+order, where FROM was tried first and masked everything — and
+`UPDATE%s+()%S+` then matched inside `last_UPDATE FROM film` (Sakila's
+column, on every table), captured the FROM position, and won the
+earliest-race with the wrong token. The regression was caught in the same
+session by a subagent audit, before the push.
+
+**Rule**: when a selection rule changes (first-in-order → earliest, most
+specific → first, …), re-derive what each participating pattern must
+guarantee IN ISOLATION — an approximation that a priority rule used to
+absorb becomes load-bearing. Pin the failure shape in a spec the same
+change (`SELECT id, last_update FROM film`).
+
+## 29. "The process environment cannot change mid-session" is false under vim.env
+
+**What happened**: a perf cache for `vim.fn.environ()` (the dominant cost of
+`get_env_vars`, which runs on every statusline evaluation) was written on
+the premise that a process's env is fixed at startup. Two connections specs
+failed immediately: they set and clear `vim.env.POSTE_TEST_DB_PASS`
+mid-test — and `vim.env` writes DO change the live process environment, not
+a plugin-local copy.
+
+**Rule**: before snapshotting anything "environmental", grep the repo for
+writers (`vim.env.` assignments, `vim.fn.setenv`); in Neovim, `vim.env` is a
+live view, and user config or any plugin may write it. Cache only what
+nothing in-process can rewrite, or key the cache on an epoch those writers
+would have to bump (they won't).
+
+---
+
+*Latest: 2026-11-03 round-6 audit session (#28 the winner rule re-rates
+pattern precision, #29 vim.env is a live view). When adding an entry, keep
+the format: what happened (with file:line) → the rule (an executable check
+to run).*
