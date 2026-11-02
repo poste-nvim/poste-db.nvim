@@ -375,6 +375,31 @@ describe("editor edits address source rows", function()
     assert.equals(61, #tab.layout.rows, "released: edits go through again")
   end)
 
+  it("discards a prompt's answer when the dataset was replaced meanwhile", function()
+    -- The prompt is async; a slow query's response replaces the active tab
+    -- while it is open (the tab is not dirty yet). Reading the tab at
+    -- callback time then wrote into whatever result set was current.
+    install_tab(1, identity(60))
+    local first = tab
+    local answer
+    vim.ui.input = function(_, cb) answer = cb end
+    state.cell.row, state.cell.col = 1, 2
+    nav.edit_cell()
+    -- the "late response": a whole new tab takes the slot
+    local other = install_tab(1, identity(60))
+    local notified
+    local saved_notify = vim.notify
+    vim.notify = function(msg) notified = msg end
+    answer("typed")
+
+    assert.not_equals(other, first, "sanity: install_tab replaced the active tab")
+    assert.equals("v1", other.layout.rows[1][2], "the replacement dataset is untouched")
+    assert.equals("v1", first.layout.rows[1][2], "so is the orphaned original")
+    assert.is_nil(other.edit_state, "no edit_state was created on it")
+    assert.matches("dataset changed", notified)
+    vim.notify = saved_notify
+  end)
+
   ---------------------------------------------------------------------------
   -- The same edit through the live prompt, because the column has to be handed
   -- to the parser at this call site. Dropping the argument there left every

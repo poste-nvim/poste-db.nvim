@@ -148,9 +148,21 @@ local function rerender_dataset_page(tab)
   return meta
 end
 
-local function apply_cell_edit(row_idx, col_idx, new_val)
-  local tab = get_dataset().T()
-  if not tab or not tab.layout then return end
+--- Record one cell's new value on `tab` — the tab the prompt was opened on,
+--- carried through the editors rather than looked up here. The prompt is
+--- asynchronous and nothing pins the dataset under it: a slow query's
+--- response, or the AI chat rendering a result, replaces the active tab
+--- (`reset_active_entry_tabs` runs whenever the tab is not dirty, which the
+--- first edit's prompt always is). Reading `T()` at callback time then wrote
+--- `rows[row_idx][col_idx]` into whatever result set was current — a silent
+--- edit on the wrong dataset, or a nil index when it had fewer rows.
+local function apply_cell_edit(tab, row_idx, col_idx, new_val)
+  if tab ~= get_dataset().T() then
+    vim.notify("The dataset changed while the prompt was open — edit discarded",
+      vim.log.levels.WARN, { title = const.PLUGIN_TITLE })
+    return
+  end
+  if not tab.layout then return end
   -- `row_idx` is a SOURCE row (see to_source_row): edit_state keys, layout.rows
   -- and rows_source all live in that space, which dml.generate_dml reads.
 
@@ -211,25 +223,22 @@ local cell_editors = {}
 --- to call `apply_cell_edit` with the prompt's own text, which skipped both
 --- steps: clearing that prompt wrote an empty string into a date column, and a
 --- typed "(NULL)" was stored as the characters `"(NULL)"`.
-local function apply_typed_edit(row_idx, col_idx, col_meta, old_val, input)
+local function apply_typed_edit(tab, row_idx, col_idx, col_meta, old_val, input)
   if input == nil then return end
   local new_val = cell.parse_value(input, old_val, col_meta)
   if new_val == nil then return end
   local row_key = tostring(row_idx) .. ":" .. tostring(col_idx)
   local ok, err = cell.validate_value(new_val, col_meta)
   if not ok then
-    local tab = get_dataset().T()
-    if tab then
-      cell.set_cell_error(ensure_edit_state(tab), row_key, err)
-    end
+    -- The error marks the cell the prompt was opened on; if that tab has
+    -- been replaced meanwhile the mark lands on an orphan, which is harmless
+    -- (apply_cell_edit is where a stale tab must be refused).
+    cell.set_cell_error(ensure_edit_state(tab), row_key, err)
     vim.notify("Validation error: " .. err, vim.log.levels.ERROR, { title = const.PLUGIN_TITLE })
     return
   end
-  local tab = get_dataset().T()
-  if tab then
-    cell.clear_cell_error(ensure_edit_state(tab), row_key)
-  end
-  apply_cell_edit(row_idx, col_idx, new_val)
+  cell.clear_cell_error(ensure_edit_state(tab), row_key)
+  apply_cell_edit(tab, row_idx, col_idx, new_val)
 end
 
 --- The picker's "now" candidate, and the text a cleared cell falls back to.
@@ -258,7 +267,7 @@ local function as_datetime_expr(input)
   return input
 end
 
-function cell_editors.boolean(row_idx, col_idx, col_meta, old_val)
+function cell_editors.boolean(tab, row_idx, col_idx, col_meta, old_val)
   local choices = { "(NULL)", "true", "false" }
   vim.ui.select(choices, {
     prompt = col_meta.name or "value",
@@ -273,11 +282,11 @@ function cell_editors.boolean(row_idx, col_idx, col_meta, old_val)
     else
       new_val = false
     end
-    apply_cell_edit(row_idx, col_idx, new_val)
+    apply_cell_edit(tab, row_idx, col_idx, new_val)
   end)
 end
 
-function cell_editors.datetime(row_idx, col_idx, col_meta, old_val)
+function cell_editors.datetime(tab, row_idx, col_idx, col_meta, old_val)
   local now = datetime_now_text(col_meta.ctype)
   -- `date` and `time` columns get no expression candidate, so their prompt reads
   -- no expression either: `has_expr` is the one condition the two share
@@ -295,7 +304,7 @@ function cell_editors.datetime(row_idx, col_idx, col_meta, old_val)
   }, function(choice)
     if not choice or choice == "(NULL)" then
       if choice == "(NULL)" then
-        apply_cell_edit(row_idx, col_idx, vim.NIL)
+        apply_cell_edit(tab, row_idx, col_idx, vim.NIL)
       end
       return
     end
@@ -308,20 +317,20 @@ function cell_editors.datetime(row_idx, col_idx, col_meta, old_val)
         prompt = (col_meta.name or "value") .. ": ",
         default = has_value and tostring(old_val) or now,
       }, function(input)
-        apply_typed_edit(row_idx, col_idx, col_meta, old_val,
+        apply_typed_edit(tab, row_idx, col_idx, col_meta, old_val,
           has_expr and as_datetime_expr(input) or input)
       end)
       return
     end
     if choice == DATETIME_EXPR then
-      apply_cell_edit(row_idx, col_idx, "__expr:" .. DATETIME_EXPR)
+      apply_cell_edit(tab, row_idx, col_idx, "__expr:" .. DATETIME_EXPR)
     else
-      apply_cell_edit(row_idx, col_idx, choice)
+      apply_cell_edit(tab, row_idx, col_idx, choice)
     end
   end)
 end
 
-function cell_editors.enum(row_idx, col_idx, col_meta, old_val)
+function cell_editors.enum(tab, row_idx, col_idx, col_meta, old_val)
   local choices = {}
   local current_value = (old_val ~= nil and old_val ~= vim.NIL) and tostring(old_val) or nil
   for _, v in ipairs(col_meta.enum_values) do
@@ -348,11 +357,11 @@ function cell_editors.enum(row_idx, col_idx, col_meta, old_val)
     format_item = function(item) return item.display end,
   }, function(choice)
     if not choice then return end
-    apply_cell_edit(row_idx, col_idx, choice.value)
+    apply_cell_edit(tab, row_idx, col_idx, choice.value)
   end)
 end
 
-function cell_editors.text(row_idx, col_idx, col_meta, old_val)
+function cell_editors.text(tab, row_idx, col_idx, col_meta, old_val)
   local initial_text
   if cell.is_json_column(col_meta) and type(old_val) == "table" then
     initial_text = cell.format_json_input(old_val)
@@ -369,7 +378,7 @@ function cell_editors.text(row_idx, col_idx, col_meta, old_val)
     prompt = (col_meta.name or "value") .. ": ",
     default = initial_text,
   }, function(input)
-    apply_typed_edit(row_idx, col_idx, col_meta, old_val, input)
+    apply_typed_edit(tab, row_idx, col_idx, col_meta, old_val, input)
   end)
 end
 
@@ -399,7 +408,7 @@ function M.edit_cell()
   if not row then return end
   local old_val = row[col_idx]
   local handler = cell_editors[M.detect_cell_type(col_meta)]
-  handler(src_row, col_idx, col_meta, old_val)
+  handler(tab, src_row, col_idx, col_meta, old_val)
 end
 
 --- Delete the current row.
