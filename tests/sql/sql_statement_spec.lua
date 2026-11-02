@@ -263,6 +263,30 @@ describe("statement extract_table_name", function()
     -- opened a phantom string there and blanked the rest (nil)
     assert.equals("users", statement.extract_table_name('select "it\'s" from users'))
   end)
+
+  it("names the statement's own table when a later clause has another", function()
+    -- The keywords used to be tried in a fixed order (FROM first), so any
+    -- statement with two clauses answered the wrong one, and the DML builder
+    -- aimed the user's edits at that table. The earliest reference wins now.
+    assert.equals("t", statement.extract_table_name(
+      "UPDATE t SET x = 1 FROM src WHERE t.id = src.id RETURNING *"))
+    assert.equals("t", statement.extract_table_name("INSERT INTO t SELECT * FROM s RETURNING *"))
+    assert.equals("t", statement.extract_table_name("UPDATE t SET c = (SELECT max(v) FROM s)"))
+    assert.equals("t", statement.extract_table_name(
+      "MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET x = 1"),
+      "MERGE's `UPDATE SET` used to answer the keyword `set`")
+  end)
+
+  it("skips postgres ONLY, but not a table that is called only", function()
+    assert.equals("nums", statement.extract_table_name("DELETE FROM ONLY nums WHERE x = 1"))
+    assert.equals("nums", statement.extract_table_name("UPDATE ONLY nums SET x = 1"))
+    assert.equals("nums", statement.extract_table_name('DELETE FROM ONLY "nums"'))
+    -- a bare `only` followed by a clause word, the end, or `;` is the table
+    assert.equals("only", statement.extract_table_name("SELECT * FROM only WHERE x = 1"))
+    assert.equals("only", statement.extract_table_name("SELECT * FROM only"))
+    assert.equals("only", statement.extract_table_name("SELECT * FROM only;"))
+    assert.equals("only", statement.extract_table_name('SELECT * FROM "only" t'))
+  end)
 end)
 
 describe("statement get_stmt_sql", function()

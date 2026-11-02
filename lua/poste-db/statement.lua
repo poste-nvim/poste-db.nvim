@@ -680,14 +680,39 @@ function M.extract_table_name(sql)
   -- ASCII. A capture could not carry the text either way — LuaJIT's `find`
   -- hands back captured *strings*, not positions, and `%S+` cuts a quoted name
   -- at its first space anyway.
+  --
+  -- The reference that comes FIRST in the text is the statement's own table.
+  -- Trying the keywords in a fixed order instead (FROM, then UPDATE, then
+  -- INTO) read the wrong clause whenever a statement had two of them:
+  -- `UPDATE t SET … FROM src RETURNING *` answered src, `INSERT INTO t
+  -- SELECT … FROM s` answered s, `UPDATE t SET c = (SELECT … FROM s)`
+  -- answered s, and MERGE's `… THEN UPDATE SET x = 1` answered "set" — and
+  -- the DML builder then aimed the user's edits at that table.
   local patterns = { "FROM%s+()%S+", "UPDATE%s+()%S+", "INTO%s+()%S+", "JOIN%s+()%S+" }
+  local tok_start
   for _, pat in ipairs(patterns) do
-    local _, _, tok_start = upper:find(pat)
-    if tok_start then
-      local name = last_part(clean, tok_start)
-      if name and name ~= "" then return name end
+    local _, _, pos = upper:find(pat)
+    if pos and (not tok_start or pos < tok_start) then tok_start = pos end
+  end
+  if not tok_start then return nil end
+
+  -- postgres `FROM ONLY t` / `UPDATE ONLY t` (inheritance and partitioned
+  -- tables): the keyword is not the table. Only an unquoted `only` that is
+  -- followed by a name can be the keyword — a table that is itself called
+  -- `only` (legal in MySQL) is followed by a clause word or the end.
+  local first = clean:sub(tok_start, tok_start)
+  if first ~= '"' and first ~= "`" and first ~= "[" then
+    local word, after = read_identifier(clean, tok_start)
+    if word == "only" then
+      local k = after
+      while clean:sub(k, k):match("%s") do k = k + 1 end
+      local next_word = read_identifier(clean, k)
+      if next_word and not FROM_ITEM_TERMINATOR[next_word] then tok_start = k end
     end
   end
+
+  local name = last_part(clean, tok_start)
+  if name and name ~= "" then return name end
   return nil
 end
 
