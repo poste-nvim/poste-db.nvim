@@ -186,7 +186,17 @@ local function parse_pk_results(body, dialect)
             entry.default = col_default
           end
           local is_pk = row[is_pk_col_idx]
-          if is_pk == 1 or is_pk == "1" then entry.pk = true end
+          -- "Part of the key" is any value above zero, not exactly 1: SQLite's
+          -- `pragma_table_info` reports `pk` as the column's 1-based POSITION
+          -- in the key (0 = not in it), so a composite key's second column
+          -- answered 2 and went unflagged — the commit's WHERE then named only
+          -- the first column and rewrote every row sharing it. The MySQL and
+          -- Postgres templates emit a 0/1 CASE, which this reading covers too.
+          -- A driver may hand the number back as text; both spellings count.
+          if (type(is_pk) == "number" and is_pk > 0)
+              or (type(is_pk) == "string" and is_pk:match("^[1-9]%d*$") ~= nil) then
+            entry.pk = true
+          end
           meta[col_name] = entry
         end
       end

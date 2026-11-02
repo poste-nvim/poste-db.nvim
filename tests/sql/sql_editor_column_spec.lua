@@ -188,3 +188,61 @@ describe("editor column refused metadata lookup vs no keys", function()
     assert.equals(1, pk_queries(calls))
   end)
 end)
+--- SQLite's `pragma_table_info` reports `pk` as the column's 1-based position
+--- in the key, not a 0/1 flag. Reading it as `== 1` flagged only the first
+--- column of a composite key; `dml.build_where` then identified the row by that
+--- column alone and the commit rewrote every row sharing it.
+describe("editor column composite primary key", function()
+  before_each(function()
+    install_stubs()
+  end)
+
+  after_each(function()
+    restore_stubs()
+  end)
+
+  local function sqlite_layout()
+    return {
+      table_name = "t",
+      dialect = "sqlite",
+      _conn_name = "local",
+      columns = {
+        { name = "a", type = "INTEGER", ctype = "integer" },
+        { name = "b", type = "INTEGER", ctype = "integer" },
+        { name = "c", type = "TEXT", ctype = "text" },
+      },
+    }
+  end
+
+  it("flags every column of a sqlite composite key, by key position", function()
+    stub_exec_run(function()
+      return {
+        has_error = false,
+        body = vim.json.encode({ results = { { rows = {
+          { "a", vim.NIL, 1 }, { "b", vim.NIL, 2 }, { "c", vim.NIL, 0 },
+        } } } }),
+      }
+    end)
+    local tab = { layout = sqlite_layout() }
+    column.ensure_primary_key(tab)
+    assert.is_true(tab.layout.columns[1].primary_key)
+    assert.is_true(tab.layout.columns[2].primary_key, "position 2 is still part of the key")
+    assert.falsy(tab.layout.columns[3].primary_key)
+  end)
+
+  it("reads a position the driver hands back as text", function()
+    stub_exec_run(function()
+      return {
+        has_error = false,
+        body = vim.json.encode({ results = { { rows = {
+          { "a", vim.NIL, "1" }, { "b", vim.NIL, "2" }, { "c", vim.NIL, "0" },
+        } } } }),
+      }
+    end)
+    local tab = { layout = sqlite_layout() }
+    column.ensure_primary_key(tab)
+    assert.is_true(tab.layout.columns[1].primary_key)
+    assert.is_true(tab.layout.columns[2].primary_key)
+    assert.falsy(tab.layout.columns[3].primary_key)
+  end)
+end)
