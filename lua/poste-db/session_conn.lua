@@ -304,11 +304,21 @@ local function process_line(session, line)
 end
 
 local function on_session_stdout(session, chunks)
-  local combined = table.concat(chunks, "")
+  -- jobstart (unbuffered stdout) splits each read at newline boundaries: every
+  -- element but the last is a COMPLETE line with the newline already consumed,
+  -- and the last is either "" (the previous element was newline-terminated) or
+  -- the start of a line still being written. Rejoining with "\n" rebuilds the
+  -- wire stream byte-for-byte, so the newline scan below sees the line breaks
+  -- again. The old "" join glued every element of a read together — a read
+  -- carrying two response events produced one undecodable buffer with no \n
+  -- in it at all, nothing parsed from that point on, and every pending
+  -- request's spinner hung for the session.
+  local combined = table.concat(chunks, "\n")
   state.log("DEBUG", "SQL session stdout (" .. #combined .. " bytes)")
   session.buffer = session.buffer .. combined
-  -- Each response from the Rust session is a single JSON line, but Neovim may
-  -- deliver it with or without the trailing newline (or split across chunks).
+  -- Each response from the Rust session is a single JSON line. Complete lines
+  -- are consumed by the newline scan; the tail without one is a line still
+  -- being written (parsed when complete below).
   local pos = 1
   while true do
     -- Try newline-based parsing first

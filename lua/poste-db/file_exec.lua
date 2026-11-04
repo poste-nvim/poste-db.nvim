@@ -453,21 +453,29 @@ function M.run(opts)
       -- `cancelled`, so the old job's remaining chunks would otherwise be
       -- appended to the new run's results.
       if not data or S.cancelled or S.run_id ~= run_id then return end
-      for _, chunk in ipairs(data) do
-        if chunk == "" then
+      -- jobstart (unbuffered stdout) splits each read at newline boundaries:
+      -- every element but the last is a COMPLETE line, and the last is either
+      -- "" (the previous element was newline-terminated — nothing pending) or
+      -- the start of a line still being written. The old loop treated every
+      -- element as a fragment and concatenated the elements it saw, so a read
+      -- carrying two events (`{"a","b",""}`) glued them into "ab" and both
+      -- JSON events were dropped — a summary coalesced with the last result
+      -- then reported a successful run as "exit code 0 (no summary event)".
+      for i, chunk in ipairs(data) do
+        if i < #data then
+          -- A complete line; any held partial is its head.
+          local combined = partial .. chunk
+          partial = ""
+          if combined ~= "" then handle_line(combined) end
+        elseif chunk == "" then
+          -- End-of-batch marker: flush a held partial line.
           if partial ~= "" then
             handle_line(partial)
             partial = ""
           end
         else
-          local combined = partial .. chunk
-          local lines = vim.split(combined, "\n")
-          partial = table.remove(lines) or ""
-          for _, line in ipairs(lines) do
-            if line ~= "" then
-              handle_line(line)
-            end
-          end
+          -- The tail of a line whose newline has not arrived yet.
+          partial = partial .. chunk
         end
       end
     end,

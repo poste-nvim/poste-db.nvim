@@ -596,6 +596,38 @@ describe("session_conn on_session_stdout line assembly", function()
     assert.is_not_nil(got)
     assert.equals("", s.buffer)
   end)
+
+  it("a read carrying two events parses both (nvim strips the newlines)", function()
+    -- regression: jobstart delivers an unbuffered read as COMPLETE lines
+    -- {"ev1","ev2",""} with the newlines already consumed. Joining the
+    -- elements with "" glued them into one undecodable buffer that contained
+    -- no newline at all — nothing parsed from that read on, and every pending
+    -- request's spinner hung for the session. The join rebuilds the wire
+    -- stream with "\n" so the line scan sees the breaks again.
+    local s = mk_session()
+    local got1, got2
+    s.pending[1] = { on_response = function(resp) got1 = resp end }
+    s.pending[2] = { on_response = function(resp) got2 = resp end }
+    feed(s, {
+      vim.json.encode({ type = "result", seq = 1, status = "ok", affected_rows = 0 }),
+      vim.json.encode({ type = "result", seq = 2, status = "ok", affected_rows = 0 }),
+      "",
+    })
+    assert.is_not_nil(got1, "the first event of a coalesced read must parse")
+    assert.is_not_nil(got2, "the second event of a coalesced read must parse")
+    assert.equals("", s.buffer)
+  end)
+
+  it("empty lines between events do not stall the stream", function()
+    -- A line break after an empty line arrives as two "" elements: the first
+    -- is the (empty) line, the last is the end-of-read marker.
+    local s = mk_session()
+    local got
+    s.pending[3] = { on_response = function(resp) got = resp end }
+    feed(s, { "", vim.json.encode({ type = "result", seq = 3, status = "ok", affected_rows = 0 }), "" })
+    assert.is_not_nil(got)
+    assert.equals("", s.buffer)
+  end)
 end)
 
 describe("session_conn cleanup_buf closes only emptied sessions", function()

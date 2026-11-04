@@ -241,6 +241,55 @@ describe("file_exec", function()
       assert.matches("137", notified.msg)
     end)
 
+    it("parses each event of a read that carried several", function()
+      -- One libuv read can hold several writeln events: jobstart delivers
+      -- them as complete lines {"ev1","ev2","","} with the newlines already
+      -- consumed. The old reassembly treated every element as a fragment and
+      -- concatenated them, gluing "ev1ev2" into one undecodable blob — every
+      -- event in the read was dropped, and a summary coalesced with the last
+      -- result made a successful run report "no summary event".
+      local fe = fresh()
+      fe.run({ filepath = "/tmp/x.sql", conn = "playground" })
+      local ok_ev = vim.json.encode({
+        type = "result", seq = 1, total = 2, status = "ok",
+        sql = "SELECT 1", row_count = 1, execution_time_ms = 1,
+      })
+      local err_ev = vim.json.encode({
+        type = "result", seq = 2, total = 2, status = "error",
+        sql = "SELECT 2", error = "boom", execution_time_ms = 1,
+      })
+      local sum_ev = vim.json.encode({
+        type = "summary", total = 2, succeeded = 1, failed = 1, total_affected = 0,
+      })
+      captured.opts.on_stdout(nil, { ok_ev, err_ev, sum_ev, "" })
+      captured.opts.on_exit(0, 0)
+      vim.wait(100, function() return notified ~= nil end)
+
+      -- the error event was seen on its own (its text notified)
+      assert.truthy(notified)
+      assert.matches("boom", notified.msg)
+      -- and the summary was seen: the exit must not add a bogus whole-run
+      -- failure to a run that delivered one
+      assert.not_matches("no summary event", notified.msg)
+    end)
+
+    it("reassembles an event split across reads", function()
+      local fe = fresh()
+      fe.run({ filepath = "/tmp/x.sql", conn = "playground" })
+      local err_ev = vim.json.encode({
+        type = "result", seq = 1, total = 1, status = "error",
+        sql = "SELECT 2", error = "boom", execution_time_ms = 1,
+      })
+      -- No trailing newline in the first read: the line is still being
+      -- written; the second read carries its tail plus the terminator.
+      captured.opts.on_stdout(nil, { err_ev:sub(1, 30) })
+      captured.opts.on_stdout(nil, { err_ev:sub(31), "" })
+      vim.wait(100, function() return notified ~= nil end)
+
+      assert.truthy(notified)
+      assert.matches("boom", notified.msg)
+    end)
+
     it("redacts the connection URL in the command log", function()
       local fe = fresh()
       fe.run({ filepath = "/tmp/x.sql", conn = "playground" })
