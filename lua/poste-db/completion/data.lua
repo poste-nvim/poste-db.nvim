@@ -378,7 +378,11 @@ function M.ensure_tables(callback)
   end
 
   fetching[fkey] = true
-  callbacks[fkey] = { callback }
+  -- The first callback is wrapped like the queued ones below: the flush value
+  -- for the tables/columns fetchers is not the ctx, so a bare callback got
+  -- `nil` and every consumer's `conn_key(fetch_ctx)` re-resolved the whole
+  -- buffer context — after a buffer switch, against the WRONG connection.
+  callbacks[fkey] = { function() callback(ctx) end }
 
   local binary, url = resolve_fetch_target(fkey, ctx.connection, nil)
   if not binary then return end
@@ -431,7 +435,8 @@ function M.ensure_tables_for_db(db_name, callback)
   end
 
   fetching[fkey] = true
-  callbacks[fkey] = { callback }
+  -- Wrapped like ensure_tables: the flush value is not the ctx (see there).
+  callbacks[fkey] = { function() callback(ctx) end }
 
   local binary, url = resolve_fetch_target(fkey, ctx.connection, nil)
   if not binary then return end
@@ -478,7 +483,10 @@ function M.ensure_databases(callback)
   end
 
   fetching[fkey] = true
-  callbacks[fkey] = { callback }
+  -- The flush value here IS the names list (unlike the tables/columns
+  -- fetchers), so the wrapper forwards it and adds the ctx — the same shape
+  -- the queued callbacks and the cache-hit path deliver.
+  callbacks[fkey] = { function(names) callback(names, ctx) end }
 
   local binary, url = resolve_fetch_target(fkey, ctx.connection, {})
   if not binary then return end
@@ -551,7 +559,8 @@ function M.ensure_columns(tbl, schema, callback)
   end
 
   fetching[fkey] = true
-  callbacks[fkey] = { callback }
+  -- Wrapped like ensure_tables: the flush value is not the ctx (see there).
+  callbacks[fkey] = { function() callback(ctx) end }
 
   local binary, url = resolve_fetch_target(fkey, ctx.connection, nil)
   if not binary then

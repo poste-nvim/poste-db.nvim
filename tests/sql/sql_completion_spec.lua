@@ -1392,3 +1392,59 @@ describe("get_tables_and_alias", function()
     assert_all_empty({ tables = {} })
   end)
 end)
+
+describe("completion data ensure_* first-callback delivery", function()
+  local data = require("poste-db.completion.data")
+  local state = require("poste-db.state")
+
+  local saved_binary, saved_ctx_mod
+
+  before_each(function()
+    saved_binary = state.find_poste_binary
+    -- nil binary sends every fetcher down the flush-now failure path, which
+    -- runs the FIRST registered callback synchronously — the delivery shape
+    -- under test, with no job machinery involved.
+    state.find_poste_binary = function() return nil end
+    saved_ctx_mod = package.loaded["poste-db.context"]
+    package.loaded["poste-db.context"] = {
+      resolve_full_context = function()
+        return { connection = "pg-dev", database = "app" }
+      end,
+    }
+    data.clear_cache("pg-dev")
+  end)
+
+  after_each(function()
+    state.find_poste_binary = saved_binary
+    package.loaded["poste-db.context"] = saved_ctx_mod
+  end)
+
+  it("ensure_tables delivers the ctx (not the flush value) to the first callback", function()
+    -- regression: the first registered callback ran bare, so the flush value
+    -- (nil for the tables/columns fetchers) landed in the consumer's
+    -- fetch_ctx, and its `conn_key(fetch_ctx)` re-resolved the whole buffer
+    -- context — after a buffer switch, against the wrong connection. The
+    -- queued callbacks were wrapped; the first one was not.
+    local got
+    data.ensure_tables(function(fetch_ctx) got = fetch_ctx end)
+    assert.is_table(got)
+    assert.equals("pg-dev", got.connection)
+  end)
+
+  it("ensure_columns delivers the ctx to the first callback", function()
+    local got
+    data.ensure_columns("users", nil, function(fetch_ctx) got = fetch_ctx end)
+    assert.is_table(got)
+    assert.equals("pg-dev", got.connection)
+  end)
+
+  it("ensure_databases delivers (names, ctx) to the first callback", function()
+    -- The flush value here IS the names list; the wrapper forwards it and
+    -- adds the ctx, matching the cache-hit path's arity.
+    local got_names, got_ctx
+    data.ensure_databases(function(names, fetch_ctx) got_names, got_ctx = names, fetch_ctx end)
+    assert.same({}, got_names)
+    assert.is_table(got_ctx)
+    assert.equals("pg-dev", got_ctx.connection)
+  end)
+end)

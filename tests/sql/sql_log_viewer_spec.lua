@@ -578,3 +578,51 @@ describe("log viewer request_clear", function()
     assert.equals("SQL log left untouched", notified[1].msg)
   end)
 end)
+
+describe("sql_log.record entry caps", function()
+  local sql_log = require("poste-db.sql_log")
+  local saved_path
+
+  before_each(function()
+    saved_path = sql_log.path()
+    sql_log.set_log_path("/tmp/poste_db_test_journal_r7.jsonl")
+    os.remove("/tmp/poste_db_test_journal_r7.jsonl")
+  end)
+
+  after_each(function()
+    os.remove("/tmp/poste_db_test_journal_r7.jsonl")
+    sql_log.set_log_path(saved_path)
+  end)
+
+  local function last_line()
+    local f = io.open("/tmp/poste_db_test_journal_r7.jsonl", "r")
+    local last
+    for l in f:lines() do last = l end
+    f:close()
+    return vim.json.decode(last)
+  end
+
+  it("truncates an oversized sql to a bounded prefix", function()
+    -- run-file mode stamps the whole file's text on the entry: uncapped, a
+    -- 5 MB file was one 5 MB JSONL line (and the viewer read it all back).
+    local huge = string.rep("SELECT 1; ", 3000) -- ~30 KB
+    sql_log.record({ source = "test", sql = huge, status = "success" })
+    local decoded = last_line()
+    assert.is_true(#decoded.sql < 3000, "sql must be capped, got " .. #decoded.sql)
+    assert.matches("SELECT 1;", decoded.sql)
+  end)
+
+  it("keeps a multibyte character whole at both cut points", function()
+    -- a plain byte-cut sliced a CJK character in half and the journal line
+    -- ended in invalid UTF-8; both caps cut on a codepoint boundary now.
+    sql_log.record({ source = "test", sql = string.rep("中", 2000), status = "success" })
+    local decoded = last_line()
+    assert.is_true(#decoded.sql % 3 == 0, "sql must end on a 3-byte codepoint boundary")
+
+    sql_log.record({ source = "test", sql = "x", status = "error",
+      error_msg = string.rep("错", 300) }) -- 900 bytes > MAX_ERROR_LEN
+    local decoded2 = last_line()
+    assert.is_true(#decoded2.error < 600, "error must be capped")
+    assert.is_true(#decoded2.error % 3 == 0, "error must end on a codepoint boundary")
+  end)
+end)

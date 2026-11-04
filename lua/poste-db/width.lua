@@ -142,8 +142,12 @@ end
 ---   within its budget.
 --- "nvim": plain strdisplaywidth() (agrees with nvim's grid — cursor, cell
 ---   navigation, partial repaints).
---- A mark in the very first position already measures 1 (vim only folds it
---- when attached to a preceding base), so it is not corrected.
+--- A mark in the very first position: nvim's own strdisplaywidth measures it
+--- 1 (vim folds a mark only onto a preceding base), but the terminal oracle's
+--- per-codepoint cost is position-independent — `char_cost` folds it to 0
+--- wherever it stands. The two modes disagree on this one shape; accepted,
+--- because no renderer produces a cell text that begins with a combining
+--- mark.
 function M.display_width(s)
   if s == nil then return 0 end
   if type(s) ~= "string" then s = tostring(s) end

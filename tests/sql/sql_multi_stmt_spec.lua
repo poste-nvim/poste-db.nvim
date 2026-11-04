@@ -71,6 +71,33 @@ describe("find_stmt_lines", function()
     assert.same({ 1, 3 }, stmts)
   end)
 
+  it("skips a block-comment-only line instead of opening a phantom statement", function()
+    -- regression: content was judged on the raw text, where `/* … */` is full
+    -- of content characters — the comment line opened a statement that
+    -- swallowed the real one below it, and every later result's
+    -- statement mapping shifted (result k read the comment's SQL).
+    local lines = {
+      "/* intro note */",
+      "SELECT * FROM users;",
+      "",
+      "SELECT * FROM orders;",
+    }
+    local stmts = t.find_stmt_lines(lines, 1, 4)
+    assert.same({ 2, 4 }, stmts)
+  end)
+
+  it("does not open a statement for a bare quoted literal line", function()
+    -- blank_regions runs without keep_quoted_idents for this scan, so a
+    -- string continuation line inside a multi-line literal is blanked too —
+    -- a bare literal is not a statement opener.
+    local lines = {
+      "'just a string'",
+      "SELECT * FROM users;",
+    }
+    local stmts = t.find_stmt_lines(lines, 1, 2)
+    assert.same({ 2 }, stmts)
+  end)
+
   it("handles multi-line statements", function()
     local lines = {
       "SELECT *",

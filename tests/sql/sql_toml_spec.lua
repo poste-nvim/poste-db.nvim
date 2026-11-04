@@ -456,3 +456,21 @@ describe("toml inline containers", function()
     assert.matches("Unclosed inline table", err3)
   end)
 end)
+
+describe("toml.parse inline-table duplicate keys", function()
+  it("rejects a repeated key inside an inline table", function()
+    -- regression: only the top-level sections checked for duplicates, so
+    -- `tunnel = { to = "a", to = "b" }` silently connected through "b" —
+    -- exactly the last-wins silence the section check exists to stop.
+    local res, err = toml.parse('t = { to = "a", to = "b" }')
+    assert.is_nil(res)
+    assert.matches("Duplicate key: to", err)
+  end)
+
+  it("still accepts a healthy inline table", function()
+    local res, err = toml.parse('t = { to = "a", user = "u" }')
+    assert.is_nil(err)
+    assert.equals("a", res.t.to)
+    assert.equals("u", res.t.user)
+  end)
+end)

@@ -50,6 +50,15 @@ end
 --- must not demote the envelope to "affected"/Query OK. Callers layer their
 --- own tiebreaks on top (exec_run also treats query-shaped SQL as a
 --- resultset for results that carry none of the three).
+---
+--- The `affected_rows == nil` disjunct serves legacy/hand-built results, not
+--- the live envelope: the binary writes `"affected_rows": null` for every
+--- read, which decodes to the truthy vim.NIL and never equals nil here.
+--- Treating null as "no count" instead would fire this disjunct for a bare
+--- `SET` (also null-affected, no columns) and render it as an empty grid
+--- instead of Query OK — the columns/rows disjuncts stay the deciding pair.
+--- The residual gap (a 0-row SELECT whose describe-recovery produced
+--- `columns: []`) is the exec_run SQL-shape tiebreak's to catch.
 --- @param result table|nil one entry of a response's `results`
 --- @return boolean
 function M.carries_resultset(result)

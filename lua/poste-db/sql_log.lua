@@ -21,6 +21,7 @@
 
 local const = require("poste-db.constants")
 local log = require("poste-db.log")
+local util = require("poste-db.util")
 -- Dependency-free, so this cannot cycle even though every transport requires
 -- this module.
 local verdict = require("poste-db.verdict")
@@ -31,6 +32,11 @@ local SQL_LOG_PATH = nil
 local _log_write_count = 0
 
 local MAX_ERROR_LEN = 500
+-- `entry.sql` carries the whole request — run-file mode hands over the entire
+-- file's text (executor.lua stamps `sql` on the base). Uncapped, a 5 MB file
+-- was one 5 MB JSONL line, re-read whole by the viewer. 2000 bytes keeps the
+-- statement's shape; the viewer shows a snippet anyway.
+local MAX_SQL_LEN = 2000
 
 
 --- Where the journal lives. The one place that knows: the writer
@@ -86,8 +92,14 @@ end
 --- `const.LOG_MAX_ENTRIES` lines.
 function M.record(entry)
   entry = entry or {}
-  if entry.error_msg and type(entry.error_msg) == "string" then
-    entry.error_msg = entry.error_msg:sub(1, MAX_ERROR_LEN)
+  -- Both cuts go through util.utf8_safe_cut: a plain byte cut slices a
+  -- multibyte character in half and the journal line ends in invalid UTF-8
+  -- (the viewer then renders a broken glyph at every truncated entry).
+  if type(entry.error_msg) == "string" then
+    entry.error_msg = util.utf8_safe_cut(entry.error_msg, MAX_ERROR_LEN)
+  end
+  if type(entry.sql) == "string" then
+    entry.sql = util.utf8_safe_cut(entry.sql, MAX_SQL_LEN)
   end
   if type(entry.connection) == "string" then
     entry.connection = log.redact_url(entry.connection)

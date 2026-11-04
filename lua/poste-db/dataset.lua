@@ -311,9 +311,12 @@ end
 --- page count without the buffer ever changing.
 --- @return integer num_pages
 function M.apply_page_bounds(tab, total_rows)
-  -- `or 1`: alloc_tab always sets page_size, but a hand-built tab (tests,
-  -- a future caller) must degrade to single-page math, not crash the render
-  local pages = math.max(1, math.ceil((total_rows or 0) / (tab.page_size or 1)))
+  -- `or 1` covers a missing page_size, but a hand-built tab can also carry
+  -- `page_size = 0`: dividing by it is `inf` (or `-nan` at 0 rows), which
+  -- flowed into num_pages/page and poisoned every later page computation —
+  -- a zero page size is one page, not infinitely many (format.lua's rule).
+  local size = (tonumber(tab.page_size) or 0) > 0 and tab.page_size or 1
+  local pages = math.max(1, math.ceil((total_rows or 0) / size))
   tab.num_pages = pages
   tab.page = math.min(math.max(tab.page or 1, 1), pages)
   return pages

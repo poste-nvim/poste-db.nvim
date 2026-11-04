@@ -198,16 +198,16 @@ end
 ---------------------------------------------------------------------------
 
 local function has_sql_content(stmt_lines, start, stop)
+  -- Judged on the blanked slice, not the raw text: a span that is only a
+  -- `/* … */` block comment (or only a quoted literal) has no code to
+  -- execute, while its raw text is full of content characters. Blank_regions
+  -- keeps newlines, so the blanked join stays line-aligned with the input.
+  local slice = {}
   for i = start, stop do
-    local l = stmt_lines[i]
-    if l then
-      local trimmed = l:match("^%s*(.*)$")
-      if trimmed ~= "" and not trimmed:match("^%-%-") then
-        return true
-      end
-    end
+    slice[#slice + 1] = stmt_lines[i] or ""
   end
-  return false
+  local blanked = lex.blank_regions(table.concat(slice, "\n"))
+  return blanked:match("%S") ~= nil
 end
 
 --- Extract a single SQL statement at the cursor position.
@@ -475,7 +475,15 @@ function M.find_stmt_lines(buf_lines, start_line, end_line, dialect)
     -- then pointed one statement off, and the result->statement mapping read
     -- ";" as the SQL: no table name, so the whole result set lost its DML
     -- editing. A `;` line still CLOSES the statement above it (below).
-    local has_content = trimmed:gsub(";", ""):match("%S") ~= nil
+    --
+    -- Content is likewise judged on the blanked line: a line that is only a
+    -- `/* … */` block comment (or a bare quoted literal) is full of content
+    -- characters in the original text and used to open a phantom statement
+    -- that swallowed the real one below it, shifting every later result's
+    -- statement mapping. Strings are blanked here too — blank_regions runs
+    -- without keep_quoted_idents for exactly this scan.
+    local code = (blanked[i - start_line + 1] or ""):gsub(";", " ")
+    local has_content = code:match("%S") ~= nil
     if current_stmt == nil and has_content then current_stmt = i end
 
     if (blanked[i - start_line + 1] or ""):match(";") then

@@ -248,7 +248,15 @@ local function parse_container(v)
       if val == nil then
         return nil, "Invalid inline table entry (missing value)"
       end
-      out[tostring(key)] = val
+      -- Same duplicate-key rule the top-level sections apply: last-wins in an
+      -- inline table is exactly the half-commented-credential silence the
+      -- top-level check exists to stop (`tunnel = { to = "a", to = "b" }`
+      -- quietly connected through "b").
+      local skey = tostring(key)
+      if out[skey] ~= nil then
+        return nil, "Duplicate key: " .. skey
+      end
+      out[skey] = val
     end
   end
   return out

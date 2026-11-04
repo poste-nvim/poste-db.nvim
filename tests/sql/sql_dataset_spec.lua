@@ -146,3 +146,22 @@ describe("dataset hostile inputs", function()
     assert.equals(1, tab.page, "page clamps into the recomputed range")
   end)
 end)
+
+describe("dataset apply_page_bounds with a zero page_size", function()
+  it("gives a hand-built page_size = 0 tab finite page math", function()
+    -- regression: `or 1` only covers a MISSING page_size; a 0 divided the
+    -- row count into `inf` (or `-nan` at 0 rows), which flowed into
+    -- num_pages/page and poisoned every later page computation. Size 0
+    -- degrades to size 1: 50 rows fill 50 finite pages, not infinity.
+    local tab = { page_size = 0, page = 1 }
+    local pages = D.apply_page_bounds(tab, 50)
+    assert.equals(50, pages)
+    assert.equals(50, tab.num_pages)
+    assert.equals(1, tab.page)
+
+    local zero_rows = { page_size = 0, page = 1 }
+    D.apply_page_bounds(zero_rows, 0)
+    assert.equals(1, zero_rows.num_pages)
+    assert.equals(1, zero_rows.page)
+  end)
+end)

@@ -537,3 +537,39 @@ describe("format_dataset affected responses", function()
     assert.truthy(table.concat(lines, "\n"):find("1 row(s) affected", 1, true))
   end)
 end)
+
+describe("format_dataset on explicitly-null envelope fields", function()
+  local fmt = require("poste-db.format")
+
+  it("a column whose type is JSON null renders instead of raising", function()
+    -- regression: vim.NIL is truthy, so `if raw then` passed the guard and
+    -- `raw:lower()` raised inside normalize_type — format_dataset is called
+    -- unpcall'd from five seams, so the whole response was dropped. The
+    -- producer is real: ClickHouse builds `"type": m["type"]` straight off
+    -- the describe row, and a row missing the key carries explicit null
+    -- (poste.nvim crates/poste-exec/src/sql_executor/clickhouse.rs).
+    local body = vim.json.encode({
+      type = "resultset",
+      results = { { columns = { { name = "a", type = vim.NIL } },
+        rows = { { vim.NIL } }, row_count = 1 } },
+      total_rows = 1, connection = "c", dialect = "sqlite",
+    })
+    local ok, lines = pcall(fmt.format_dataset, { body = body })
+    assert.is_true(ok)
+    assert.truthy(table.concat(lines, "\n"):find("a", 1, true))
+  end)
+
+  it("null results / columns / rows render as no-results, not `#userdata`", function()
+    -- `data.results or {}` does not catch a decoded null (truthy userdata),
+    -- and `#results` raised on it. Same armor the connection/database/dialect
+    -- fields already wear in plan_resultset_layout.
+    local ok = pcall(fmt.format_dataset, { body = vim.json.encode({
+      type = "resultset", results = vim.NIL, total_rows = 0 }) })
+    assert.is_true(ok)
+
+    local ok2, lines2 = pcall(fmt.format_dataset, { body = vim.json.encode({
+      type = "resultset", results = { { columns = vim.NIL, rows = vim.NIL } } }) })
+    assert.is_true(ok2)
+    assert.truthy(table.concat(lines2, "\n"):find("no results", 1, true))
+  end)
+end)

@@ -376,6 +376,15 @@ describe("statement extract_stmt_at_cursor (Lua ;-heuristic fallback)", function
     local _, _, stmt_start = statement._test.extract_stmt_at_cursor(lines, 3, nil)
     assert.equals(2, stmt_start)
   end)
+
+  it("a span that is only a block comment yields nothing to execute", function()
+    -- regression: has_sql_content read the raw text, where the comment is
+    -- full of content characters — the comment-only span went to the binary
+    -- as a "statement" (a confusing syntax error) instead of reporting that
+    -- there is nothing to execute.
+    local content = statement._test.extract_stmt_at_cursor({ "/* nothing here */" }, 1, nil)
+    assert.is_nil(content)
+  end)
 end)
 
 describe("statement extract_stmt_at_cursor — a cursor on a blank line between statements", function()

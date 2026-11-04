@@ -233,7 +233,12 @@ M.cell_to_string = cell_to_string
 --- @param raw string Raw type name from DB (e.g. "INT4", "VARCHAR", "BOOL")
 --- @return string Normalized type name (e.g. "integer", "varchar", "boolean")
 local function normalize_type(raw)
-  if not raw then return "" end
+  -- `vim.NIL` is truthy: a column whose `"type"` decoded from an explicit
+  -- JSON null (ClickHouse builds `"type": m["type"]` straight off the
+  -- describe row, so a row missing the key carries null) used to pass this
+  -- guard and raise on `raw:lower()` — format_dataset is called unpcall'd
+  -- from five seams, so the raise dropped the whole response.
+  if not raw or raw == vim.NIL then return "" end
   local t = types.unwrap_modifier(raw:lower())
   local map = {
     -- PostgreSQL / generic integer
@@ -636,11 +641,18 @@ end
 --- @param data table Parsed JSON with results, columns, rows
 --- @return table|nil Layout object (nil if no results/columns)
 function M.plan_resultset_layout(data)
-  local results = data.results or {}
+  -- Explicit nulls decode to the truthy vim.NIL, so `or {}` does not catch
+  -- them and `#results` raises on a userdata — same armor the conn/db/dialect
+  -- fields below wear. The production binary sends `[]` or omits the key, but
+  -- the envelope has already been seen carrying explicit nulls.
+  local results = data.results
+  if results == nil or results == vim.NIL then results = {} end
   if #results == 0 then return nil end
   local res = results[1]
-  local columns = res.columns or {}
-  local rows = res.rows or {}
+  local columns = res.columns
+  if columns == nil or columns == vim.NIL then columns = {} end
+  local rows = res.rows
+  if rows == nil or rows == vim.NIL then rows = {} end
 
   if #columns == 0 then return nil end
 
