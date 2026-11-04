@@ -591,3 +591,30 @@ would have to bump (they won't).
 pattern precision, #29 vim.env is a live view). When adding an entry, keep
 the format: what happened (with file:line) → the rule (an executable check
 to run).*
+
+## 30. Unbuffered jobstart chunks are complete lines, not byte fragments
+
+**What happened**: two stdout parsers (`file_exec.lua`'s progress-dialog
+reassembly, `session_conn.lua`'s `table.concat(chunks, "")`) assumed
+`stdout_buffered = false` delivers raw byte fragments — and that the newlines
+traveled inside them. Neither holds. A probe (`printf 'a\nb\nc\n'` in one
+write) shows nvim splits each read at newline boundaries and consumes the
+newline: the callback gets `{"a", "b", "c", ""}` — complete lines plus an
+end-of-batch marker. `file_exec` glued the elements of a multi-event read
+into one undecodable blob (every event in it dropped; a coalesced summary
+then reported a successful run as "no summary event"); `session_conn`'s ""
+join produced a buffer with NO newline in it at all, so its newline scan
+never fired and one coalesced read muted the session for life.
+
+**Rule**: before writing a line reassembler for `on_stdout`, probe the
+contract with a job that emits several lines in one write. Unbuffered
+elements are complete lines except the last ("" = nothing pending, non-empty
+= the tail still being written); buffered elements are all complete lines.
+Rejoin unbuffered chunks with `"\n"` or consume them per-element — never
+with `""`.
+
+---
+
+*Latest: 2026-11-04 round-7 audit session (#30 jobstart unbuffered chunks
+are complete lines). When adding an entry, keep the format: what happened
+(with file:line) → the rule (an executable check to run).*
