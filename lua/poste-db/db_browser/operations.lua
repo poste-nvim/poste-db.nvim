@@ -487,8 +487,13 @@ function M.new_table(node, context)
       table.insert(lines, "-- @connection " .. conn)
       cursor_offset = cursor_offset + 1
     end
-    if database then
-      table.insert(lines, "-- @database " .. database)
+    -- util.named, not the raw value: a decoded JSON null is the truthy
+    -- vim.NIL (a `..` raise here) and "" writes a valueless directive that
+    -- looks targeted but is dropped by every reader — the same rule
+    -- build_directive_lines applies.
+    local named_db = core_util.named(database)
+    if named_db then
+      table.insert(lines, "-- @database " .. named_db)
       cursor_offset = cursor_offset + 1
     end
 
@@ -589,8 +594,11 @@ function M.new_column(node, context)
       table.insert(lines, "-- @connection " .. conn)
       cursor_offset = cursor_offset + 1
     end
-    if table_node.meta and table_node.meta.database then
-      table.insert(lines, "-- @database " .. table_node.meta.database)
+    -- Same util.named armor as new_table's directive above: the raw
+    -- meta.database can be a decoded null (truthy vim.NIL) or "".
+    local named_db = table_node.meta and core_util.named(table_node.meta.database)
+    if named_db then
+      table.insert(lines, "-- @database " .. named_db)
       cursor_offset = cursor_offset + 1
     end
 

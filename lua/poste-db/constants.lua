@@ -290,11 +290,21 @@ function M.is_directive_comment(line)
     and M.strip_leading_bom(line):match(M.DIRECTIVE_PREFIX_PATTERN) ~= nil
 end
 
+-- Compiled per directive name: the caller set is two or three fixed words
+-- (connection, database), and this match runs per header line on the
+-- context-resolution path — building the pattern (vim.pesc + concat) on
+-- every call was the dominant per-line cost there.
+local directive_patterns = {}
+
 function M.match_directive(line, directive_name)
   if type(line) ~= "string" or not directive_name or directive_name == "" then
     return nil
   end
-  local pattern = "^%s*%-%-%s*@" .. vim.pesc(directive_name) .. "%s+(.+)"
+  local pattern = directive_patterns[directive_name]
+  if not pattern then
+    pattern = "^%s*%-%-%s*@" .. vim.pesc(directive_name) .. "%s+(.+)"
+    directive_patterns[directive_name] = pattern
+  end
   return M.strip_leading_bom(line):match(pattern)
 end
 

@@ -165,3 +165,64 @@ describe("import preview rendering", function()
     end)
   end)
 end)
+
+describe("import preview answering", function()
+  before_each(function() captured = {} end)
+
+  -- The layout stub above never closes; these tests need the real dialog
+  -- contract: close() fires on_close (what q/<Esc>/WinLeave all funnel into).
+  local function load_real_contract()
+    package.loaded["poste-db.import.preview"] = nil
+    package.loaded["poste-db.dialog"] = {
+      open = function(opts)
+        captured.dialog_opts = opts
+        local d = {}
+        function d:update() end
+        function d:close()
+          captured.closed = true
+          if opts.on_close then opts.on_close() end
+        end
+        return d
+      end,
+    }
+    return require("poste-db.import.preview")
+  end
+
+  local function show(preview, callback)
+    preview.show_preview(
+      { schema = "public", name = "users", connection = "c1", dialect = "postgres" },
+      4, 3, {}, mapped_columns(), {}, {}, { "id", "label", "mail" },
+      { { "1", "a", "x" } }, callback)
+  end
+
+  it("closing without a choice (q/Esc/WinLeave) answers nil", function()
+    -- regression: dialog.open's own q/<Esc> keymaps and the WinLeave fallback
+    -- close through on_close, which the preview never passed — Esc ended the
+    -- whole import with no callback and no "Import cancelled" notice.
+    local preview = load_real_contract()
+    local n, first = 0, "unset"
+    show(preview, function(a)
+      n = n + 1
+      first = a
+    end)
+    captured.dialog_opts.on_close()
+    vim.wait(50, function() return n > 0 end)
+    assert.equals(1, n)
+    assert.is_nil(first)
+  end)
+
+  it("a keymap answer wins over the close-time nil", function()
+    -- The keymaps close first, so on_close fires before their own answer: the
+    -- scheduled nil must lose to the synchronous choice, not overwrite it.
+    local preview = load_real_contract()
+    local n, first = 0, nil
+    show(preview, function(a)
+      n = n + 1
+      first = a
+    end)
+    captured.dialog_opts.keymaps.p()
+    vim.wait(50, function() return n > 0 end)
+    assert.equals(1, n)
+    assert.equals("proceed", first)
+  end)
+end)

@@ -42,10 +42,15 @@ function M.make_connection_node(conn_info)
 end
 
 function M.make_database_node(item, conn_name, dialect)
+  -- The name is null_or'd like every other listing field: a null name decodes
+  -- to the truthy vim.NIL, and flatten_tree's `" " .. node.name` (and the
+  -- full_name concatenations below, at construction time) would raise — the
+  -- whole browser refuses to draw. Same fallback the col_type branch uses.
+  local name = M.null_or(item.name, "?")
   return {
     node_type = "database",
-    name = item.name,
-    full_name = conn_name .. "/" .. item.name,
+    name = name,
+    full_name = conn_name .. "/" .. name,
     children = nil,
     expanded = false,
     loading = false,
@@ -54,10 +59,11 @@ function M.make_database_node(item, conn_name, dialect)
 end
 
 function M.make_schema_node(item, conn_name, database)
+  local name = M.null_or(item.name, "?")
   return {
     node_type = "schema",
-    name = item.name,
-    full_name = conn_name .. "/" .. database .. "/" .. item.name,
+    name = name,
+    full_name = conn_name .. "/" .. database .. "/" .. name,
     children = nil,
     expanded = false,
     loading = false,
@@ -66,10 +72,11 @@ function M.make_schema_node(item, conn_name, database)
 end
 
 function M.make_table_node(item, schema, database, conn_name)
+  local name = M.null_or(item.name, "?")
   return {
     node_type = "table",
-    name = item.name,
-    full_name = (schema and schema .. "." or "") .. item.name,
+    name = name,
+    full_name = (schema and schema .. "." or "") .. name,
     children = nil,
     expanded = false,
     loading = false,
@@ -114,18 +121,6 @@ function M.make_column_node(item)
       is_pk = is_pk,
       icon = icon,
     },
-  }
-end
-
-function M.make_index_node(item)
-  return {
-    node_type = "index",
-    name = item.name,
-    full_name = item.name,
-    children = {},
-    expanded = false,
-    loading = false,
-    meta = { definition = item.definition or "" },
   }
 end
 

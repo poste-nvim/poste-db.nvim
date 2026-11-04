@@ -161,15 +161,27 @@ function M.show_preview(table_info, total_rows, valid_count, bad_rows,
   -- upvalue. Declaring `d` only after this table would leave the closures
   -- reading the (nil) global of the same name and crashing on keypress.
   local d
+  -- One answer per dialog. dialog.open's own q/<Esc> keymaps and the WinLeave
+  -- fallback close through on_close, which must deliver the same callback(nil)
+  -- the explicit abort key does: Esc used to end the whole import silently,
+  -- with no "Import cancelled" notice. on_close's answer is scheduled, so a
+  -- keymap's synchronous answer (close() fires on_close first) wins the race
+  -- and the flag makes the late nil a no-op.
+  local answered = false
+  local function answer(value)
+    if answered then return end
+    answered = true
+    callback(value)
+  end
   local keymaps = {
-    a = function() d:close(); callback(nil) end,
-    A = function() d:close(); callback(nil) end,
-    p = function() d:close(); callback("proceed") end,
-    P = function() d:close(); callback("proceed") end,
+    a = function() d:close(); answer(nil) end,
+    A = function() d:close(); answer(nil) end,
+    p = function() d:close(); answer("proceed") end,
+    P = function() d:close(); answer("proceed") end,
   }
   if #bad_rows > 0 then
-    keymaps.s = function() d:close(); callback("skip") end
-    keymaps.S = function() d:close(); callback("skip") end
+    keymaps.s = function() d:close(); answer("skip") end
+    keymaps.S = function() d:close(); answer("skip") end
   end
 
   d = dialog.open({
@@ -177,6 +189,9 @@ function M.show_preview(table_info, total_rows, valid_count, bad_rows,
     width = width,
     height = height,
     keymaps = keymaps,
+    on_close = function()
+      vim.schedule(function() answer(nil) end)
+    end,
   })
 
   local highlights = {}

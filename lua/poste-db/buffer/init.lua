@@ -666,8 +666,9 @@ function M.render_dataset(lines, meta, opts)
 
   local buf = M.get_dataset_buffer()
 
-  if tab.is_sorting then  -- luacheck: ignore 542
-  else
+  -- A sort re-render keeps its sort/original_rows; any other render starts
+  -- from an unsorted view.
+  if not tab.is_sorting then
     tab.sort = nil
     tab.original_rows = nil
   end

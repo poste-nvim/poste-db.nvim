@@ -40,6 +40,12 @@ local truncate_display = width.truncate_ellipsis
 --- request executed (HH:MM:SS.mmm) and is right-aligned to the window's right
 --- edge (SIDEBAR_WIDTH); the label is truncated so it never overlaps.
 --- Entries are shown newest-first (reverse execution order).
+--- Time-column start column per rendered line, filled by build_lines and
+--- consumed by the highlight pass in refresh: format_wallclock +
+--- display_width ran twice per entry otherwise (the same double-compute the
+--- log_viewer sidebar shed).
+local time_starts = {}
+
 local function build_lines()
   local lines = {}
   local n = #D.history
@@ -50,8 +56,10 @@ local function build_lines()
     local marker = entry.error and "✗" or (i == D.active_history and "▸" or " ")
     local time = D.format_wallclock(entry.ts_sec, entry.ts_nsec)
     local left = string.format("%s[%d] %s", marker, i, label)
-    local gap = math.max(1, SIDEBAR_WIDTH - display_width(left) - display_width(time))
+    local time_dw = display_width(time)
+    local gap = math.max(1, SIDEBAR_WIDTH - display_width(left) - time_dw)
     lines[#lines + 1] = left .. string.rep(" ", gap) .. time
+    time_starts[offset + 1] = SIDEBAR_WIDTH - time_dw
   end
   if #lines == 0 then
     lines[1] = "  (no history)"
@@ -86,9 +94,7 @@ function M.refresh()
     if entry.error then
       vim.api.nvim_buf_add_highlight(buf, hl_ns, "DiagnosticError", offset, 0, 1)
     end
-    local time = D.format_wallclock(entry.ts_sec, entry.ts_nsec)
-    local start = SIDEBAR_WIDTH - display_width(time)
-    vim.api.nvim_buf_add_highlight(buf, hl_ns, "Comment", offset, start, -1)
+    vim.api.nvim_buf_add_highlight(buf, hl_ns, "Comment", offset, time_starts[offset + 1] or 0, -1)
   end
 end
 

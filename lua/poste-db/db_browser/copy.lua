@@ -74,6 +74,9 @@ local function introspect_ddl(conn_name, db_name, table_name, on_result, on_erro
   end
 
   local stderr_buf = {}
+  -- Set by on_stdout when any bytes arrived, so a clean exit with zero output
+  -- (the never-answers case handled in on_exit below) is distinguishable.
+  local saw_output = false
   -- jobstart raises E475 when the binary vanished between cli.binary() and
   -- this call; unwrapped, the raise escaped the context-menu action instead
   -- of answering through the same on_error a dead job reports
@@ -84,6 +87,7 @@ local function introspect_ddl(conn_name, db_name, table_name, on_result, on_erro
       if not data then return end
       data = util.ensure_job_data(data)
       if #data == 0 then return end
+      saw_output = true
       local output = table.concat(data, "\n")
       vim.schedule(function()
         if on_result then on_result(output) end
@@ -101,6 +105,13 @@ local function introspect_ddl(conn_name, db_name, table_name, on_result, on_erro
           local msg = table.concat(stderr_buf, "\n")
           if msg == "" then msg = "DDL introspection failed with code " .. code end
           on_error(msg)
+        end)
+      elseif code == 0 and not saw_output and on_error then
+        -- A clean exit with zero bytes used to answer nobody: the paste stayed
+        -- at "copying" forever with nothing left to wait for. Report it the
+        -- way every other failure of this fetch reports.
+        vim.schedule(function()
+          on_error("No DDL output from introspection")
         end)
       end
     end,

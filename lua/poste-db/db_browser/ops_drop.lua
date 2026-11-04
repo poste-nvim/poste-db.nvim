@@ -264,6 +264,12 @@ local function start_batch_drop(items, conn_label, search_dir, context)
     height = math.min(math.max(14, 8 + total), 24),
     border = "rounded",
     backdrop = true,
+    -- The dialog IS the run's stop button: `q` (buffer-local on this dialog)
+    -- sets `cancelled`. The default close-on-WinLeave used to tear the dialog
+    -- down on a stray focus change, killing the keymap with its wiped buffer —
+    -- the remaining DROPs kept executing with no visible progress and no way
+    -- to stop them. Keep the dialog up until the run ends or `q` cancels it.
+    close_on_leave = false,
   })
   render_progress()
 
@@ -335,6 +341,10 @@ local function start_batch_drop(items, conn_label, search_dir, context)
       if progress_dlg and progress_dlg.win and vim.api.nvim_win_is_valid(progress_dlg.win) then
         progress_dlg:close()
       end
+      -- The batch already dropped some tables before `q`: refresh their
+      -- parents anyway, or the tree keeps showing tables that are gone (the
+      -- success path below is the only other caller).
+      refresh_all_parents()
       return
     end
     if idx > total then

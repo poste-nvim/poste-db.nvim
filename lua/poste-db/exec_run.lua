@@ -369,7 +369,10 @@ local function parse_lines(output)
 end
 
 --- Build the legacy-shaped response for a lone USE statement.
-local function make_use_response(use_db)
+--- `conn_url` is echoed by the async path (the caller's resolved connection);
+--- the sync path passes nothing and keeps "".
+local function make_use_response(use_db, conn_url)
+  conn_url = conn_url or ""
   return {
     status = "ok",
     latency_ms = 0,
@@ -377,10 +380,10 @@ local function make_use_response(use_db)
       type = "use",
       database_name = use_db,
       is_use_statement = true,
-      connection = "",
+      connection = conn_url,
       dialect = "",
     }),
-    connection = "",
+    connection = conn_url,
     database = use_db,
     dialect = "",
   }
@@ -484,20 +487,9 @@ local function run_async(sql, opts, callbacks)
   -- locally no matter what the caller pinned.
   local use_db = detect_use(sql)
   if use_db then
-    local resp = {
-      status = "ok",
-      latency_ms = 0,
-      body = vim.json.encode({
-        type = "use",
-        database_name = use_db,
-        is_use_statement = true,
-        connection = opts.conn_url or "",
-        dialect = "",
-      }),
-      connection = opts.conn_url or "",
-      database = use_db,
-      dialect = "",
-    }
+    -- Same shape run_sql answers a lone USE with; only the echoed connection
+    -- differs (the async caller's resolved URL).
+    local resp = make_use_response(use_db, opts.conn_url)
     if on_response then on_response(resp) end
     return 1
   end

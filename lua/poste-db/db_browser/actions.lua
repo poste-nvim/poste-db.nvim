@@ -67,6 +67,10 @@ local get_search_dir = util.get_search_dir
 
 local execute_table_select  -- forward declaration
 
+-- Bumped by every <CR>-opened table select (see execute_table_select); a
+-- superseded request's late response is dropped instead of winning the screen.
+local select_run_seq = 0
+
 function M.toggle_node(buf_line, context)
   local node = tree.get_node_at_line(context.line_to_node, buf_line)
   if not node then return end
@@ -209,6 +213,12 @@ execute_table_select = function(node, context)
   end
 
   local exec_run = require("poste-db.exec_run")
+  -- One token per <CR>: two rapid opens on different tables race their
+  -- exec_run responses, and whichever lands LAST won the screen — the
+  -- earlier table's data could overwrite the one the user asked for second.
+  -- A late response from a superseded request is dropped.
+  select_run_seq = select_run_seq + 1
+  local my_seq = select_run_seq
   local job_id = exec_run.run_async(sql, {
     src_file = search_dir .. "/browser_select.sql",
     conn_url = url,
@@ -218,6 +228,7 @@ execute_table_select = function(node, context)
     log_extra = { connection = conn },
   }, {
     on_response = function(parsed)
+      if my_seq ~= select_run_seq then return end
       local sql_format = require("poste-db.format")
       local sql_buffer = require("poste-db.buffer")
       local lines, meta, layout = sql_format.format_dataset(parsed)
@@ -229,7 +240,11 @@ execute_table_select = function(node, context)
       if layout then
         layout._conn_name = conn
         if not layout._database then
-          layout._database = node.meta and node.meta.database
+          -- util.named, not the raw value: a node whose meta.database decoded
+          -- from JSON null carries the truthy vim.NIL, which the dataset edit
+          -- path later concatenates into a cache key — a raise on every cell
+          -- edit. Same armor show_table_info already applies to this field.
+          layout._database = core_util.named(node.meta and node.meta.database)
         end
       end
       -- Pass the fresh resultset explicitly: render_dataset otherwise falls
@@ -329,6 +344,10 @@ local function do_jump(index)
 
   expand_ancestors(match.ancestors, search_dir, function()
     vim.schedule(function()
+      -- The buffer the search started from can be gone by the time the async
+      -- expand lands (a manual `:bd poste://db_browser`); every API call
+      -- below would raise on it.
+      if not vim.api.nvim_buf_is_valid(ctx.browser_buf) then return end
       -- Update header with match info
       _G.poste_search_info = { pattern = s.pattern, current = s.current, total = #s.matches }
       util.render_tree(ctx)

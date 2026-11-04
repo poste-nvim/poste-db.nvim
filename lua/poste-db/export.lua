@@ -417,7 +417,9 @@ local function export_to_file(data_result, info, format_value, path)
   local abs_path = vim.fn.fnamemodify(path, ":p")
   vim.fn.setreg("+", abs_path)
   vim.fn.setreg('"', abs_path)
-  local row_count = data_result.row_count or #(data_result.rows or {})
+  -- tonumber, not `or`: a decoded null row_count is the truthy vim.NIL and
+  -- string.format("%d", ...) would raise — after the file was already written.
+  local row_count = tonumber(data_result.row_count) or #(data_result.rows or {})
   vim.notify(string.format("Exported %d rows to %s (path in clipboard)", row_count, abs_path), vim.log.levels.INFO, { title = const.PLUGIN_TITLE })
 end
 
@@ -430,7 +432,9 @@ local function export_to_clipboard(data_result, info, format_value)
   end
   vim.fn.setreg("+", text)
   vim.fn.setreg('"', text)
-  local row_count = data_result.row_count or #(data_result.rows or {})
+  -- tonumber, not `or`: a decoded null row_count is the truthy vim.NIL and
+  -- string.format("%d", ...) would raise — after the file was already written.
+  local row_count = tonumber(data_result.row_count) or #(data_result.rows or {})
   local fmt_label = ""
   for _, f in ipairs(FORMATS) do
     if f.value == format_value then

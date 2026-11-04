@@ -12,6 +12,10 @@ local M = {}
 -- first. In-memory only — deliberately NOT persisted across sessions.
 M.search_history = {}
 local MAX_SEARCH_HISTORY = 50
+-- Upper bound on search extmarks drawn in one pass (whole-cell + char-level
+-- pairs, so ~2 extmarks each). Only the non-paginated view can exceed it;
+-- see apply_search_highlights.
+local SEARCH_HL_MAX = 1000
 
 --- Record a submitted query (dedup, most-recent-first, capped).
 local function record_search(text)
@@ -169,7 +173,24 @@ function M.apply_search_highlights()
     matches = tab.search_matches
   end
 
-  for mi, match in ipairs(matches) do
+  -- A non-paginated dataset puts every row in one buffer, so this loop used to
+  -- run over ALL matches: a common string on a 10k-row result meant tens of
+  -- thousands of get_lines calls and extmark pairs — a multi-second freeze on
+  -- every render and every n/N jump. Window the marks around the current match
+  -- (the one n/N lands on is always drawn); the winbar still advertises the
+  -- real total from search_total_matches, and n/N still walks every match.
+  local hl_from, hl_to = 1, #matches
+  if not paginated and #matches > SEARCH_HL_MAX then
+    hl_from = math.max(1, (tab.search_idx or 1) - SEARCH_HL_MAX / 2)
+    hl_to = hl_from + SEARCH_HL_MAX - 1
+    if hl_to > #matches then
+      hl_to = #matches
+      hl_from = math.max(1, hl_to - SEARCH_HL_MAX + 1)
+    end
+  end
+
+  for mi = hl_from, hl_to do
+    local match = matches[mi]
     local vis_row = match.row
     if paginated then vis_row = vis_row - (page - 1) * tab.page_size end
     local buf_line = data_start + vis_row - 1
@@ -257,6 +278,10 @@ function M.show_search()
   vim.api.nvim_set_option_value("modifiable", true, { buf = buf })
   vim.api.nvim_set_option_value("swapfile", false, { buf = buf })
   vim.api.nvim_set_option_value("complete", "", { buf = buf })
+  -- Leak backstop: closing the window any other way (Ctrl-W c) never runs the
+  -- cleanup below; the prompt buffer then outlives its box. Wipe takes the
+  -- buffer with its window.
+  vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
 
   vim.fn.prompt_setprompt(buf, "> ")
   vim.api.nvim_set_option_value("winhl", "Normal:NormalFloat,FloatBorder:FloatBorder", { win = win })
@@ -293,6 +318,11 @@ function M.show_search()
   local km = { buffer = buf, noremap = true, silent = true }
   vim.keymap.set("i", "<Esc>", cleanup, km)
   vim.keymap.set("i", "<C-c>", cleanup, km)
+  -- The first <Esc> lands in normal mode, where nothing used to answer: the
+  -- box had no exit from there (only window commands worked). q doubles as
+  -- the normal-mode close, matching the plugin's other floats.
+  vim.keymap.set("n", "<Esc>", cleanup, km)
+  vim.keymap.set("n", "q", cleanup, km)
 
   -- <Up>/<Down> walk the search keyword history. idx 0 = box holds free text;
   -- the box's text at the moment you first press <Up> is remembered so a

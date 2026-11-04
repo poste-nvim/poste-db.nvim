@@ -205,6 +205,10 @@ function M.show_paste_progress(source, target, jobs, on_close)
     height = height,
     border = "rounded",
     backdrop = true,
+    -- Same rule as ops_drop's progress dialog: a stray focus change must not
+    -- tear down the only visible record of a cross-server write still in
+    -- flight. `[c]` cancels remaining, `[q]` closes on purpose.
+    close_on_leave = false,
     keymaps = {
       c = function() cancel_copy() end,
     },

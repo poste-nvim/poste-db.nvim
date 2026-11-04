@@ -854,6 +854,13 @@ function M.open()
     if #root_nodes > 0 then
       sql_state.db_browser.connection = root_nodes[1].name
     end
+    -- A search that survived a non-M.close teardown (Ctrl-W c, :close) still
+    -- holds the PREVIOUS tree's context: its matches point at nodes the fresh
+    -- tree does not contain, and `n` would render that stale tree back into
+    -- the reused buffer. Wipe the search state (and any highlights left on
+    -- the buffer) on every open; a clean state returns early, so the common
+    -- path pays one cheap guard.
+    actions.search_clear(make_context())
     render_tree()
     -- Focus cursor on first connection
     for i, node in ipairs(line_to_node) do
