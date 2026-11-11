@@ -723,20 +723,73 @@ end
 --- @param page_size number Rows per page
 --- @return string[] lines
 --- @return DatasetMeta meta
+local render_rows -- forward declaration (defined below; see AGENTS.md "local
+-- function forward declaration")
 function M.render_page(layout, page, page_size)
+  local total_rows = layout.total_rows or #layout.rows
+  -- `or 1`: a zero page size is not "infinitely many pages" — it is a call
+  -- that has no rows to page through, and the ceil would answer nan/inf.
+  local total_pages = page_size > 0 and math.ceil(#layout.rows / page_size) or 1
+  page = math.min(page, total_pages)
+  if page < 1 then page = 1 end
+  local start_idx = (page - 1) * page_size + 1
+  local end_idx = math.min(start_idx + page_size - 1, #layout.rows)
+
+  -- One row provider per page row: (pos) -> src_idx, row_num. render_page
+  -- reads layout.rows directly (src_idx == pos, row number == src_idx).
+  return render_rows(layout, start_idx, end_idx, function(pos)
+    return pos, pos
+  end, total_rows)
+end
+
+--- Render an arbitrary row view (filtered/sorted) from a Layout.
+--- `view_indices` are 1-based indices into `layout.rows`.
+--- @param layout table Layout from plan_resultset_layout()
+--- @param view_indices number[] 1-based indices into layout.rows
+--- @param page number 1-based page number over view_indices
+--- @param page_size number Rows per page
+--- @param opts? table Options: { row_number_mode = "source"|"view" }
+--- @return string[] lines
+--- @return DatasetMeta meta
+function M.render_view(layout, view_indices, page, page_size, opts)
+  opts = opts or {}
+  local row_number_mode = opts.row_number_mode or "source"
+  local total_view_rows = #view_indices
+  -- `or 1`: see render_page — a filter that matched nothing renders with a
+  -- zero page size, and ceil(0/0) is nan.
+  local total_pages = page_size > 0 and math.ceil(total_view_rows / page_size) or 1
+  page = math.min(page, total_pages)
+  if page < 1 then page = 1 end
+  local start_pos = (page - 1) * page_size + 1
+  local end_pos = math.min(start_pos + page_size - 1, total_view_rows)
+
+  return render_rows(layout, start_pos, end_pos, function(pos)
+    local src_idx = view_indices[pos]
+    local row_num = (row_number_mode == "view") and pos or src_idx
+    return src_idx, row_num
+  end, total_view_rows)
+end
+
+--- Shared table renderer behind render_page / render_view: draws the bordered
+--- header + data rows + "(empty)" handling + bottom border, delegating each
+--- page row's (source index, row number) to `row_provider(pos)` so the two
+--- callers differ only in how they map a page position to a source row.
+--- `row_provider` must be nil-safe: it is only called for pos in
+--- [start, finish], but a source index with no row behind it renders empty
+--- cells (see row_cells).
+--- @param layout table Layout from plan_resultset_layout()
+--- @param start number 1-based first page position
+--- @param finish number 1-based last page position
+--- @param row_provider fun(pos: number): number, number -> src_idx, row_num
+--- @param total_rows number value for meta.total_rows
+--- @return string[] lines
+--- @return DatasetMeta meta
+render_rows = function(layout, start, finish, row_provider, total_rows)
   local col_widths = layout.col_widths
   local columns = layout.columns
   local numeric_cols = layout.numeric_cols
   local rows = layout.rows
-  local total_rows = layout.total_rows or #rows
-  -- `or 1`: a zero page size is not "infinitely many pages" — it is a call
-  -- that has no rows to page through, and the ceil would answer nan/inf.
-  local total_pages = page_size > 0 and math.ceil(#rows / page_size) or 1
-  page = math.min(page, total_pages)
-  if page < 1 then page = 1 end
-  local start_idx = (page - 1) * page_size + 1
-  local end_idx = math.min(start_idx + page_size - 1, #rows)
-  local page_rows = end_idx - start_idx + 1
+  local page_rows = finish - start + 1
 
   local lines = {}
   local line_num = 0
@@ -758,16 +811,22 @@ function M.render_page(layout, page, page_size)
 
   local row_col_starts = {}
   local row_sources = {}
+  local row_numbers = {}
   local data_start = line_num + 1
-  for row_idx = start_idx, end_idx do
+  for pos = start, finish do
     line_num = line_num + 1
-    row_sources[#row_sources + 1] = row_idx
-    local line, starts = data_row(row_cells(rows, row_idx, columns, row_idx),
+    local src_idx, row_num = row_provider(pos)
+    row_sources[#row_sources + 1] = src_idx
+    row_numbers[#row_numbers + 1] = row_num
+    local line, starts = data_row(row_cells(rows, src_idx, columns, row_num),
       col_widths, numeric_cols)
     lines[line_num] = line
     row_col_starts[#row_col_starts + 1] = starts
   end
   if page_rows == 0 then
+    -- A filter or search that matched nothing used to render a bare table
+    -- with two borders and no rows — the same view render_page already
+    -- labelled.
     line_num = line_num + 1
     local empty_cells = { "" }
     for i = 1, #columns do
@@ -794,105 +853,6 @@ function M.render_page(layout, page, page_size)
     row_count = page_rows,
     col_count = #columns,
     total_rows = total_rows,
-    total_execution_time_ms = layout.execution_time_ms,
-    connection = layout.connection,
-    database = layout.database,
-    dialect = layout.dialect,
-    table_name = layout.table_name,
-    col_starts = row_col_starts,
-    row_sources = row_sources,
-  }
-
-  return lines, meta
-end
-
---- Render an arbitrary row view (filtered/sorted) from a Layout.
---- `view_indices` are 1-based indices into `layout.rows`.
---- @param layout table Layout from plan_resultset_layout()
---- @param view_indices number[] 1-based indices into layout.rows
---- @param page number 1-based page number over view_indices
---- @param page_size number Rows per page
---- @param opts? table Options: { row_number_mode = "source"|"view" }
---- @return string[] lines
---- @return DatasetMeta meta
-function M.render_view(layout, view_indices, page, page_size, opts)
-  opts = opts or {}
-  local row_number_mode = opts.row_number_mode or "source"
-  local col_widths = layout.col_widths
-  local columns = layout.columns
-  local numeric_cols = layout.numeric_cols
-  local rows = layout.rows
-  local total_view_rows = #view_indices
-  -- `or 1`: see render_page — a filter that matched nothing renders with a
-  -- zero page size, and ceil(0/0) is nan.
-  local total_pages = page_size > 0 and math.ceil(total_view_rows / page_size) or 1
-  page = math.min(page, total_pages)
-  if page < 1 then page = 1 end
-  local start_pos = (page - 1) * page_size + 1
-  local end_pos = math.min(start_pos + page_size - 1, total_view_rows)
-  local page_rows = end_pos - start_pos + 1
-
-  local lines = {}
-  local line_num = 0
-
-  line_num = line_num + 1
-  lines[line_num] = border_line(col_widths, "┌", "┬", "┐", "─")
-
-  line_num = line_num + 1
-  local header_cells = { "#" }
-  for i, col in ipairs(columns) do
-    header_cells[i + 1] = col.name
-  end
-  local header_line_str = data_row(header_cells, col_widths, {})
-  lines[line_num] = header_line_str
-  local header_line = line_num
-
-  line_num = line_num + 1
-  lines[line_num] = border_line(col_widths, "├", "┼", "┤", "─")
-
-  local row_col_starts = {}
-  local row_sources = {}
-  local row_numbers = {}
-  local data_start = line_num + 1
-  for view_pos = start_pos, end_pos do
-    line_num = line_num + 1
-    local src_idx = view_indices[view_pos]
-    local row_num = (row_number_mode == "view") and view_pos or src_idx
-    row_sources[#row_sources + 1] = src_idx
-    row_numbers[#row_numbers + 1] = row_num
-    local line, starts = data_row(row_cells(rows, src_idx, columns, row_num),
-      col_widths, numeric_cols)
-    lines[line_num] = line
-    row_col_starts[#row_col_starts + 1] = starts
-  end
-  if page_rows == 0 then
-    -- A filter or search that matched nothing used to render a bare table with
-    -- two borders and no rows — the same view render_page already labelled.
-    line_num = line_num + 1
-    local empty_cells = { "" }
-    for i = 1, #columns do
-      empty_cells[i + 1] = ""
-    end
-    lines[line_num] = data_row(empty_cells, col_widths, {})
-    row_col_starts[#row_col_starts + 1] = {}
-    line_num = line_num + 1
-    lines[line_num] = "  (empty)"
-  end
-  local data_end = line_num
-  line_num = line_num + 1
-  lines[line_num] = border_line(col_widths, "└", "┴", "┘", "─")
-
-  local meta = {
-    type = "resultset",
-    columns = columns,
-    col_widths = col_widths,
-    numeric_cols = numeric_cols,
-    header_line = header_line,
-    data_start_line = data_start,
-    data_end_line = data_end,
-    row_count = page_rows,
-    col_count = #columns,
-    total_rows = total_view_rows,
     total_execution_time_ms = layout.execution_time_ms,
     connection = layout.connection,
     database = layout.database,

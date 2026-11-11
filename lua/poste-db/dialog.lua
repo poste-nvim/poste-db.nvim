@@ -12,7 +12,10 @@ local function setup_hl()
   vim.api.nvim_set_hl(0, "PosteCoreProgressBar", { fg = 0x5c6370 })
 end
 setup_hl()
-vim.api.nvim_create_autocmd("ColorScheme", { callback = setup_hl })
+-- Grouped + clear so a module reload cannot stack duplicate handlers (same
+-- fix as layout.lua's ColorScheme registration; LEARNINGS #20 class).
+local hl_group = vim.api.nvim_create_augroup("PosteDbDialogHL", { clear = true })
+vim.api.nvim_create_autocmd("ColorScheme", { group = hl_group, callback = setup_hl })
 
 local function ensure_backdrop()
   backdrop_refcount = backdrop_refcount + 1

@@ -5,6 +5,7 @@
 --- former shared `poste.state` surface (config singleton, binary
 --- resolution, highlight overrides, log) — merged from
 --- poste.nvim@5b3759e lua/poste/state.lua.
+local const = require("poste-db.constants")
 local M = {}
 
 M.context = {
@@ -175,7 +176,7 @@ function M.log(level, msg)
   local uv = vim.uv or vim.loop
   if uv and vim.fn.filereadable(M.config.log_file) == 0 then
     pcall(function()
-      local fd = uv.fs_open(M.config.log_file, "a", 384) -- 0o600
+      local fd = uv.fs_open(M.config.log_file, "a", const.FILE_MODE_0600) -- 0600
       if fd then uv.fs_close(fd) end
     end)
   end

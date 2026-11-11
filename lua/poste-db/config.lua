@@ -1,6 +1,7 @@
 --- SQL plugin configuration — owns all `sql_*` defaults, keymaps, and
---- SQL-only options. Generic shared infra (binary, env, split, log) stays in
---- `poste.state`; anything SQL-specific belongs here.
+--- SQL-only options. Generic shared infra (binary, env, split, log) lives in
+--- `poste-db.state` (vendored from poste.nvim@5b3759e since the family
+--- dissolution); anything SQL-specific belongs here.
 
 local M = {}
 

@@ -15,7 +15,11 @@ local state = require("poste-db.state")
 local M = {}
 
 local registrations = {}
-local autocmd_id = nil
+-- Grouped + clear so a module reload cannot stack duplicate ColorScheme
+-- handlers: the old module-local `autocmd_id` guard reset to nil on re-require,
+-- so each reload registered one more callback that re-ran M.apply against a
+-- stale `registrations` table (LEARNINGS #20 class).
+local hl_group = vim.api.nvim_create_augroup("PosteDbDbBrowserHL", { clear = true })
 
 --- (Re-)apply every registered group and collect the applied names for
 --- user overrides.
@@ -42,8 +46,8 @@ end
 --- every ColorScheme change.
 function M.register(groups)
   registrations[#registrations + 1] = groups
-  if not autocmd_id then
-    autocmd_id = vim.api.nvim_create_autocmd("ColorScheme", { callback = M.apply })
+  if not vim.api.nvim_get_autocmds({ group = "PosteDbDbBrowserHL", event = "ColorScheme" })[1] then
+    vim.api.nvim_create_autocmd("ColorScheme", { group = hl_group, callback = M.apply })
   end
   M.apply()
 end

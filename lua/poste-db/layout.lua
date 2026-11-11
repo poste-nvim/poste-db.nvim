@@ -18,7 +18,12 @@ local function setup_hl()
   })
 end
 setup_hl()
-vim.api.nvim_create_autocmd("ColorScheme", { callback = setup_hl })
+-- Grouped + clear so a module reload cannot stack duplicate handlers: a bare
+-- `nvim_create_autocmd` here registered one more callback per re-require (the
+-- spec harness resets package.loaded), and every :colorscheme then re-ran the
+-- highlight setup once per stale registration (LEARNINGS #20 class).
+local hl_group = vim.api.nvim_create_augroup("PosteDbLayoutHL", { clear = true })
+vim.api.nvim_create_autocmd("ColorScheme", { group = hl_group, callback = setup_hl })
 
 --- Word-wrap text at spaces, falling back to a hard break. Widths are
 --- DISPLAY widths (CJK chars count 2 columns) and every cut lands on a
@@ -247,6 +252,11 @@ function M.progress(current, total, opts)
   opts = opts or {}
   local bar_width = opts.bar_width or 20
   local pct = total > 0 and (current / total) or 0
+  -- Clamp to [0, 1]: a caller that reports more processed than total (a
+  -- summary event whose succeeded+failed exceeds the progress event's total,
+  -- or a hand-built tab) used to draw more █ cells than the bar's width and a
+  -- "150%" label — the fill overflowed and the empty-pad math went negative.
+  if pct < 0 then pct = 0 elseif pct > 1 then pct = 1 end
   local filled = math.floor(pct * bar_width)
   local frac = math.floor((pct * bar_width - filled) * 8)
 

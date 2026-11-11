@@ -544,14 +544,14 @@ function M.list_connections(callback)
     vim.schedule(function() callback({}) end)
     return
   end
-    local list = {}
-    local vars = M.get_env_vars(search_dir)
-    for name, conn in pairs(parsed) do
-      -- Same convention as name_for_url: only [section] tables are connections.
-      if type(conn) ~= "table" then goto continue end
-      conn = apply_env(conn, vars)
-      conn.dialect = const.normalize_dialect(conn.dialect)
-      -- Skip dialects poste-db does not support (satellite sections from a
+  local list = {}
+  local vars = M.get_env_vars(search_dir)
+  for name, conn in pairs(parsed) do
+    -- Same convention as name_for_url: only [section] tables are connections.
+    if type(conn) ~= "table" then goto continue end
+    conn = apply_env(conn, vars)
+    conn.dialect = const.normalize_dialect(conn.dialect)
+    -- Skip dialects poste-db does not support (satellite sections from a
     -- shared connections.toml, e.g. redis)
     if not const.is_sql_dialect(conn.dialect) then goto continue end
     -- `tunnel` rides along so the picker's 🔒 mark and run_test's

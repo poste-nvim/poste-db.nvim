@@ -89,6 +89,16 @@ describe("layout helpers", function()
     assert.truthy(parts[1]:find("5/10 50%%"))
   end)
 
+  it("progress clamps a current greater than total to 100%%", function()
+    -- current > total used to draw more fill cells than the bar width and a
+    -- "150%" label; the bar must cap at full and never report over 100%.
+    local parts = layout.progress(15, 10, { bar_width = 20 })
+    assert.truthy(parts[1]:find("15/10 100%%"), parts[1])
+    local bar = parts[1]:match("^(.-) 15/10")
+    assert.truthy(bar, "bar segment missing")
+    assert.equals(20, vim.fn.strdisplaywidth(bar))
+  end)
+
   it("keymaps strips the trailing separator but keeps an empty line whole", function()
     local with_entries = layout.keymaps({ mapping = { { key = "q", label = "quit" } } })
     assert.equals("    [q quit]", with_entries.lines[1])

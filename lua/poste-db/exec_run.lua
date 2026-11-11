@@ -16,6 +16,7 @@ local sql_log = require("poste-db.sql_log")
 local util = require("poste-db.util")
 local verdict = require("poste-db.verdict")
 local lex = require("poste-db.lex")
+local const = require("poste-db.constants")
 
 --- Ceiling for the synchronous `run_sql` path (`vim.system`'s own timeout;
 --- the process is killed with 124, GNU-timeout style). The failure message
@@ -72,7 +73,7 @@ local function write_temp_file(sql)
   -- default (0644 on a typical box), leaving statement text world-readable on
   -- shared hosts. writefile truncates an existing file and keeps its mode.
   local uv = vim.uv or vim.loop
-  local ok_open, fd = pcall(uv.fs_open, tmp, "w", tonumber("600", 8))
+  local ok_open, fd = pcall(uv.fs_open, tmp, "w", const.FILE_MODE_0600)
   if ok_open and fd then uv.fs_close(fd) end
   vim.fn.writefile(lines, tmp)
   return tmp

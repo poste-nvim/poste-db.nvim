@@ -7,7 +7,11 @@ local M = {}
 
 --- True when poste-ai.nvim is on the runtimepath.
 function M.available()
-  return (pcall(require, "poste-ai")) and true or false
+  -- Explicit return instead of `pcall(...) and true or false`: the `and/or`
+  -- idiom is not a ternary in Lua (see AGENTS.md), and the explicit form
+  -- makes the boolean intent unambiguous.
+  if pcall(require, "poste-ai") then return true end
+  return false
 end
 
 --- Register (or refresh) the "db" context. Returns false when poste-ai is

@@ -280,6 +280,11 @@ function M.blank_regions(sql, keep_quoted_idents)
   return table.concat(out)
 end
 
+--- First line (1-based) of the `###`-delimited block that contains
+--- `cursor_line`. `###` lines act as section markers in SQL buffers: the
+--- block "starts" on the first line AFTER the nearest preceding marker, and
+--- the whole buffer (line 1) is one block when no marker appears above. Used
+--- to scope statement handling to the user's current section.
 function M.find_block_for_line(lines, cursor_line)
   local block_start = 1
   for i = cursor_line - 1, 1, -1 do

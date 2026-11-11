@@ -110,6 +110,11 @@ local function format_latency(latency_ms)
 end
 
 --- Build assertion summary text and highlight group.
+--- Expected shape: `{ total = N, failed = F, passed = P }` — a nil/zero
+--- `total` produces no summary at all; any non-zero `failed` reads as a red
+--- "✘ F/N tests" line, otherwise a green "✓ P/N tests" line. `passed` and
+--- `failed` are taken at face value (the caller owns the arithmetic), so a
+--- zero-failure summary relies on `passed` actually being present.
 local function build_assertion_text(assertion_results)
   if not assertion_results or not assertion_results.total or assertion_results.total == 0 then
     return nil
@@ -167,5 +172,14 @@ function M.set_indicator(buf, line_0, status, latency_ms, assertion_results)
     end
   end
 end
+
+-- TEST-ONLY surface: the pure text builders below have no production callers
+-- that pass assertion_results, so they are pinned here instead of by the
+-- request path (which only ever sends latency_ms).
+M._test = {
+  format_latency = format_latency,
+  build_assertion_text = build_assertion_text,
+  build_virt_text = build_virt_text,
+}
 
 return M

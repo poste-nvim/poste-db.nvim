@@ -393,6 +393,11 @@ function M.search_filter(buf_line, context)
     prompt = "Search: ",
     buf_options = { filetype = "" },
   }, function(input)
+    -- The input prompt is asynchronous: the user can close the browser window
+    -- while it is up, and every buffer touch below (render_tree, the two
+    -- clear_namespace calls, do_jump's highlight) would raise "Invalid buffer
+    -- id" and abort the callback. Bail once before any buffer access.
+    if not vim.api.nvim_buf_is_valid(context.browser_buf) then return end
     if not input or input == "" then
       search_state = { matches = {}, current = 0, pattern = "", context = nil }
       _G.poste_search_info = nil
@@ -426,6 +431,11 @@ function M.search_clear(context)
   if not c then return end
   search_state = { matches = {}, current = 0, pattern = "", context = nil }
   _G.poste_search_info = nil
+  -- The browser buffer may already be gone by the time a scheduled callback
+  -- (or a close-then-clear sequence) reaches this: render_tree and the two
+  -- clear_namespace calls would each raise "Invalid buffer id" and take down
+  -- the whole scheduled callback. Guard before touching the buffer.
+  if not vim.api.nvim_buf_is_valid(c.browser_buf) then return end
   util.render_tree(c)
   vim.api.nvim_buf_clear_namespace(c.browser_buf, search_hl_ns, 0, -1)
   vim.api.nvim_buf_clear_namespace(c.browser_buf, search_char_ns, 0, -1)

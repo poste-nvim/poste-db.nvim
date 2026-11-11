@@ -1,5 +1,12 @@
 local M = {}
 
+-- File mode 0600 (owner read/write only), for the two temp/state files that
+-- carry statement text or the SQL payload (exec_run.write_temp_file, state.log):
+-- they must not be world-readable on a shared host. Kept as one named constant
+-- because the same value was written three different ways (tonumber("600", 8)
+-- and the decimal 384 with a `-- 0o600` comment).
+M.FILE_MODE_0600 = 384
+
 -- A UTF-8 BOM (U+FEFF). A file saved by a BOM-writing editor (Windows notepad,
 -- Neovim with 'bomb' off) keeps it glued to the buffer's first line, where it
 -- is invisible but is not `%s` — every anchored `^%s*` matcher below went

@@ -1,10 +1,12 @@
+local const = require("poste-db.constants")
 local M = {}
 
+-- A leading BOM (U+FEFF) sits on the file's first byte; strip it before any
+-- format sniffing so a BOM-writing editor (Windows notepad) does not leave it
+-- glued to the first header cell or the JSON `{`/`[`. Reuses the single
+-- canonical implementation in constants.lua (same byte sequence, one source).
 local function strip_bom(text)
-  if text:sub(1, 3) == "\239\187\191" then
-    return text:sub(4)
-  end
-  return text
+  return const.strip_leading_bom(text)
 end
 
 local function normalize_text(text)
