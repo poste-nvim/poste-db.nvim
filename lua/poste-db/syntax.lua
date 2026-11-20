@@ -215,6 +215,23 @@ local KNOWN_CONSTRUCT_MARKERS = {
   "with totals", "array join", "group (order by",
 }
 
+--- Keep in sync with ts_stmt.is_create_table_like: MySQL/MariaDB
+--- `CREATE [TEMPORARY] TABLE [IF NOT EXISTS] dst LIKE src` parses as one ERROR.
+local function is_create_table_like(text)
+  local body = text:match("^%s*(.-)%s*$")
+  if not body then return false end
+  body = body:gsub(";%s*$", "")
+
+  local rest = body:match("^create%s+(.+)$")
+  if not rest then return false end
+  rest = rest:match("^temporary%s+(.+)$") or rest
+  rest = rest:match("^table%s+(.+)$")
+  if not rest then return false end
+  rest = rest:match("^if%s+not%s+exists%s+(.+)$") or rest
+
+  return rest:match("^([^%s;(),]+)%s+like%s+([^%s;(),]+)$") ~= nil
+end
+
 local CONSTRUCT_KEYWORDS = {
   PRAGMA = true, GLOB = true, SAVEPOINT = true, RELEASE = true,
   NATURAL = true, EXPLAIN = true, QUERY = true, PLAN = true,
@@ -231,7 +248,7 @@ local CONSTRUCT_KEYWORDS = {
   CREATE = true, TABLE = true, SEQUENCE = true, INVISIBLE = true, INT = true,
   PRIMARY = true, KEY = true, AUTO_INCREMENT = true, VARCHAR = true,
   CHAR = true, COLLATE = true, CHARACTER = true,
-  IF = true, EXISTS = true,
+  IF = true, EXISTS = true, LIKE = true,
 }
 
 local function hl_err_tokens(buf, row, from_col, to_col)
@@ -361,6 +378,7 @@ function M.highlight_known_error_constructs(buf, dialect)
       for _, marker in ipairs(KNOWN_CONSTRUCT_MARKERS) do
         if lower:find(marker, 1, true) then known = true break end
       end
+      if not known and is_create_table_like(lower) then known = true end
       -- value-fragment cascades from a misparsed VALUES clause (`1, 'a'),`)
       if not known and lower:match("^%d+%s*,") then known = true end
       -- statement-terminator cascades (e.g. `; USE` after a CREATE DATABASE)

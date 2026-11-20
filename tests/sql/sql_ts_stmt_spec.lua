@@ -497,6 +497,41 @@ describe("find_error_nodes", function()
     assert.same({}, errors, "the comma-count fragment is the same pagination clause")
   end)
 
+  it("suppresses MySQL CREATE TABLE ... LIKE", function()
+    -- MySQL/MariaDB clone a table definition with LIKE. tree-sitter-sql has
+    -- no production for this form and leaves the whole statement as ERROR.
+    local buf = make_buf({ "CREATE TABLE `bak_merchant_account` LIKE `merchant_account`;" })
+    local errors = ts_stmt.find_error_nodes(buf, "mysql")
+    assert.same({}, errors, "CREATE TABLE ... LIKE is valid MySQL")
+  end)
+
+  it("suppresses MariaDB CREATE TABLE ... LIKE", function()
+    local buf = make_buf({ "CREATE TEMPORARY TABLE backup LIKE source;" })
+    local errors = ts_stmt.find_error_nodes(buf, "mariadb")
+    assert.same({}, errors, "CREATE TEMPORARY TABLE ... LIKE is valid MariaDB")
+  end)
+
+  it("suppresses CREATE TABLE ... LIKE when the dialect is unresolved", function()
+    -- Diagnostics can run before the connection context is applied. This is
+    -- an unambiguous MySQL clone shape, so do not surface the grammar error
+    -- just because the buffer's dialect lookup returned nil.
+    local buf = make_buf({ "CREATE TABLE backup LIKE source;" })
+    local errors = ts_stmt.find_error_nodes(buf)
+    assert.same({}, errors, "unknown dialect must not turn a valid MySQL clone into an error")
+  end)
+
+  it("keeps CREATE TABLE ... LIKE flagged for postgres", function()
+    local buf = make_buf({ "CREATE TABLE backup LIKE source;" })
+    local errors = ts_stmt.find_error_nodes(buf, "postgres")
+    assert.is_true(#errors > 0, "postgres requires the parenthesized LIKE form")
+  end)
+
+  it("keeps an incomplete MySQL CREATE TABLE ... LIKE flagged", function()
+    local buf = make_buf({ "CREATE TABLE backup LIKE;" })
+    local errors = ts_stmt.find_error_nodes(buf, "mysql")
+    assert.is_true(#errors > 0, "a missing source table is still an error")
+  end)
+
   it("keeps LIMIT offset,count flagged for postgres", function()
     -- PostgreSQL rejects the comma form; the diagnostic is real there.
     local buf = make_buf({ "SELECT id, name FROM users LIMIT 1, 10;" })
@@ -1002,6 +1037,14 @@ describe("known-error-construct re-highlight (syntax.highlight_known_error_const
     local kinds = construct_marks(buf)
     assert.is_true(vim.tbl_contains(kinds, "Normal"), "the , 10 fragment must not stay @error red")
     assert.is_true(vim.tbl_contains(kinds, "Number"), "the count literal must render as a number")
+  end)
+
+  it("recolors MySQL CREATE TABLE ... LIKE", function()
+    local buf = make_buf({ "CREATE TABLE `backup` LIKE `source`;" })
+    syntax.highlight_known_error_constructs(buf)
+    local kinds = construct_marks(buf)
+    assert.is_true(vim.tbl_contains(kinds, "Normal"), "the valid clone statement must not stay @error red")
+    assert.is_true(vim.tbl_contains(kinds, "Statement"), "CREATE/TABLE/LIKE must be highlighted")
   end)
 
   -- While an UPDATE is being typed the grammar closes no `statement`, so the

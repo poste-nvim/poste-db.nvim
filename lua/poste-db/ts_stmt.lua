@@ -65,6 +65,27 @@ local function is_with_totals_fragment(node, buf)
   return nxt ~= nil and node_text(nxt, buf):lower() == "totals"
 end
 
+--- True for a complete MySQL/MariaDB `CREATE [TEMPORARY] TABLE [IF NOT
+--- EXISTS] <copy> LIKE <source>` statement. The grammar has no production for
+--- this clone form and leaves the whole statement as one ERROR. Anchored so an
+--- incomplete statement or one swallowing the next statement stays reported.
+local function is_create_table_like(text)
+  local body = text:upper():match("^%s*(.-)%s*$")
+  if not body then return false end
+  body = body:gsub(";%s*$", "")
+
+  local rest = body:match("^CREATE%s+(.+)$")
+  if not rest then return false end
+  rest = rest:match("^TEMPORARY%s+(.+)$") or rest
+  rest = rest:match("^TABLE%s+(.+)$")
+  if not rest then return false end
+  rest = rest:match("^IF%s+NOT%s+EXISTS%s+(.+)$") or rest
+
+  -- Conservative identifier tokens: quoted names containing whitespace stay
+  -- flagged rather than risking suppression of a genuinely malformed shape.
+  return rest:match("^([^%s;(),]+)%s+LIKE%s+([^%s;(),]+)$") ~= nil
+end
+
 --- True when `stmt` contains the misparsed ClickHouse
 --- `ALTER TABLE t DELETE WHERE <pred>` shape: DELETE consumed as a
 --- column_definition name inside an alter_table.
@@ -509,6 +530,15 @@ function M.find_error_nodes(buf, dialect)
     -- does not recognize (the grammar only knows `CREATE [TEMPORARY] TABLE`).
     if (dialect == "mysql" or dialect == "mariadb")
       and upper:match("^CREATE%s+OR%s+REPLACE") then
+      goto continue
+    end
+
+    -- MySQL/MariaDB clone a table definition with CREATE TABLE ... LIKE; the
+    -- grammar only knows the parenthesized column-definition form. Unknown
+    -- dialect is safe here because the anchored bare-LIKE shape is the MySQL
+    -- form; an explicit non-MySQL dialect still reports it.
+    if (dialect == nil or dialect == "mysql" or dialect == "mariadb")
+      and is_create_table_like(text) then
       goto continue
     end
 
