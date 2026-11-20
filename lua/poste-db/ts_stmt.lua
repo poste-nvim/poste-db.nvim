@@ -86,6 +86,26 @@ local function is_create_table_like(text)
   return rest:match("^([^%s;(),]+)%s+LIKE%s+([^%s;(),]+)$") ~= nil
 end
 
+--- True for a complete MySQL/MariaDB `CHECKSUM TABLE <table>[, <table>...]`.
+--- tree-sitter-sql has no production for this maintenance statement and leaves
+--- the whole thing as one ERROR. Validate every comma-separated reference so an
+--- incomplete list or a statement swallowing the next one stays reported.
+local function is_checksum_table(text)
+  local body = text:upper():match("^%s*(.-)%s*$")
+  if not body then return false end
+  body = body:gsub(";%s*$", "")
+  local refs = body:match("^CHECKSUM%s+TABLE%s+(.+)$")
+  if not refs or refs:match(",%s*$") or refs:match(",%s*,") then return false end
+
+  local seen = false
+  for ref in refs:gmatch("([^,]+)") do
+    ref = ref:match("^%s*(.-)%s*$")
+    if not ref or not ref:match("^[^%s,;()]+$") then return false end
+    seen = true
+  end
+  return seen
+end
+
 --- True when `stmt` contains the misparsed ClickHouse
 --- `ALTER TABLE t DELETE WHERE <pred>` shape: DELETE consumed as a
 --- column_definition name inside an alter_table.
@@ -506,6 +526,13 @@ function M.find_error_nodes(buf, dialect)
     -- forms (SHOW CREATE ...) are recognized.
     if (dialect == "mysql" or dialect == "mariadb")
       and upper:match("^SHOW[%s;]") then
+      goto continue
+    end
+
+    -- CHECKSUM TABLE is a MySQL/MariaDB maintenance statement with its own
+    -- result set; tree-sitter-sql leaves the whole table list as one ERROR.
+    if (dialect == nil or dialect == "mysql" or dialect == "mariadb")
+      and is_checksum_table(text) then
       goto continue
     end
 

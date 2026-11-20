@@ -532,6 +532,42 @@ describe("find_error_nodes", function()
     assert.is_true(#errors > 0, "a missing source table is still an error")
   end)
 
+  it("suppresses multiline MySQL CHECKSUM TABLE", function()
+    local buf = make_buf({
+      "CHECKSUM TABLE `merchant_account`, `bak_dr3_20261120_merchant_account`,",
+      "               `recharge_order`, `bak_dr3_20261120_recharge_order`,",
+      "               `token_lot`, `bak_dr3_20261120_token_lot`,",
+      "               `frozen_token_record`, `bak_dr3_20261120_frozen_token_record`,",
+      "               `frozen_token_lot`, `bak_dr3_20261120_frozen_token_lot`;",
+    })
+    local errors = ts_stmt.find_error_nodes(buf, "mysql")
+    assert.same({}, errors, "CHECKSUM TABLE with a table list is valid MySQL")
+  end)
+
+  it("suppresses MariaDB CHECKSUM TABLE", function()
+    local buf = make_buf({ "CHECKSUM TABLE source, backup;" })
+    local errors = ts_stmt.find_error_nodes(buf, "mariadb")
+    assert.same({}, errors, "CHECKSUM TABLE is valid MariaDB")
+  end)
+
+  it("suppresses CHECKSUM TABLE when the dialect is unresolved", function()
+    local buf = make_buf({ "CHECKSUM TABLE source, backup;" })
+    local errors = ts_stmt.find_error_nodes(buf)
+    assert.same({}, errors, "unknown dialect must not turn a valid MySQL checksum into an error")
+  end)
+
+  it("keeps CHECKSUM TABLE flagged for postgres", function()
+    local buf = make_buf({ "CHECKSUM TABLE source;" })
+    local errors = ts_stmt.find_error_nodes(buf, "postgres")
+    assert.is_true(#errors > 0, "CHECKSUM TABLE is MySQL/MariaDB syntax")
+  end)
+
+  it("keeps an incomplete MySQL CHECKSUM TABLE flagged", function()
+    local buf = make_buf({ "CHECKSUM TABLE;" })
+    local errors = ts_stmt.find_error_nodes(buf, "mysql")
+    assert.is_true(#errors > 0, "a missing table list is still an error")
+  end)
+
   it("keeps LIMIT offset,count flagged for postgres", function()
     -- PostgreSQL rejects the comma form; the diagnostic is real there.
     local buf = make_buf({ "SELECT id, name FROM users LIMIT 1, 10;" })
@@ -1045,6 +1081,17 @@ describe("known-error-construct re-highlight (syntax.highlight_known_error_const
     local kinds = construct_marks(buf)
     assert.is_true(vim.tbl_contains(kinds, "Normal"), "the valid clone statement must not stay @error red")
     assert.is_true(vim.tbl_contains(kinds, "Statement"), "CREATE/TABLE/LIKE must be highlighted")
+  end)
+
+  it("recolors multiline MySQL CHECKSUM TABLE", function()
+    local buf = make_buf({
+      "CHECKSUM TABLE `merchant_account`,",
+      "               `bak_dr3_20261120_merchant_account`;",
+    })
+    syntax.highlight_known_error_constructs(buf)
+    local kinds = construct_marks(buf)
+    assert.is_true(vim.tbl_contains(kinds, "Normal"), "the valid checksum statement must not stay @error red")
+    assert.is_true(vim.tbl_contains(kinds, "Statement"), "CHECKSUM/TABLE must be highlighted")
   end)
 
   -- While an UPDATE is being typed the grammar closes no `statement`, so the

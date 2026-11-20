@@ -232,6 +232,23 @@ local function is_create_table_like(text)
   return rest:match("^([^%s;(),]+)%s+like%s+([^%s;(),]+)$") ~= nil
 end
 
+--- Keep in sync with ts_stmt.is_checksum_table.
+local function is_checksum_table(text)
+  local body = text:match("^%s*(.-)%s*$")
+  if not body then return false end
+  body = body:gsub(";%s*$", "")
+  local refs = body:match("^checksum%s+table%s+(.+)$")
+  if not refs or refs:match(",%s*$") or refs:match(",%s*,") then return false end
+
+  local seen = false
+  for ref in refs:gmatch("([^,]+)") do
+    ref = ref:match("^%s*(.-)%s*$")
+    if not ref or not ref:match("^[^%s,;()]+$") then return false end
+    seen = true
+  end
+  return seen
+end
+
 local CONSTRUCT_KEYWORDS = {
   PRAGMA = true, GLOB = true, SAVEPOINT = true, RELEASE = true,
   NATURAL = true, EXPLAIN = true, QUERY = true, PLAN = true,
@@ -248,7 +265,7 @@ local CONSTRUCT_KEYWORDS = {
   CREATE = true, TABLE = true, SEQUENCE = true, INVISIBLE = true, INT = true,
   PRIMARY = true, KEY = true, AUTO_INCREMENT = true, VARCHAR = true,
   CHAR = true, COLLATE = true, CHARACTER = true,
-  IF = true, EXISTS = true, LIKE = true,
+  IF = true, EXISTS = true, LIKE = true, CHECKSUM = true,
 }
 
 local function hl_err_tokens(buf, row, from_col, to_col)
@@ -379,6 +396,7 @@ function M.highlight_known_error_constructs(buf, dialect)
         if lower:find(marker, 1, true) then known = true break end
       end
       if not known and is_create_table_like(lower) then known = true end
+      if not known and is_checksum_table(lower) then known = true end
       -- value-fragment cascades from a misparsed VALUES clause (`1, 'a'),`)
       if not known and lower:match("^%d+%s*,") then known = true end
       -- statement-terminator cascades (e.g. `; USE` after a CREATE DATABASE)
