@@ -170,6 +170,13 @@ function M.show_table_ddl()
       return nil
     end
 
+    -- `CREATE TABLE ... LIKE source` is unsupported by the Rust context
+    -- detector, which reports `source` as a column of the destination table.
+    -- Resolve the source table directly so K opens its DDL.
+    local clone_source = context_resolver.resolve_create_table_like_source(
+      payload.sql_text, payload.offset, cword, db)
+    if clone_source then return clone_source end
+
     -- dialect-aware detection: without this flag the CLI falls back to
     -- generic function filtering, so e.g. MSSQL/MySQL builtins were missing
     -- from completion candidates
