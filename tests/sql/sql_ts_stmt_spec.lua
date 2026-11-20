@@ -298,8 +298,18 @@ describe("find_error_nodes", function()
     assert.same({}, errors, "INTERVAL (expr) is a parser limitation, suppressed for all dialects")
   end)
 
+  it("suppresses numeric INTERVAL inside MySQL date functions when dialect is unresolved", function()
+    -- Diagnostics can run before the connection context is applied. DATE_ADD /
+    -- DATE_SUB and their numeric INTERVAL arguments are unambiguously MySQL.
+    local buf = make_buf({
+      "SELECT DATE_SUB(DATE_ADD(o.`payment_time`, INTERVAL 2 YEAR), INTERVAL 1 DAY) FROM orders o;",
+    })
+    local errors = ts_stmt.find_error_nodes(buf)
+    assert.same({}, errors, "numeric INTERVAL inside DATE_ADD/DATE_SUB is valid MySQL")
+  end)
+
   it("keeps numeric INTERVAL quantity flagged when dialect is unknown", function()
-    local buf = make_buf({ "SELECT DATE_ADD(NOW(), INTERVAL 7 DAY);" })
+    local buf = make_buf({ "SELECT NOW() + INTERVAL 7 DAY;" })
     local errors = ts_stmt.find_error_nodes(buf)
     assert.is_true(#errors > 0, "numeric INTERVAL must remain flagged when dialect is unknown")
   end)

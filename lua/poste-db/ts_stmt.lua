@@ -106,6 +106,33 @@ local function is_checksum_table(text)
   return seen
 end
 
+local MYSQL_INTERVAL_FUNCTIONS = {
+  date_add = true,
+  date_sub = true,
+  adddate = true,
+  subdate = true,
+  timestampadd = true,
+}
+
+--- True when this ERROR sits inside a MySQL-only date function whose numeric
+--- INTERVAL argument tree-sitter-sql does not parse. This stays precise enough
+--- to suppress the grammar artifact even when diagnostics run before the
+--- connection dialect is resolved.
+local function interval_in_mysql_date_function(node, buf)
+  local ancestor = node:parent()
+  while ancestor do
+    if ancestor:type() == "invocation" then
+      local function_node = ancestor:named_child(0)
+      if function_node and function_node:type() == "object_reference" then
+        local name = (node_text(function_node, buf):match("([%w_]+)$") or ""):lower()
+        if MYSQL_INTERVAL_FUNCTIONS[name] then return true end
+      end
+    end
+    ancestor = ancestor:parent()
+  end
+  return false
+end
+
 --- True when `stmt` contains the misparsed ClickHouse
 --- `ALTER TABLE t DELETE WHERE <pred>` shape: DELETE consumed as a
 --- column_definition name inside an alter_table.
@@ -414,6 +441,15 @@ function M.find_error_nodes(buf, dialect)
     -- Keep the error for dialects that require the quoted form (postgres, sqlite).
     if (dialect == "mysql" or dialect == "mariadb")
       and upper:match("^INTERVAL") then
+      goto continue
+    end
+
+    -- Diagnostics can run before the connection dialect is available. A
+    -- numeric INTERVAL inside DATE_ADD/DATE_SUB is unambiguously MySQL; keep
+    -- the conservative unknown-dialect rule for INTERVAL outside those calls.
+    if (dialect == nil or dialect == "generic")
+      and upper:match("^INTERVAL%s+%-?%d")
+      and interval_in_mysql_date_function(node, buf) then
       goto continue
     end
 
