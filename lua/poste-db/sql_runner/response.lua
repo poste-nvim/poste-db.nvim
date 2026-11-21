@@ -16,6 +16,7 @@ local dataset = require("poste-db.dataset")
 local sql_buffer = require("poste-db.buffer")
 local verdict = require("poste-db.verdict")
 local const = require("poste-db.constants")
+local schema_cache = require("poste-db.schema_cache")
 
 local M = {}
 
@@ -33,32 +34,10 @@ function M.stmt_indicator_line(line_nr)
   return line_nr - 1
 end
 
---- True when the first real statement of `sql` is DDL (CREATE/ALTER/DROP/
---- TRUNCATE/RENAME). Leading `-- @connection` directives, `###` section
---- markers, blank lines and comment lines are skipped before inspecting the
---- keyword, because buf_content (and visual blocks) carry that noise.
---- The keyword test is case-insensitive: SQL keywords are not case-sensitive,
---- and the family's own CREATE TABLE template (db_browser/operations.lua)
---- inserts lowercase `create table` — an exact-case match would skip the
---- completion/diagnostics cache invalidation for every statement written
---- from that template.
---- @param sql string|nil
---- @return boolean
-function M.is_ddl(sql)
-  if not sql then return false end
-  for _, ln in ipairs(vim.split(sql, "\n", { plain = true })) do
-    local t = ln:match("^%s*(.*)%s*$") or ""
-    if t ~= "" and not t:match("^%-%-") and not t:match("^###") then
-      local kw = t:lower()
-      return kw:match("^create%s") ~= nil
-        or kw:match("^alter%s") ~= nil
-        or kw:match("^drop%s") ~= nil
-        or kw:match("^truncate%s") ~= nil
-        or kw:match("^rename%s") ~= nil
-    end
-  end
-  return false
-end
+--- DDL classification lives in the dependency-free `poste-db.ddl` module so
+--- the AI-chat execution path can share it without loading this render
+--- pipeline. Kept as `M.is_ddl` because `sql_runner._test` exposes it.
+M.is_ddl = require("poste-db.ddl").is_ddl
 
 --- Handle one executor response: stale-seq guard, DDL cache invalidation,
 --- USE handling, SET-prelude filtering, then multi-tab or single-result
@@ -85,13 +64,17 @@ function M.handle(deps, parsed)
       -- connection's cache and left the DDL'd one stale (the new table never
       -- completed). The line below already uses state.context for exactly
       -- this reason.
-      require("poste-db.completion.data").clear_cache(state.context.connection)
-      -- Semantic diagnostics cache the introspected schema; a DDL may have
-      -- created/renamed/dropped tables, so invalidate and re-check so the
-      -- new tables are no longer reported as "not found".
+      --
+      -- Both caches (completion + semantic diagnostics) go through the shared
+      -- `schema_cache` helper: the AI-chat and browser DDL paths need the same
+      -- pair, and inlining it in three places is how the AI path ended up
+      -- missing it entirely.
+      schema_cache.invalidate(state.context.connection, state.context.database)
+      -- Re-check the open SQL buffer so the new tables are no longer reported
+      -- as "not found" (diagnostics is the only consumer that needs a rerun;
+      -- completion re-reads on the next keystroke).
       local ok_sem, sem = pcall(require, "poste-db.semantic_diagnostics")
       if ok_sem then
-        sem.invalidate(state.context.connection, state.context.database)
         vim.schedule(function()
           if vim.api.nvim_buf_is_valid(deps.src_buf) then
             sem.update(deps.src_buf)

@@ -141,7 +141,17 @@ function M.auto_context(text, scope, cb)
     return
   end
   introspect(conn, "tables", nil, util.named(scope.database), function(items)
-    if not items or #items == 0 then
+    -- `items == nil` / `vim.NIL` (JSON null) means the introspection did NOT
+    -- answer — a transient binary/connection failure. Caching that as an
+    -- empty schema poisoned the whole session: every later request hit the
+    -- empty cache entry and rendered a schema block with zero tables instead
+    -- of retrying. A successful EMPTY listing is a real answer and IS cached
+    -- below.
+    if type(items) ~= "table" then
+      cb(nil)
+      return
+    end
+    if #items == 0 then
       cache[key] = { tables = {}, columns = {} }
       cb(nil)
       return

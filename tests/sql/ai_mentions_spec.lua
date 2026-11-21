@@ -45,6 +45,21 @@ describe("poste-db.ai.mentions", function()
       assert.are.equal("c1/d1", second[1].label)
     end)
 
+    it("filters candidates by the typed prefix", function()
+      connections.list_connections = function(cb)
+        cb({
+          { name = "prod", dialect = "postgres", database = "db" },
+          { name = "staging", dialect = "postgres", database = "db" },
+        })
+      end
+      mentions.invalidate()
+
+      local items
+      mentions.complete("pro", function(list) items = list end)
+      assert.are.equal(1, #items)
+      assert.are.equal("prod/db", items[1].label)
+    end)
+
     it("refetches after invalidate()", function()
       local calls = 0
       connections.list_connections = function(cb)

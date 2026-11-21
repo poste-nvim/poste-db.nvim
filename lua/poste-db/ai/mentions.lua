@@ -41,27 +41,38 @@ end
 
 --- Completion candidates: "connection/defaultdb" for every connection in
 --- connections.toml. Cached after the first async fetch.
---- @param _prefix string
+---
+--- `prefix` is the text typed after `@`, and it filters the candidates here.
+--- It used to be ignored (`_prefix`), so the list offered every connection for
+--- any prefix; the generic poste-ai side does not re-filter either, and
+--- `commands.lua` had to do its own pass for exactly this reason.
+--- @param prefix string|nil
 --- @param cb function(candidates)
-function M.complete(_prefix, cb)
+function M.complete(prefix, cb)
   if cached_list then
-    cb(M._candidates(cached_list))
+    cb(M._candidates(cached_list, prefix))
     return
   end
   connections.list_connections(function(list)
     cached_list = list or {}
-    cb(M._candidates(cached_list))
+    cb(M._candidates(cached_list, prefix))
   end)
 end
 
-function M._candidates(list)
+--- @param list table[] connection records
+--- @param prefix string|nil case-insensitive label prefix
+function M._candidates(list, prefix)
+  local pl = (prefix or ""):lower()
   local out = {}
   for _, conn in ipairs(list) do
     local db = conn.database and conn.database ~= "" and conn.database or "db"
-    out[#out + 1] = {
-      label = conn.name .. "/" .. db,
-      description = (conn.dialect or "") .. (conn.host and (" " .. conn.host) or ""),
-    }
+    local label = conn.name .. "/" .. db
+    if pl == "" or label:lower():sub(1, #pl) == pl then
+      out[#out + 1] = {
+        label = label,
+        description = (conn.dialect or "") .. (conn.host and (" " .. conn.host) or ""),
+      }
+    end
   end
   return out
 end

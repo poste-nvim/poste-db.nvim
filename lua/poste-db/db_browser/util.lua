@@ -131,14 +131,22 @@ function M.refresh_subtree(target_node, context, node_type, search_dir)
   end, search_dir or vim.fn.getcwd())
 end
 
---- Drop the completion schema cache after browser-side DDL. The browser
---- executes outside the SQL runner's response hook, so without this completion
---- keeps offering dropped tables (and misses created ones). `conn_name` is
---- the connection the DDL ran on: the browser window is focused during DDL,
---- so letting clear_cache resolve "the current connection" from the live
---- buffer found nothing (or a different connection) and the cache survived.
+--- Drop the schema caches after browser-side DDL. The browser executes
+--- outside the SQL runner's response hook, so without this completion keeps
+--- offering dropped tables (and misses created ones). `conn_name` is the
+--- connection the DDL ran on: the browser window is focused during DDL, so
+--- letting clear_cache resolve "the current connection" from the live buffer
+--- found nothing (or a different connection) and the cache survived.
+---
+--- Semantic diagnostics caches the same introspected schema, so it is
+--- invalidated in the same call (every database of that connection — the
+--- browser DDL helpers do not always know the database). Before this, a table
+--- dropped from the browser stayed "known" to diagnostics until some later
+--- SQL response happened to invalidate it.
 function M.invalidate_completion_cache(conn_name)
-  pcall(function() require("poste-db.completion.data").clear_cache(conn_name) end)
+  pcall(function()
+    require("poste-db.schema_cache").invalidate(conn_name, nil)
+  end)
 end
 
 --- Execute a DDL statement through exec_run, report the outcome, and refresh

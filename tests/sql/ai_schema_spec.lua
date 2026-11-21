@@ -127,6 +127,36 @@ describe("poste-db.ai.schema", function()
     schema._test.auto_context("anything", { connection = "c", database = "d" }, function(md) got = md end)
     assert.is_nil(got)
   end)
+
+  -- A transient introspect failure (nil items) used to be cached as an empty
+  -- schema: the second request hit that entry and rendered a block with zero
+  -- tables, so the session never retried. A successful empty listing stays
+  -- cached — that is a real answer, covered by the test above.
+  it("retries after a failed introspection instead of caching the failure", function()
+    local first = true
+    async.run_introspect = function(_c, kind, _s, _t, _d, cb)
+      calls[#calls + 1] = { kind = kind }
+      if kind ~= "tables" then cb({ items = {} }) return end
+      if first then
+        first = false
+        cb(nil)
+      else
+        cb({ items = { { name = "users", comment = "user accounts" } } })
+      end
+    end
+
+    local got1 = "unset"
+    schema._test.auto_context("anything", { connection = "c", database = "d" },
+      function(md) got1 = md end)
+    assert.is_nil(got1)
+
+    local got2 = "unset"
+    schema._test.auto_context("anything", { connection = "c", database = "d" },
+      function(md) got2 = md end)
+    assert.truthy(got2 and got2:find("- users (user accounts)", 1, true))
+    local table_calls = vim.tbl_filter(function(c) return c.kind == "tables" end, calls)
+    assert.are.equal(2, #table_calls, "the failed first fetch must not poison the cache")
+  end)
 end)
 
 -- `text_l == pat` compared the text against the *pattern-escaped* name, so an

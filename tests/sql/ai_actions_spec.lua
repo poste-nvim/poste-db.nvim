@@ -312,6 +312,8 @@ describe("poste-db.ai.actions", function()
     local real_executor = package.loaded["poste-db.executor"]
     local real_format = package.loaded["poste-db.format"]
     local real_buffer = package.loaded["poste-db.buffer"]
+    local real_completion = package.loaded["poste-db.completion.data"]
+    local real_sem = package.loaded["poste-db.semantic_diagnostics"]
 
     before_each(function()
       captured = { opts = nil, rendered = nil }
@@ -327,6 +329,58 @@ describe("poste-db.ai.actions", function()
       package.loaded["poste-db.executor"] = real_executor
       package.loaded["poste-db.format"] = real_format
       package.loaded["poste-db.buffer"] = real_buffer
+      package.loaded["poste-db.completion.data"] = real_completion
+      package.loaded["poste-db.semantic_diagnostics"] = real_sem
+    end)
+
+    -- DDL executed from chat never passes through sql_runner/response.handle,
+    -- which owns cache invalidation. Before this fix completion kept offering
+    -- the dropped table and diagnostics kept reporting the created one
+    -- "not found" for the rest of the session.
+    it("invalidates schema caches after a DDL code block", function()
+      local cleared, invalidated = {}, {}
+      package.loaded["poste-db.completion.data"] = {
+        clear_cache = function(conn) cleared[#cleared + 1] = conn end,
+      }
+      package.loaded["poste-db.semantic_diagnostics"] = {
+        invalidate = function(conn, db) invalidated[#invalidated + 1] = { conn, db } end,
+      }
+      package.loaded["poste-db.executor"] = {
+        execute = function(opts)
+          captured.opts = opts
+          opts.on_response({ body = vim.json.encode({ results = {} }) })
+        end,
+      }
+      local err, note
+      actions.execute_sql("CREATE TABLE t (id INT)", {
+        { type = "context", context = "db", data = { connection = "my-blog", database = "blog" } },
+      }, function(e, n) err, note = e, n end)
+      vim.wait(500, function() return note ~= nil or err ~= nil end)
+
+      assert.is_nil(err)
+      assert.same({ "my-blog" }, cleared)
+      assert.same({ { "my-blog", "blog" } }, invalidated)
+    end)
+
+    it("does not invalidate caches for a read-only block", function()
+      local cleared = 0
+      package.loaded["poste-db.completion.data"] = {
+        clear_cache = function() cleared = cleared + 1 end,
+      }
+      package.loaded["poste-db.semantic_diagnostics"] = { invalidate = function() end }
+      package.loaded["poste-db.executor"] = {
+        execute = function(opts)
+          captured.opts = opts
+          opts.on_response({ body = vim.json.encode({ results = {} }) })
+        end,
+      }
+      local err, note
+      actions.execute_sql("SELECT 1", {
+        { type = "context", context = "db", data = { connection = "my-blog", database = "blog" } },
+      }, function(e, n) err, note = e, n end)
+      vim.wait(500, function() return note ~= nil or err ~= nil end)
+      assert.is_nil(err)
+      assert.equals(0, cleared)
     end)
 
     it("executes against the mentioned connection and renders the dataset", function()

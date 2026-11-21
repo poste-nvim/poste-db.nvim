@@ -8,6 +8,8 @@ local M = {}
 local constants = require("poste-db.constants")
 local dml_guard = require("poste-db.dml_guard")
 local util = require("poste-db.util")
+local ddl = require("poste-db.ddl")
+local schema_cache = require("poste-db.schema_cache")
 
 --- Read-only statement keywords (Lua patterns have no alternation, hence the
 --- lookup table).
@@ -247,7 +249,18 @@ function M.execute_sql(sql, refs, cb)
           cb("SQL error: " .. in_band, nil)
           return
         end
-        local ok_r, render_err = pcall(M.render_dataset, parsed, sql)
+        local ok_r, render_err = pcall(function()
+          -- A DDL code block changes the schema exactly like a DDL typed into
+          -- a SQL buffer, but this path never goes through
+          -- `sql_runner/response.handle`, which owns the invalidation. Without
+          -- this, completion kept offering dropped tables, diagnostics kept
+          -- calling the new ones "not found", and the AI's own auto-context
+          -- fed the model the old schema for the rest of the session.
+          if ddl.is_ddl(sql) then
+            schema_cache.invalidate(conn, database)
+          end
+          M.render_dataset(parsed, sql)
+        end)
         if ok_r then
           cb(nil, "✓ executed against " .. conn .. (database and ("/" .. database) or "")
             .. " — results are in the dataset view")
