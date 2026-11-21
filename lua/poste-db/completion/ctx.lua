@@ -11,26 +11,11 @@ local M = {}
 
 --- Fuzzy match: each character of `pattern` must appear in `text` in order
 --- (case-insensitive). Empty pattern matches everything. This lets `ie`
---- match both `ies` (prefix) and `item` (subsequence).
+--- match both `ies` (prefix) and `item` (subsequence). The implementation is
+--- shared with the browser's table search (`util.fuzzy_match`), which also
+--- needs the matched positions.
 function M.fuzzy_match(text, pattern)
-  if pattern == "" then return true end
-  local ti = 1
-  local plower = pattern:lower()
-  local tlower = text:lower()
-  for pi = 1, #plower do
-    local pc = plower:sub(pi, pi)
-    local found = false
-    while ti <= #tlower do
-      if tlower:sub(ti, ti) == pc then
-        ti = ti + 1
-        found = true
-        break
-      end
-      ti = ti + 1
-    end
-    if not found then return false end
-  end
-  return true
+  return require("poste-db.util").fuzzy_match(text, pattern)
 end
 
 function M.make_items(names, kind, doc_prefix)

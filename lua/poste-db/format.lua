@@ -17,7 +17,7 @@ local M = {}
 
 local function split_lines(s)
   local lines = {}
-  for line in (s .. "\n"):gmatch("(.-)\n") do
+  for line in util.each_line(s) do
     lines[#lines + 1] = line
   end
   return lines
@@ -178,6 +178,11 @@ end
 -- Local binding so cell_to_string (defined below) can call it without a global.
 local format_number = M.format_number
 
+--- Weak-keyed table-value -> encoded string memo (see cell_to_string). Keys
+--- are the response's own cell tables, so entries are collected with the
+--- result set they belong to.
+local encoded_tables = setmetatable({}, { __mode = "k" })
+
 --- Convert a cell value to display string.
 --- Newlines are replaced with ⏎ to keep table layout intact.
 --- Timestamps are converted to local timezone.
@@ -205,9 +210,19 @@ local function cell_to_string(val, col)
   end
   local s
   if type(val) == "table" then
-    -- JSON/JSONB values — compact encode
-    local ok, encoded = pcall(vim.json.encode, val)
-    s = ok and encoded or vim.inspect(val)
+    -- JSON/JSONB values — compact encode. The same cell table is converted
+    -- twice (once by the column-width scan, once when its row renders), so a
+    -- weak-keyed memo collapses that to one encode per cell; the entry dies
+    -- with the response row. Measured on a 1000x6 wide-JSONB fixture in
+    -- headless nvim: plan+render 144ms -> 121ms (render 73.5 -> 60.8).
+    local cached = encoded_tables[val]
+    if cached then
+      s = cached
+    else
+      local ok, encoded = pcall(vim.json.encode, val)
+      s = ok and encoded or vim.inspect(val)
+      encoded_tables[val] = s
+    end
   elseif type(val) == "blob" then
     s = "<blob: " .. #val .. " bytes>"
   else
@@ -353,7 +368,14 @@ local function calc_column_widths(columns, rows, max_width, max_col_width)
       for i, val in ipairs(row) do
         if i <= #widths then
           local s = cell_to_string(val, columns[i])
-          local dw = displaywidth(s)
+          -- Only the capped width matters: widths are clamped to
+          -- max_col_width below, and min_data_widths is later used as
+          -- min(min_data_widths, 25). Capped measurement lets long ASCII/JSONB
+          -- cells stop at the ceiling instead of scanning the whole string
+          -- (headless, 1000x6 wide JSONB: plan 66.8ms -> 56.8ms).
+          local dw = max_col_width and max_col_width > 0
+            and wutil.display_width_capped(s, max_col_width)
+            or displaywidth(s)
           widths[i] = math.max(widths[i], dw)
           min_data_widths[i] = math.max(min_data_widths[i], dw)
         end
@@ -957,7 +979,7 @@ local function wrap_text(text, width)
   if not text or #text == 0 then return {} end
   if width < 1 then width = 1 end
   local lines = {}
-  for line in (text .. "\n"):gmatch("(.-)\n") do
+  for line in util.each_line(text) do
     -- 4 bytes per character is the UTF-8 maximum; one extra cell of slack
     -- covers a wide (2-cell) character at the boundary.
     local window_bytes = width * 4 + 4

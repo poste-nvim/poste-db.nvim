@@ -2,10 +2,11 @@
 local M = {}
 local const = require("poste-db.constants")
 local float_window = require("poste-db.float_window")
+local util = require("poste-db.util")
 
 function M.build_preview_lines(text)
   local lines = {}
-  for line in (text .. "\n"):gmatch("(.-)\n") do
+  for line in util.each_line(text) do
     lines[#lines + 1] = line
   end
   return lines

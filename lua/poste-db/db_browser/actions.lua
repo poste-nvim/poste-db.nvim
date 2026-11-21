@@ -35,29 +35,10 @@ local search_state = {
   context = nil,
 }
 
--- Fuzzy match: each pattern char must appear in order in text (case-insensitive).
--- Returns true + 1-indexed positions of matched chars, or false.
-local function fuzzy_match(text, pattern)
-  local ti = 1
-  local positions = {}
-  local plower = pattern:lower()
-  local tlower = text:lower()
-  for pi = 1, #plower do
-    local pc = plower:sub(pi, pi)
-    local found = false
-    while ti <= #tlower do
-      if tlower:sub(ti, ti) == pc then
-        table.insert(positions, ti)
-        ti = ti + 1
-        found = true
-        break
-      end
-      ti = ti + 1
-    end
-    if not found then return false end
-  end
-  return true, positions
-end
+-- Fuzzy subsequence matching lives in `poste-db.util` — the browser needed the
+-- matched positions, completion only a boolean, and the two copies had already
+-- started to drift. `core_util` is the shared module (this file's `util` is
+-- the browser's own helper table).
 
 M.find_table_node = util.find_table_node
 
@@ -373,7 +354,7 @@ end
 
 local function walk_tree(nodes, lower, ancestors, matches)
   for _, node in ipairs(nodes) do
-    local ok, positions = fuzzy_match(node.name, lower)
+    local ok, positions = core_util.fuzzy_match(node.name, lower, true)
     if ok then
       local anc = {}
       for _, a in ipairs(ancestors) do table.insert(anc, a) end

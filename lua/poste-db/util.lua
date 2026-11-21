@@ -209,4 +209,50 @@ function M.decode_dataset_body(resp)
   return body
 end
 
+--- Iterate the lines of `text`. Equivalent to the
+--- `(text .. "\n"):gmatch("(.-)\n")` incantation that had been copied into
+--- eleven call sites (format, buffer render, cell preview, the log viewer): a
+--- trailing newline yields a final empty line, and "" yields one empty line.
+--- Centralized so a future CRLF/empty-line decision is made once.
+--- @param text string|nil
+function M.each_line(text)
+  return ((text or "") .. "\n"):gmatch("(.-)\n")
+end
+
+--- Subsequence match: every character of `pattern` must appear in `text` in
+--- order, case-insensitively. Empty pattern matches. Two callers had their own
+--- copy (completion's fallback filter and the browser's table search); the
+--- browser one also records the matched 1-based byte positions for
+--- highlighting, hence `with_positions`.
+--- @param text string|nil
+--- @param pattern string|nil
+--- @param with_positions boolean|nil
+--- @return boolean ok
+--- @return table|nil positions
+function M.fuzzy_match(text, pattern, with_positions)
+  text = text or ""
+  pattern = pattern or ""
+  local positions = with_positions and {} or nil
+  if pattern == "" then return true, positions end
+
+  local ti = 1
+  local plower = pattern:lower()
+  local tlower = text:lower()
+  for pi = 1, #plower do
+    local pc = plower:sub(pi, pi)
+    local found = false
+    while ti <= #tlower do
+      if tlower:sub(ti, ti) == pc then
+        if positions then positions[#positions + 1] = ti end
+        ti = ti + 1
+        found = true
+        break
+      end
+      ti = ti + 1
+    end
+    if not found then return false end
+  end
+  return true, positions
+end
+
 return M

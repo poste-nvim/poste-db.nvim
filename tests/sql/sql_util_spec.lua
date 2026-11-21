@@ -152,3 +152,43 @@ describe("util.affected_rows", function()
     assert.is_nil(util.affected_rows("nope"))
   end)
 end)
+
+describe("util.each_line", function()
+  it("splits on newlines and keeps a trailing empty line", function()
+    local lines = {}
+    for line in util.each_line("a\nbc\n") do lines[#lines + 1] = line end
+    assert.same({ "a", "bc", "" }, lines)
+  end)
+
+  it("yields one empty line for nil, matching the old concatenation", function()
+    local lines = {}
+    for line in util.each_line(nil) do lines[#lines + 1] = line end
+    assert.same({ "" }, lines)
+  end)
+end)
+
+describe("util.fuzzy_match", function()
+  it("matches prefixes and subsequences, case-insensitively", function()
+    assert.is_true(util.fuzzy_match("truncate", "tr"))
+    assert.is_true(util.fuzzy_match("Insert Into", "ii"))
+    assert.is_false(util.fuzzy_match("select", "tr"))
+  end)
+
+  it("matches everything on an empty pattern", function()
+    assert.is_true(util.fuzzy_match("anything", ""))
+    assert.same({}, select(2, util.fuzzy_match("anything", "", true)))
+  end)
+
+  it("returns 1-based positions for the browser's highlight path", function()
+    local ok, positions = util.fuzzy_match("items", "its", true)
+    assert.is_true(ok)
+    -- i at 1, t at 2, s at 5
+    assert.same({ 1, 2, 5 }, positions)
+  end)
+
+  it("returns false without positions when the pattern does not fit", function()
+    local ok, positions = util.fuzzy_match("abc", "abd", true)
+    assert.is_false(ok)
+    assert.is_nil(positions)
+  end)
+end)

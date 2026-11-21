@@ -1,6 +1,7 @@
 --- Dataset render --- normalize and lay out result rows for display.
 local D = require("poste-db.dataset")
 local sql_highlights = require("poste-db.highlights")
+local util = require("poste-db.util")
 
 local M = {}
 
@@ -8,7 +9,7 @@ local function split_render_lines(lines)
   local clean = {}
   for i, line in ipairs(lines) do
     if type(line) ~= "string" then line = tostring(line or "") end
-    for seg in (line .. "\n"):gmatch("(.-)\n") do
+    for seg in util.each_line(line) do
       clean[#clean + 1] = seg
     end
   end

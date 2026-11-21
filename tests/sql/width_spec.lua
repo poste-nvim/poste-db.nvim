@@ -215,3 +215,26 @@ describe("width.truncate_ellipsis", function()
     assert.equals("", width.truncate_ellipsis(nil, 8))
   end)
 end)
+
+describe("width.display_width_capped", function()
+  it("returns the exact width below the ceiling", function()
+    assert.equals(5, width.display_width_capped("hello", 10))
+  end)
+
+  it("stops long ASCII at the ceiling", function()
+    assert.equals(30, width.display_width_capped(string.rep("x", 200), 30))
+  end)
+
+  it("caps multibyte text at the ceiling without splitting it", function()
+    assert.equals(30, width.display_width_capped(string.rep("中", 20), 30))
+  end)
+
+  it("falls back to the uncapped width when cap is nil or 0", function()
+    assert.equals(200, width.display_width_capped(string.rep("x", 200), nil))
+    assert.equals(200, width.display_width_capped(string.rep("x", 200), 0))
+  end)
+
+  it("measures nil as 0", function()
+    assert.equals(0, width.display_width_capped(nil, 30))
+  end)
+end)

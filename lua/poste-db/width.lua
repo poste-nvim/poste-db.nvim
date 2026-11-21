@@ -172,6 +172,30 @@ function M.display_width(s)
   return w
 end
 
+--- `display_width` with a ceiling: never more than `cap`.
+---
+--- Used by the column-width scan, which only ever needs to know whether a
+--- cell reaches the per-column cap. A long ASCII prefix already proves it, so
+--- the rest of the string (and, for JSONB, the expensive part of the scan)
+--- is skipped. Returning exactly `cap` is correct: every width below the
+--- ceiling is returned unchanged, and above it the caller caps anyway.
+--- @param s string|nil
+--- @param cap number|nil 0/nil = no ceiling
+--- @return number
+function M.display_width_capped(s, cap)
+  if not cap or cap <= 0 then return M.display_width(s) end
+  s = s == nil and "" or (type(s) == "string" and s or tostring(s))
+  if #s >= cap then
+    local ascii_prefix = true
+    for i = 1, cap do
+      if s:byte(i) >= 0x80 then ascii_prefix = false break end
+    end
+    if ascii_prefix then return cap end
+  end
+  local w = M.display_width(s)
+  return w > cap and cap or w
+end
+
 --- Truncate so the active width oracle measures at most max_dw, never
 --- splitting a combining mark that fits.
 --- "terminal": per-codepoint cost — folded Mc = 1, other folded marks (Mn
