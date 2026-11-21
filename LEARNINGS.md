@@ -618,3 +618,41 @@ with `""`.
 *Latest: 2026-11-04 round-7 audit session (#30 jobstart unbuffered chunks
 are complete lines). When adding an entry, keep the format: what happened
 (with file:line) → the rule (an executable check to run).*
+
+## 31. `cond and middle or fallback` also loses a legitimate `false` that is *data*
+
+`editor/nav.lua` tracked a cell's original value with
+`existing and existing.old_val or tab.layout.rows[row][col]`. When the
+original was boolean `false`, a second edit of the same cell fell through to
+`layout.rows` — which already held the *first edit* — so the recorded
+"original" was wrong and `revert_row_edits` wrote back the edited value. The
+specs only ever passed string originals, so nothing caught it. (The audit that
+also flagged `0` and `""` was wrong: in Lua only `nil` and `false` are falsy,
+and `old_val` is never nil.)
+
+**Rule**: the `and/or` shape is broken whenever the middle term can be
+`false` — and that includes user data, not just config defaults or function
+returns. Write the explicit `if`. When a value has several possible sources
+(here: existing edit, layout, freshly typed), give the spec one case per
+source; a string-only matrix hides the boolean case.
+
+## 32. A second entry point into an executor owes every side effect of the first
+
+Chat code blocks executed DDL through their own job path, so they skipped the
+completion/diagnostics cache invalidation that `sql_runner/response.lua` did
+after a DDL statement — dropped tables kept completing and new ones stayed
+"unknown" for the session. A sibling bug: `ai/schema.lua` wrote an introspect
+*failure* into the cache as an empty schema, silencing the model's table list
+for the rest of the session.
+
+**Rule**: before adding a caller to an existing executor, list what that
+executor does *after success* (cache invalidation, diagnostics scheduling,
+telemetry) and route both callers through one helper — `schema_cache.lua` is
+that helper now. And every `cache[k] = v` deserves the question "is `v` a
+result, or a failure dressed as one?"; never cache a failure as empty data.
+
+---
+
+*Latest: 2026-11-21 round-8 audit session (#32 one invalidation choke point for
+every execution path). When adding an entry, keep the format: what happened
+(with file:line) → the rule (an executable check to run).*

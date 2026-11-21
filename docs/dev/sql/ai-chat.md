@@ -19,8 +19,10 @@ poste-ai.nvim (generic)          poste-db.nvim (db context)
 ├─ chat/window.lua               ├─ ai/init.lua        register/bridge
 ├─ chat/render.lua (markdown)    ├─ ai/mentions.lua    @conn/db[/table]
 ├─ provider/openai.lua (SSE)     ├─ ai/system_prompt.lua  feature knowledge
-├─ chat/mention.lua (@engine)    └─ ai/actions.lua     sql block → dataset
-└─ context_api.lua (contract)
+├─ chat/mention.lua (@engine)    ├─ ai/schema.lua      auto-injected schema block
+└─ context_api.lua (contract)    ├─ ai/introspect.lua  shared introspect wrapper
+                                 ├─ ai/commands.lua    /connections, /databases
+                                 └─ ai/actions.lua     sql block → dataset
 ```
 
 - **Optional dependency**: `poste-db/ai/` only ever `pcall(require, "poste-ai")`.
@@ -43,16 +45,19 @@ poste-ai.nvim (generic)          poste-db.nvim (db context)
 
 ```lua
 {
-  system_prompt = fn() → string,               -- static knowledge, per request
+  system_prompt = fn(scope) → string,          -- static knowledge, per request
+  auto_context = fn(text, scope, cb),        -- cb(markdown|nil): schema block
+  commands = { … },                          -- slash commands (/connections, /databases)
   mention = {
     match = fn(token) → ref|nil,               -- claim a @token
-    complete = fn(prefix, cb) → candidates,    -- completion popup
+    complete = fn(prefix, cb) → candidates,    -- completion popup (prefix-filtered)
     resolve = fn(ref, cb) → markdown,          -- schema summary (async ok)
   },
   codeblock = {
     langs = { "sql" },
     confirm = fn(sql) → boolean,               -- read-only passes; DML/DDL asks
     execute = fn(sql, refs, cb),               -- cb(err, note) → chat note line
+    append_header = fn(scope, text) → text,    -- scope/header line for the block
   },
 }
 ```
@@ -64,8 +69,14 @@ poste-ai.nvim (generic)          poste-db.nvim (db context)
 - `actions.confirm_sql`: SELECT/WITH/SHOW/EXPLAIN/... run directly; anything
   else (INSERT/UPDATE/DELETE/DDL) pops a `vim.fn.confirm` gate.
 - Mention refs are the routing source: `@my-blog/blog` binds the block to that
-  connection; otherwise the buffer's current SQL context is used; otherwise the
-  chat gets an explanatory error.
+  connection; otherwise the poste-ai chat scope (`/connections`, `/databases`)
+  is used; otherwise the current SQL buffer context; otherwise the chat gets an
+  explanatory error. An empty string counts as "not bound" at every hop (an
+  empty `--database` would be applied as a URL rewrite).
+- A DDL block executed from chat invalidates the completion and
+  semantic-diagnostics schema caches through the same shared
+  `poste-db.schema_cache` helper as SQL-buffer DDL — otherwise dropped tables
+  kept completing and new tables stayed "not found" for the session.
 
 ## V2 (planned, not implemented)
 
@@ -76,10 +87,12 @@ poste-ai.nvim (generic)          poste-db.nvim (db context)
 ## Testing
 
 - poste-ai: `tests/ai/` in the poste-ai repo (`./tests/run.sh`).
-- poste-db: `tests/sql/ai_actions_spec.lua`, `ai_mentions_spec.lua`,
-  `ai_register_spec.lua` — stub the executor/render modules; no network.
-  The registration test is conditional on poste-ai being on rtp (CI checks it
-  out as a sibling).
+- poste-db: `tests/sql/ai_actions_spec.lua`, `ai_ask_spec.lua`,
+  `ai_commands_spec.lua`, `ai_mentions_spec.lua`, `ai_register_spec.lua`,
+  `ai_schema_spec.lua` — stub the executor/render/introspect modules; no
+  network. The registration test is conditional on poste-ai being on rtp (CI
+  checks it out as a sibling).
 
 ---
-*Last updated: 2026-08-29*
+*Last updated: 2026-11-21 (round-8 audit: auto_context contract, routing
+priority, schema-cache invalidation, module/test lists)*

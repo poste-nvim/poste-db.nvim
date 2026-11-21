@@ -23,7 +23,7 @@ see `.opencode/skills/sql-architecture-harness/SKILL.md` for the house rules
 | `layout.lua` | VENDORED from poste.nvim@5b3759e `lua/poste/layout.lua` — wrapping/padding/progress/keymap-hint layout |
 | `indicators.lua` | VENDORED from poste.nvim@5b3759e `lua/poste/indicators.lua` — sign-column spinner / ✓ / ✘ + eol latency virt-text |
 | `install.lua` | VENDORED from poste.nvim@5b3759e `lua/poste/install.lua`, trimmed (no git-tag version sync) — ensures the family poste binary |
-| `util.lua` | utf8/color helpers, `width.truncate` bridge; + `clean_nil`/`find_file_upwards`/`ensure_job_data` merged from poste.nvim@5b3759e |
+| `util.lua` | utf8/color helpers, `width.truncate` bridge, `each_line` (the one newline splitter), `fuzzy_match` (shared subsequence matcher); + `clean_nil`/`find_file_upwards`/`ensure_job_data` merged from poste.nvim@5b3759e |
 | `health.lua` | `:checkhealth` — nvim version, binary probe + version, connections, parser |
 | `autocmds.lua` | Filetype detection, directive highlighting, buffer cleanup wiring |
 | `commands.lua` | `:PosteDb*` command definitions |
@@ -42,7 +42,7 @@ see `.opencode/skills/sql-architecture-harness/SKILL.md` for the house rules
 | `semantic_diagnostics.lua` | Tree-sitter reference extraction + unknown-object validation (fetches schema via introspect jobs) |
 | `syntax.lua` | Treesitter-based highlight queries / digit-prefix fragments / known error constructs |
 | `ident.lua` | Identifier quoting (`quote`/`quote_qualified`) + value literals per dialect |
-| `width.lua` | Terminal-consistent display width (Indic combining marks that `strdisplaywidth` folds to 0) |
+| `width.lua` | Terminal-consistent display width (Indic combining marks that `strdisplaywidth` folds to 0), plus `display_width_capped` for the column-width ceiling |
 
 ### Execution
 
@@ -56,7 +56,9 @@ see `.opencode/skills/sql-architecture-harness/SKILL.md` for the house rules
 | `session_conn.lua` | Long-lived `poste session` pool (temp tables, `USE`, session vars persist across `<CR>`); keyed by conn_url, shared across buffers |
 | `exec_run.lua` / `file_exec.lua` | One-shot `poste exec-file` runs (editor/file entry) with NDJSON event parsing |
 | `sql_runner.lua` | Resultset request path used by the dataset R-refresh flows |
-| `sql_runner/response.lua` | Response → statement results mapping, DDL classification |
+| `sql_runner/response.lua` | Response → statement results mapping, indicator placement, DDL cache invalidation |
+| `ddl.lua` | Dependency-free DDL classifier (`is_ddl`) shared by the response hook and AI code blocks |
+| `schema_cache.lua` | One invalidation point for the completion + semantic-diagnostics schema caches after DDL (SQL runner, browser DDL, AI chat) |
 | `session.lua` | Request-scoped session lifecycle (fresh Session per run, persistent context) |
 | `sql_log.lua` | Persistent SQL activity journal (`sql_log.jsonl`) — the single writer behind the `<leader>l` viewer |
 | `log.lua` | Log-line redaction (URL passwords/DSN secret keys) shared by the journal, the dataset panel and AI context |
@@ -75,7 +77,7 @@ see `.opencode/skills/sql-architecture-harness/SKILL.md` for the house rules
 | `format.lua` | Value formatting, column widths, table drawing, pagination planning |
 | `highlights/` | Cell highlight extmarks (`render`) + highlight groups (`theme`) |
 | `statement_indicator.lua` | Statement-under-cursor indicator (background rectangle / gutter-number tint, `config.boundary_style`) |
-| `nav/` | Cross-dataset navigation routing (`detect`/`handlers`/`route`) |
+| `nav/` | Goto-definition routing for the statement under the cursor (`detect`/`handlers`/`route` → connections.toml or db_browser) |
 | `float_window.lua` | House floating-window primitive — all popups go through `open()`/`open_centered()` |
 | `insert_hint.lua` | Debounced INSERT template hint |
 | `statusline.lua` | Dataset statusline — since the family dissolution the mini.statusline wiring is scope-guarded (renders only on `poste_db_context` buffers, falls through otherwise; `vim.g.poste_db_statusline_wired` idempotency) |
@@ -199,7 +201,10 @@ cross-repo contracts are:
 | [AI Chat Integration](./ai-chat.md) | poste-ai.nvim "db" context: @connection mentions, schema injection, SQL code-block execution into the dataset |
 | [Audit 2026-10-30](./audit-2026-10-30.md) | Round 4: execution path, dataset UI wiring, browser/completion/export — fixed defects, deferred items (postgres PK = Rust-side), test surface |
 | [Audit 2026-10-30 round 5](./audit-2026-10-30-round5.md) | Round 5: uncommitted edits dropped by the browser, import data shapes, DST offset, pagination on insert, caches (pk metadata, winbar), `wrap_text` O(n²), log level/mode — plus the claims that did not survive re-verification |
+| [Audit 2026-11-03](./audit-2026-11-03.md) | Round 6: AI/session/log/statusline and execution-path findings, fixes and rejected claims |
+| [Audit 2026-11-04](./audit-2026-11-04.md) | Round 7: jobstart chunk contract, null-type render armor, DDL/`USE` routing, dead-code removal and perf points |
+| [Audit 2026-11-21](./audit-2026-11-21.md) | Round 8: AI/completion, introspect/nav/highlights, buffer/editor/diagnostics — shared components (`schema_cache`, `ddl`, `util.each_line`/`fuzzy_match`), guards, tests, measured perf |
 
 ---
 
-*SQL developer documentation — Last updated: 2026-10-30 (audit round 5: render guard, pagination, import shapes, DST, caches, perf; audit-2026-10-30-round5 added)*
+*SQL developer documentation — Last updated: 2026-11-21 (audit round 8: AI/chat cache invalidation via `schema_cache`/`ddl`, introspect null guards, editor/view narrow fixes, `each_line`/`fuzzy_match`/`display_width_capped`; audit-2026-11-03/04 and audit-2026-11-21 added)*
