@@ -103,6 +103,11 @@ function M.update_dataset_statusline(meta)
   vim.b[buf].poste_db_context = ctx or ""
   if meta and meta.connection then
     vim.b[buf].poste_db_conn = meta.connection
+  else
+    -- Dataset buffers are reused (`bufhidden=hide`). A later result without a
+    -- connection used to leave the previous name in place, so the statusline
+    -- and any other reader named a connection this result never ran on.
+    vim.b[buf].poste_db_conn = nil
   end
   -- update_dataset_sql_statusline already forces the redraw when its text
   -- changed; the extra one here ran on every render for nothing.

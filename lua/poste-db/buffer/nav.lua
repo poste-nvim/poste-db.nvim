@@ -100,6 +100,10 @@ end
 function M.goto_first_row()
   local tab = D.T()
   if not tab or not tab.meta then return end
+  -- Same empty-resultset guard as move_cell/goto_last_row: gg on a 0-row
+  -- result used to focus the placeholder line, because there is no cell row 1
+  -- but focus_cell still computed a line index for it.
+  if (tab.meta.row_count or 0) == 0 or (tab.meta.col_count or 0) == 0 then return end
   focus_cell(tab, 1, sql_state.cell.col, false)
 end
 
@@ -222,7 +226,7 @@ function M.preview_cell()
   if not res then return end
   local text, ft = cell.pretty_print(raw_val)
 
-  local col_name = res.columns[col] and res.columns[col].name or "?"
+  local col_name = M._column_name(res, col) -- guarded: rows without columns exist
 
   local float_buf, win = preview.open_preview_float(col_name, text, ft)
   if not float_buf then return end
@@ -286,9 +290,29 @@ end
 
 M.toggle_raw_mode = raw_mode.toggle
 
+--- Close the cell-preview float, if any. The float is anchored to the cursor
+--- (`relative="cursor"`), so header.close_anchored_windows — which sweeps only
+--- windows anchored to the dataset window — never saw it: closing the dataset
+--- panel left it behind as an orphan.
+function M.close_preview()
+  if preview_win and vim.api.nvim_win_is_valid(preview_win) then
+    vim.api.nvim_win_close(preview_win, true)
+  end
+  preview_win = nil
+end
+
+--- Column name for a preview title. A hand-made or truncated response can
+--- carry `rows` without `columns`; indexing nil there raised inside the K
+--- keymap callback, which has no pcall.
+function M._column_name(res, col)
+  local meta = res and res.columns and res.columns[col]
+  return meta and meta.name or "?"
+end
+
 M._test = {
   build_header_index = header.build_header_index,
   slice_header_to_win = header.slice_header_to_win,
+  column_name = M._column_name,
 }
 
 return M

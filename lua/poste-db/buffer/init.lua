@@ -822,6 +822,12 @@ function M.close()
   -- window and goes with it.
   require("poste-db.buffer.header").close_anchored_windows(false)
   require("poste-db.buffer.header").close()
+  -- Cell preview (`relative="cursor"`) and the raw table float
+  -- (`relative="editor"`) are not anchored to the dataset window, so
+  -- close_anchored_windows never swept them: closing the panel left both as
+  -- orphan floats (and their module-level win ids stale).
+  pcall(function() require("poste-db.buffer.nav").close_preview() end)
+  pcall(function() require("poste-db.buffer.nav_raw").close() end)
   if D.dataset_window and vim.api.nvim_win_is_valid(D.dataset_window) then
     vim.api.nvim_win_close(D.dataset_window, true)
     D.dataset_window = nil

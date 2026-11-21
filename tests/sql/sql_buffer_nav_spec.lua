@@ -359,5 +359,24 @@ describe("buffer_nav empty resultset", function()
 
     -- goto_* handlers reach position_cursor directly, past the move_cell guard.
     assert.has_no_errors(function() nav.position_cursor(1, 2) end)
+
+    -- gg used to focus the placeholder border line: move_cell and
+    -- goto_last_row guard row_count==0 but goto_first_row did not.
+    local win = D.dataset_window
+    local before = vim.api.nvim_win_get_cursor(win)
+    assert.has_no_errors(function() nav.goto_first_row() end)
+    assert.same(before, vim.api.nvim_win_get_cursor(win))
+  end)
+end)
+
+describe("buffer_nav column name guard", function()
+  it("falls back to ? when a response has rows but no columns", function()
+    -- K on a hand-made/truncated response used to index nil here.
+    assert.equals("?", nav._test.column_name({ rows = { { 1 } } }, 1))
+  end)
+
+  it("uses the column name when present", function()
+    assert.equals("id", nav._test.column_name({ columns = { { name = "id" } } }, 1))
+    assert.equals("?", nav._test.column_name({ columns = {} }, 1))
   end)
 end)

@@ -183,7 +183,18 @@ local function apply_cell_edit(tab, row_idx, col_idx, new_val)
     es.dirty = #es.added_rows > 0
   else
     local existing = es.modified_cells[row_key]
-    local old_val = existing and existing.old_val or tab.layout.rows[row_idx][col_idx]
+    -- Explicit if, NOT `existing and existing.old_val or current`: a boolean
+    -- `false` original value is falsy in Lua, so the and/or form fell through
+    -- to the current row — which already holds the FIRST edit's new value.
+    -- A second edit then recorded that as old_val and `revert_row_edits`
+    -- restored the wrong value. (`0` and "" are truthy in Lua and were never
+    -- affected.)
+    local old_val
+    if existing then
+      old_val = existing.old_val
+    else
+      old_val = tab.layout.rows[row_idx][col_idx]
+    end
     cell.track_cell_edit(es, row_key, col_idx, old_val, new_val)
     tab.layout.rows[row_idx][col_idx] = new_val
   end
@@ -549,5 +560,12 @@ function M.rollback_edits()
     require("poste-db.edit_commit").refresh_dataset(tab)
   end)
 end
+
+--- Test seam: `apply_cell_edit` is the only place that decides what a second
+--- edit's "original value" is, and the false-vs-nil distinction there is
+--- invisible through the public prompt flow.
+M._test = {
+  apply_cell_edit = apply_cell_edit,
+}
 
 return M
