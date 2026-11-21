@@ -46,8 +46,13 @@ function M.run_json_items_job(args, opts)
           return
         end
 
+        -- `"items": null` decodes to vim.NIL — a truthy userdata, so the old
+        -- `if not items or #items == 0` fell through to `#vim.NIL` and raised
+        -- inside this scheduled callback: no float, no journal, just an editor
+        -- error. Null and nil both mean "nothing to show"; only a real table
+        -- can carry items.
         local items = parsed.items
-        if not items or #items == 0 then
+        if type(items) ~= "table" or #items == 0 then
           if opts.empty_message then
             vim.notify(opts.empty_message, vim.log.levels.WARN, { title = opts.title or const.PLUGIN_TITLE })
           end

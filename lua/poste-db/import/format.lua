@@ -242,6 +242,13 @@ function M.detect_format(content, filepath)
     if comma_count > 0 then
       return "csv"
     end
+    -- A single-column table has neither delimiter: a copied spreadsheet column
+    -- (`name\nAlice\nBob`) used to sniff as nil and refuse to import at all.
+    -- Non-empty content with no delimiter is a one-column CSV; whitespace-only
+    -- content still falls through to nil below.
+    if trimmed ~= "" then
+      return "csv"
+    end
   end
 
   return nil

@@ -156,8 +156,16 @@ describe("import.format.detect_format", function()
     assert.equals("csv", fmt.detect_format("a\tb,c\n1\t2,3", nil))
   end)
 
-  it("returns nil when nothing matches", function()
-    assert.is_nil(fmt.detect_format("hello world", nil))
+  it("sniffs delimiter-less content as a one-column CSV", function()
+    -- A copied spreadsheet column has no delimiter at all: it used to return
+    -- nil and the import refused to start.
+    assert.equals("csv", fmt.detect_format("name\nAlice\nBob", nil))
+    assert.equals("csv", fmt.detect_format("hello world", nil))
+  end)
+
+  it("returns nil for empty or whitespace-only content", function()
+    assert.is_nil(fmt.detect_format("", nil))
+    assert.is_nil(fmt.detect_format("   \n\t\n", nil))
   end)
 end)
 

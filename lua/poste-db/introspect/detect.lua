@@ -1,4 +1,6 @@
 --- Introspection --- detect target type from cursor position and SQL context.
+local const = require("poste-db.constants")
+
 local M = {}
 
 --- The `###`-delimited section around `line_num` as (start, end) line numbers,
@@ -7,11 +9,16 @@ local M = {}
 --- between two markers, with the whole buffer as one section when none are
 --- present. Callers use this to send only the user's current section to the
 --- binary rather than the whole file.
+---
+--- Marker matching goes through `constants.is_section_marker`: a bare `^###`
+--- missed a BOM-carrying first line and indented markers, while
+--- `nav/detect.lua` already used the house helper — two code paths computing
+--- different block boundaries for the same file.
 local function find_block_for_line(all_lines, line_num)
   local block_start = 1
   if line_num > 1 then
     for i = line_num - 1, 1, -1 do
-      if all_lines[i] and all_lines[i]:match("^###") then
+      if const.is_section_marker(all_lines[i]) then
         block_start = i + 1
         break
       end
@@ -20,7 +27,7 @@ local function find_block_for_line(all_lines, line_num)
 
   local block_end = #all_lines
   for i = line_num + 1, #all_lines do
-    if all_lines[i] and all_lines[i]:match("^###") then
+    if const.is_section_marker(all_lines[i]) then
       block_end = i - 1
       break
     end

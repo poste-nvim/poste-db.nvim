@@ -20,6 +20,24 @@ describe("introspect detect helpers", function()
     assert.equals(6, end_line)
   end)
 
+  -- The block scanner used a bare `^###` while nav's scanner used the house
+  -- helper (BOM-tolerant, leading whitespace allowed): the same file split into
+  -- different sections depending on which path looked at it.
+  it("recognizes indented and BOM-prefixed section markers", function()
+    local bom = "\239\187\191###"
+    local lines = {
+      "SELECT 1;",
+      "  ###",
+      "SELECT 2;",
+      bom,
+      "SELECT 3;",
+    }
+
+    local start_line, end_line = detect.find_block_for_line(lines, 3)
+    assert.equals(3, start_line)
+    assert.equals(3, end_line)
+  end)
+
   it("builds a detect payload from the surrounding block", function()
     local lines = {
       "-- @connection primary",

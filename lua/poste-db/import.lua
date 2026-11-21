@@ -120,7 +120,10 @@ local function read_source(source_type, path)
     if not content or content == "" then
       return nil, "Clipboard is empty"
     end
-    content = content:gsub("\n$", "")
+    -- Strip the clipboard's trailing newline, CRLF included: a lone "\r"
+    -- left behind reached the delimiter sniffer as content on a line of its
+    -- own (and JSON/CSV parsers saw a stray carriage return).
+    content = content:gsub("\r\n$", ""):gsub("\n$", "")
     return content, nil
   end
 

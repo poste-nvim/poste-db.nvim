@@ -86,4 +86,31 @@ describe("introspect exec helpers", function()
       opts = { title = "PosteDb" },
     }, notified)
   end)
+
+  it("treats a null items payload as empty instead of raising on #vim.NIL", function()
+    local callbacks = {}
+    local notified = nil
+
+    cli_stub.run_async = function(_, cb)
+      callbacks = cb
+    end
+    vim.notify = function(msg, level, opts)
+      notified = { msg = msg, level = level, opts = opts }
+    end
+
+    exec.run_json_items_job({ "binary", "introspect" }, {
+      title = "PosteDb",
+      empty_message = "no rows",
+      on_items = function()
+        error("should not be called")
+      end,
+    })
+
+    callbacks.on_stdout({ '{"items":null}' })
+    assert.same({
+      msg = "no rows",
+      level = vim.log.levels.WARN,
+      opts = { title = "PosteDb" },
+    }, notified)
+  end)
 end)

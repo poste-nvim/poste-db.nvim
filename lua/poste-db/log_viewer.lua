@@ -5,6 +5,7 @@ local M = {}
 local const = require("poste-db.constants")
 local syntax = require("poste-db.syntax")
 local float_window = require("poste-db.float_window")
+local util = require("poste-db.util")
 local ns = vim.api.nvim_create_namespace("poste_db_log")
 local buf = nil
 local win = nil
@@ -170,7 +171,7 @@ M._preview_sql = preview_sql
 local function clean_sql(sql)
   if not sql then return "" end
   local lines = {}
-  for line in (sql .. "\n"):gmatch("(.-)\n") do
+  for line in util.each_line(sql) do
     local trimmed = line:match("^%s*(.-)%s*$")
     if trimmed and not const.is_directive_comment(trimmed) and trimmed ~= const.SECTION_MARKER then
       table.insert(lines, trimmed)
@@ -219,12 +220,12 @@ local function count_detail_lines(entry)
   end
   local display_sql = clean_sql(entry.sql)
   if display_sql and display_sql ~= "" then
-    for _ in (display_sql .. "\n"):gmatch("(.-)\n") do
+    for _ in util.each_line(display_sql) do
       n = n + 1
     end
   end
   if entry.error and entry.error ~= "" then
-    for _ in (entry.error .. "\n"):gmatch("(.-)\n") do
+    for _ in util.each_line(entry.error) do
       n = n + 1
     end
   end
@@ -427,13 +428,13 @@ local function apply_detail_highlights(line_idx, entry, detail_idx)
   local n_sql = 0
   local display_sql = clean_sql(entry.sql)
   if display_sql and display_sql ~= "" then
-    for _ in (display_sql .. "\n"):gmatch("(.-)\n") do
+    for _ in util.each_line(display_sql) do
       n_sql = n_sql + 1
     end
   end
   local n_err = 0
   if entry.error and entry.error ~= "" then
-    for _ in (entry.error .. "\n"):gmatch("(.-)\n") do
+    for _ in util.each_line(entry.error) do
       n_err = n_err + 1
     end
   end
@@ -576,14 +577,14 @@ local function build_lines()
       -- SQL lines first
       local display_sql2 = clean_sql(entry.sql)
       if display_sql2 and display_sql2 ~= "" then
-        for sql_line in (display_sql2 .. "\n"):gmatch("(.-)\n") do
+        for sql_line in util.each_line(display_sql2) do
           table.insert(lines, "     " .. sql_line)
           line_idx = line_idx + 1
         end
       end
       -- Error lines
       if entry.error and entry.error ~= "" then
-        for err_line in (entry.error .. "\n"):gmatch("(.-)\n") do
+        for err_line in util.each_line(entry.error) do
           table.insert(lines, "     " .. err_line)
           line_idx = line_idx + 1
         end
@@ -719,13 +720,17 @@ end
 
 M._rerun_lines = rerun_lines
 
---- Open `lines` in a fresh, listed `.sql` buffer and focus it. Setting the
---- filetype is what makes the buffer runnable: the plugin's FileType
---- autocommand installs the guarded run keymap there.
+--- Open `lines` in a fresh, listed SQL buffer and focus it. The filetype must
+--- be the plugin's own (`poste_sql`), not the generic `sql`: the FileType
+--- autocommand installs the guarded `<CR>`/K/gd keymaps only for
+--- `poste_sql`/`poste_sqlite`, so `sql` left the buffer with the notify
+--- promising "run it with <CR>" and no keymap to do it. `poste_sql` is the
+--- filetype ftdetect gives real `.sql` files anyway, and buffer-local
+--- keymaps/autocmds are what make the handoff buffer runnable.
 function M._open_in_sql_buffer(lines)
   local new_buf = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_buf_set_lines(new_buf, 0, -1, true, lines)
-  vim.bo[new_buf].filetype = "sql"
+  vim.bo[new_buf].filetype = "poste_sql"
   vim.api.nvim_win_set_buf(0, new_buf)
   -- Park on the statement, not the directive: the cursor line is where the
   -- runner resolves context and picks the statement under point. Matched

@@ -54,8 +54,10 @@ function M.show_column_info(items, table_name, col_name, show_float)
 end
 
 function M.show_ddl(items, cword, show_float)
-  local ddl_text = items and items[1] and items[1].ddl or ""
-  if not ddl_text or ddl_text == "" then
+  -- `"ddl": null` decodes to vim.NIL (truthy), so `or ""` let the userdata
+  -- through and vim.split raised on it. Only a real string is displayable.
+  local ddl_text = items and items[1] and items[1].ddl
+  if type(ddl_text) ~= "string" or ddl_text == "" then
     notify("No DDL found for table '" .. cword .. "'", vim.log.levels.WARN)
     return false
   end

@@ -81,4 +81,26 @@ describe("introspect ui helpers", function()
       opts = { title = "PosteDb" },
     }, notified2)
   end)
+
+  -- `"ddl": null` decodes to vim.NIL, which is truthy: `or ""` let it through
+  -- and vim.split raised on the userdata inside the K keymap callback.
+  it("reports a null ddl instead of splitting vim.NIL", function()
+    local floated = false
+    local notified = nil
+    vim.notify = function(msg, level, opts)
+      notified = { msg = msg, level = level, opts = opts }
+    end
+
+    local ok = ui.show_ddl({ { ddl = vim.NIL } }, "authors", function()
+      floated = true
+    end)
+
+    assert.is_false(ok)
+    assert.is_false(floated)
+    assert.same({
+      msg = "No DDL found for table 'authors'",
+      level = vim.log.levels.WARN,
+      opts = { title = "PosteDb" },
+    }, notified)
+  end)
 end)

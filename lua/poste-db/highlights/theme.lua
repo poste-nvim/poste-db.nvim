@@ -14,7 +14,9 @@ end
 
 local function fg_of(name, fallback)
   local hl = resolve_hl(name)
-  if hl and hl.fg then return hl.fg end
+  -- `hl.fg == 0` is black, not "missing": `if hl.fg` treated a pure-black
+  -- foreground as absent and silently substituted the fallback palette.
+  if hl and hl.fg ~= nil then return hl.fg end
   return fallback
 end
 
@@ -119,6 +121,7 @@ function M.setup()
     "PosteDbDatasetHeader", "PosteDbDatasetWinbarBorder", "PosteDbDatasetWinbarSep",
     "PosteDbDatasetMeta", "PosteDbDatasetMetaDim", "PosteDbDatasetNull",
     "PosteDbDatasetNumber", "PosteDbDatasetBool", "PosteDbDatasetSortIndicator",
+    "PosteDbDatasetFilterActive", "PosteDbDatasetSearchActive",
     "PosteDbDatasetRowNum", "PosteDbDatasetCellSelected", "PosteDbDatasetCursorLine",
     "PosteDbDatasetSearchMatch", "PosteDbDatasetSearchCurrent", "PosteDbDatasetSearchMatchText", "PosteDbDatasetSearchCurrentText",
     "PosteDbDatasetInsertHint", "PosteDbDatasetError",
@@ -132,5 +135,11 @@ function M.setup()
     "PosteDbCompletionKindTypeParameter",
   })
 end
+
+--- Test seam for the pure color-resolution helpers; `fg_of`'s fg==0 case
+--- cannot be reached through setup() with any real colorscheme.
+M._test = {
+  fg_of = fg_of,
+}
 
 return M

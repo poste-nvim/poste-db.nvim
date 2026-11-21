@@ -444,7 +444,10 @@ describe("log viewer _open_in_sql_buffer", function()
     assert.equals(b, vim.api.nvim_get_current_buf())
     assert.same({ "-- @connection blog-db", "SELECT 1;" },
       vim.api.nvim_buf_get_lines(b, 0, -1, true))
-    assert.equals("sql", vim.bo[b].filetype)
+    -- poste_sql, not the generic "sql": only this filetype gets the plugin's
+    -- FileType keymaps, so a "sql" buffer promised "<CR> to run" with nothing
+    -- bound to it.
+    assert.equals("poste_sql", vim.bo[b].filetype)
     assert.is_true(vim.bo[b].buflisted, "an unlisted buffer is wiped on quit, SQL and all")
     assert.equals(start_bufs + 1, #vim.api.nvim_list_bufs())
   end)
